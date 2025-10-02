@@ -1,238 +1,238 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+本文件为 Claude Code (claude.ai/code) 在本代码库中工作时提供指导。
 
-## Core Development Principles
+## 核心开发原则
 
-**🚫 NO MOCK SOLUTIONS**
-- All operations must use real data
-- All monitoring data must come from real system metrics
-- All terminal operations must be real container exec sessions
+**🚫 禁止 Mock 方案**
+- 所有操作必须使用真实数据
+- 所有监控数据必须来自真实系统指标
+- 所有终端操作必须是真实的容器执行会话
 
-**🚫 NO SIMPLIFIED SOLUTIONS**
-- Implement complete error handling and edge cases
-- Implement complete performance optimization and caching mechanisms
-- Implement complete security validation and permission control
+**🚫 禁止简化方案**
+- 实现完整的错误处理和边缘情况处理
+- 实现完整的性能优化和缓存机制
+- 实现完整的安全验证和权限控制
 
-**🚫 NO TEMPORARY SOLUTIONS**
-- All implementations must be production-grade quality
-- All code must be maintainable long-term
-- All architecture must support future expansion needs
+**🚫 禁止临时方案**
+- 所有实现必须达到生产级质量
+- 所有代码必须可长期维护
+- 所有架构必须支持未来扩展需求
 
-## Project Overview
+## 项目概述
 
-FluxCaption is an AI-powered subtitle translation system for Jellyfin media libraries. The system automatically detects missing subtitle languages, performs ASR (Automatic Speech Recognition) on media without subtitles, and translates subtitles using local LLM models via Ollama.
+FluxCaption 是一个为 Jellyfin 媒体库设计的 AI 驱动字幕翻译系统。系统能自动检测缺失的字幕语言，对没有字幕的媒体执行 ASR（自动语音识别），并使用本地 LLM 模型（通过 Ollama）翻译字幕。
 
-**Tech Stack:**
-- Backend: Python FastAPI + Celery + SQLAlchemy 2 + Alembic
-- Frontend: React 19 + Vite + TypeScript + Tailwind CSS + Radix UI
-- AI/Inference: Ollama (local LLM models)
-- Storage: PostgreSQL / MySQL / SQLite / SQL Server (multi-database support)
-- Message Queue: Redis (Celery broker)
-- Media Integration: Jellyfin API
+**技术栈：**
+- 后端：Python FastAPI + Celery + SQLAlchemy 2 + Alembic
+- 前端：React 19 + Vite + TypeScript + Tailwind CSS + Radix UI
+- AI/推理：Ollama（本地 LLM 模型）
+- 存储：PostgreSQL / MySQL / SQLite / SQL Server（多数据库支持）
+- 消息队列：Redis（Celery broker）
+- 媒体集成：Jellyfin API
 
-## Common Commands
+## 常用命令
 
-### Backend Development
+### 后端开发
 
 ```bash
-# Install dependencies
+# 安装依赖
 pip install -r requirements.txt
 
-# Database migration
+# 数据库迁移
 alembic upgrade head
 
-# Start FastAPI server (dev mode with auto-reload)
+# 启动 FastAPI 服务器（开发模式，自动重载）
 uvicorn app.main:app --reload
 
-# Start Celery worker
+# 启动 Celery worker
 celery -A app.workers.celery_app worker -l INFO
 
-# Start Celery beat scheduler
+# 启动 Celery beat 调度器
 celery -A app.workers.celery_app beat -l INFO
 
-# Run tests
-pytest -m unit                              # Unit tests only
-pytest -m "integration and not slow"        # Integration tests
+# 运行测试
+pytest -m unit                              # 仅单元测试
+pytest -m "integration and not slow"        # 集成测试
 ```
 
-### Frontend Development
+### 前端开发
 
 ```bash
-# Install dependencies
+# 安装依赖
 pnpm i
 
-# Start dev server
+# 启动开发服务器
 pnpm dev
 
-# Build for production
+# 生产构建
 pnpm build
 ```
 
 ### Docker Compose
 
 ```bash
-# Start all services
+# 启动所有服务
 docker compose -f docker-compose.yml up -d
 
-# Environment setup
+# 环境配置
 cp .env.example .env
-# Edit .env with required values (JELLYFIN_API_KEY, OLLAMA_BASE_URL, etc.)
+# 编辑 .env 填入必需的值（JELLYFIN_API_KEY, OLLAMA_BASE_URL 等）
 ```
 
-## Architecture Overview
+## 架构概览
 
-### Backend Process Topology
+### 后端进程拓扑
 
-The backend consists of multiple independent processes:
+后端由多个独立进程组成：
 
-1. **FastAPI API Server**: Handles REST endpoints and SSE (Server-Sent Events) for real-time progress updates
-2. **Celery Workers**: Execute three types of tasks in separate queues:
-   - `scan`: Scan Jellyfin libraries for missing subtitle languages
-   - `translate`: Translate existing subtitle files
-   - `asr_then_translate`: Extract audio → ASR → translate for media without subtitles
-3. **Celery Beat**: Scheduled tasks (periodic scans, cleanup)
-4. **Redis**: Celery broker and cache; also used for SSE event forwarding from workers
-5. **Database**: SQLAlchemy 2 with synchronous engine (multi-database support)
-6. **Ollama**: Separate service for LLM model management and inference
-7. **Jellyfin**: External media server integration
+1. **FastAPI API 服务器**：处理 REST 端点和 SSE（Server-Sent Events）实时进度更新
+2. **Celery Workers**：在独立队列中执行三种类型的任务：
+   - `scan`：扫描 Jellyfin 库查找缺失的字幕语言
+   - `translate`：翻译现有字幕文件
+   - `asr_then_translate`：提取音频 → ASR → 翻译（用于无字幕媒体）
+3. **Celery Beat**：定时任务（周期性扫描、清理）
+4. **Redis**：Celery broker 和缓存；也用于从 worker 转发 SSE 事件
+5. **Database**：SQLAlchemy 2 同步引擎（多数据库支持）
+6. **Ollama**：独立服务，用于 LLM 模型管理和推理
+7. **Jellyfin**：外部媒体服务器集成
 
-### Backend Directory Structure
+### 后端目录结构
 
 ```
 backend/
   app/
-    main.py                          # FastAPI application entry
-    core/                            # config, db, logging, events
-    api/routers/                     # health, models, jellyfin, jobs, upload
-    services/                        # business logic layer
-      jellyfin_client.py             # Jellyfin API integration
-      ollama_client.py               # Ollama API (pull/generate)
-      subtitle_service.py            # Subtitle parsing/translation
-      asr_service.py                 # faster-whisper integration
-      writeback.py                   # Upload to Jellyfin or sidecar
-      detector.py                    # Missing language detection
-      prompts.py                     # LLM prompt templates
-    models/                          # SQLAlchemy ORM models
-      types.py                       # Custom types (GUID)
+    main.py                          # FastAPI 应用入口
+    core/                            # 配置、数据库、日志、事件
+    api/routers/                     # health、models、jellyfin、jobs、upload
+    services/                        # 业务逻辑层
+      jellyfin_client.py             # Jellyfin API 集成
+      ollama_client.py               # Ollama API（pull/generate）
+      subtitle_service.py            # 字幕解析/翻译
+      asr_service.py                 # faster-whisper 集成
+      writeback.py                   # 上传到 Jellyfin 或侧载文件
+      detector.py                    # 缺失语言检测
+      prompts.py                     # LLM 提示词模板
+    models/                          # SQLAlchemy ORM 模型
+      types.py                       # 自定义类型（GUID）
       translation_job.py
       media_asset.py
       subtitle.py
       model_registry.py
       setting.py
       base.py
-    schemas/                         # Pydantic request/response schemas
+    schemas/                         # Pydantic 请求/响应模式
     workers/
-      celery_app.py                 # Celery configuration
-      tasks.py                      # Task definitions
-  migrations/                       # Alembic database migrations
+      celery_app.py                 # Celery 配置
+      tasks.py                      # 任务定义
+  migrations/                       # Alembic 数据库迁移
 ```
 
-### Frontend Architecture
+### 前端架构
 
-- **State Management**: TanStack Query for server state, Zustand for UI state
-- **Real-time Updates**: EventSource (SSE) for task progress streaming
-- **Forms**: react-hook-form + zod validation
-- **Routing**: Main pages: Dashboard, Models, Library, Jobs, Translate, Settings
-- **Styling**: Tailwind CSS with dark mode support, Radix UI for accessible components
+- **状态管理**：TanStack Query 管理服务器状态，Zustand 管理 UI 状态
+- **实时更新**：EventSource (SSE) 用于任务进度流式传输
+- **表单**：react-hook-form + zod 验证
+- **路由**：主要页面：Dashboard、Models、Library、Jobs、Translate、Settings
+- **样式**：Tailwind CSS 支持暗色模式，Radix UI 提供无障碍组件
 
-### Multi-Database Strategy
+### 多数据库策略
 
-The system supports PostgreSQL, MySQL, SQLite, and SQL Server using a unified approach:
+系统使用统一方法支持 PostgreSQL、MySQL、SQLite 和 SQL Server：
 
-- **Primary Keys**: GUID stored as `CHAR(36)` via TypeDecorator for cross-database compatibility
-- **Enums**: Stored as `String` with Pydantic validation (avoiding database-specific enum types)
-- **Collections**: Media languages use child tables; job target languages use JSON columns
-- **Timestamps**: Always stored in UTC with `DateTime(timezone=True)`
-- **Migrations**: Alembic scripts avoid dialect-specific features
-- **Idempotency**: Service layer uses "check-then-write" instead of dialect-specific UPSERT
+- **主键**：GUID 通过 TypeDecorator 存储为 `CHAR(36)`，实现跨数据库兼容
+- **枚举**：存储为 `String` 并使用 Pydantic 验证（避免数据库特定的枚举类型）
+- **集合**：媒体语言使用子表；任务目标语言使用 JSON 列
+- **时间戳**：始终使用 UTC 存储，使用 `DateTime(timezone=True)`
+- **迁移**：Alembic 脚本避免方言特定功能
+- **幂等性**：服务层使用"先检查再写入"而非方言特定的 UPSERT
 
-### Data Models
+### 数据模型
 
-**Key Tables:**
-- `translation_jobs`: Job status, source/target languages, progress, error logs
-- `media_assets`: Jellyfin item metadata, duration, checksums
-- `media_audio_langs` / `media_subtitle_langs`: Language availability (child tables for queryability)
-- `subtitles`: Subtitle file registry with storage location, format, origin (asr/mt/manual)
+**核心表：**
+- `translation_jobs`：任务状态、源/目标语言、进度、错误日志
+- `media_assets`：Jellyfin 项目元数据、时长、校验和
+- `media_audio_langs` / `media_subtitle_langs`：语言可用性（子表以支持查询）
+- `subtitles`：字幕文件注册表，包含存储位置、格式、来源（asr/mt/manual）
 
-**Indexes**: Critical indexes on `(status, created_at)` for job queries, `asset_id` and `lang` for language lookups
+**索引**：任务查询的 `(status, created_at)` 关键索引，语言查找的 `asset_id` 和 `lang` 索引
 
-## Processing Pipeline
+## 处理管线
 
-### Translation Pipeline Stages
+### 翻译管线阶段
 
-1. **Model Preparation**: Check Ollama model availability; auto-pull if missing via `/api/pull`
-2. **Input Detection**:
-   - Existing subtitle → direct translation
-   - No subtitle → ASR first
-3. **ASR** (optional): FFmpeg audio extraction → faster-whisper → SRT/VTT output
-4. **Translation (MT)**:
-   - Parse subtitle file with pysubs2
-   - Strip ASS formatting tags (e.g., `{\i1}`)
-   - Translate plain text via Ollama `/api/generate`
-   - Restore formatting tags to translated text
-5. **Post-processing**: Punctuation normalization, line length control, tag restoration
-6. **Writeback**: Upload to Jellyfin via API or write sidecar file
-7. **Registration**: Update `subtitles` table and refresh `media_subtitle_langs`
+1. **模型准备**：检查 Ollama 模型可用性；如缺失则通过 `/api/pull` 自动拉取
+2. **输入检测**：
+   - 已有字幕 → 直接翻译
+   - 无字幕 → 先执行 ASR
+3. **ASR**（可选）：FFmpeg 音频提取 → faster-whisper → SRT/VTT 输出
+4. **翻译 (MT)**：
+   - 使用 pysubs2 解析字幕文件
+   - 剥离 ASS 格式标签（如 `{\i1}`）
+   - 通过 Ollama `/api/generate` 翻译纯文本
+   - 将格式标签恢复到翻译文本
+5. **后处理**：标点符号规范化、行长度控制、标签恢复
+6. **回写**：通过 API 上传到 Jellyfin 或写入侧载文件
+7. **注册**：更新 `subtitles` 表并刷新 `media_subtitle_langs`
 
-### ASR Details (faster-whisper)
+### ASR 详情（faster-whisper）
 
-- Input: 16kHz mono WAV (FFmpeg extraction)
-- Long audio: segmented with overlap
-- Output: SRT/VTT with timestamps
-- Performance: Supports 8-bit quantization, GPU/CPU adaptive
+- 输入：16kHz 单声道 WAV（FFmpeg 提取）
+- 长音频：分段处理带重叠
+- 输出：带时间戳的 SRT/VTT
+- 性能：支持 8 位量化、GPU/CPU 自适应
 
-### Translation Details (Ollama)
+### 翻译详情（Ollama）
 
-- **Model Pull**: `/api/pull` with streaming progress (status/completed/total) forwarded to SSE
-- **Inference**: `/api/generate` (or `/api/chat`)
-- **Prompt Strategy**:
-  - System: Professional subtitle translator; no additions/omissions
-  - User: Source language, target language, plain text input
-  - Output: Translation only (no timestamps/numbering)
-- **Batch Processing**: Can merge N lines for token efficiency and context consistency
+- **模型拉取**：`/api/pull` 带流式进度（status/completed/total）转发到 SSE
+- **推理**：`/api/generate`（或 `/api/chat`）
+- **提示词策略**：
+  - System：专业字幕翻译；不增删内容
+  - User：源语言、目标语言、纯文本输入
+  - Output：仅翻译（无时间戳/编号）
+- **批量处理**：可合并 N 行以提高 token 效率和上下文一致性
 
-### Subtitle Format Handling
+### 字幕格式处理
 
-- **Library**: pysubs2 for reading/writing `.srt/.ass/.vtt`
-- **ASS Tags**: Preserve formatting like `{\i1}`, positioning, outline styles
-- **Processing Strategy**:
-  1. Parse → strip tags → extract plain text
-  2. Translate plain text
-  3. Restore tags to translated text
-  4. Reflow line width/breaks per target language rules
+- **库**：pysubs2 用于读写 `.srt/.ass/.vtt`
+- **ASS 标签**：保留格式如 `{\i1}`、定位、轮廓样式
+- **处理策略**：
+  1. 解析 → 剥离标签 → 提取纯文本
+  2. 翻译纯文本
+  3. 将标签恢复到翻译文本
+  4. 根据目标语言规则重排行宽/换行
 
-## Critical Technical Details
+## 关键技术细节
 
-### FastAPI + Synchronous SQLAlchemy
+### FastAPI + 同步 SQLAlchemy
 
-- Web layer is async, but DB operations use **synchronous SQLAlchemy**
-- DB calls wrapped with `run_in_threadpool` for compatibility
-- Supports multiple database drivers without async complications
+- Web 层是异步的，但数据库操作使用**同步 SQLAlchemy**
+- 数据库调用通过 `run_in_threadpool` 包装以保证兼容性
+- 支持多种数据库驱动，无异步复杂性
 
-### Celery Configuration
+### Celery 配置
 
-- Key settings: `acks_late`, `task_reject_on_worker_lost`, `worker_max_tasks_per_child`
-- Prevents task loss and memory bloat
-- Worker concurrency tuned for GPU/CPU resource contention
+- 关键设置：`acks_late`、`task_reject_on_worker_lost`、`worker_max_tasks_per_child`
+- 防止任务丢失和内存膨胀
+- Worker 并发度针对 GPU/CPU 资源竞争进行调优
 
-### SSE Progress Streaming
+### SSE 进度流式传输
 
-- Workers publish events to Redis
-- API server subscribes and forwards to frontend via EventSource
-- Event format: `{ phase, status, completed, total }`
-- Phases: `pull → asr → mt → post → writeback`
+- Worker 将事件发布到 Redis
+- API 服务器订阅并通过 EventSource 转发到前端
+- 事件格式：`{ phase, status, completed, total }`
+- 阶段：`pull → asr → mt → post → writeback`
 
-### JellyfinClient Integration
+### JellyfinClient 集成
 
-- `GET /Items?Fields=MediaStreams`: Fetch subtitle/audio language info
-- `POST /Items/{itemId}/Subtitles`: Upload subtitle with Data/Format/Language
-- Sidecar mode: Write to same directory as media file (optional)
+- `GET /Items?Fields=MediaStreams`：获取字幕/音频语言信息
+- `POST /Items/{itemId}/Subtitles`：上传字幕，包含 Data/Format/Language
+- 侧载模式：写入与媒体文件相同的目录（可选）
 
-### Database Session Management
+### 数据库会话管理
 
 ```python
-# app/core/db.py pattern
+# app/core/db.py 模式
 engine = sa.create_engine(DATABASE_URL, pool_pre_ping=True, future=True)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, future=True)
 
@@ -249,9 +249,9 @@ def session_scope():
         s.close()
 ```
 
-## Configuration & Environment
+## 配置与环境
 
-### Required Environment Variables
+### 必需的环境变量
 
 ```ini
 DATABASE_URL=postgresql+psycopg://user:pass@postgres:5432/ai_subs
@@ -267,89 +267,112 @@ REQUIRED_LANGS=zh-CN,en,ja
 WRITEBACK_MODE=upload  # or sidecar
 ```
 
-### Key Conventions
+### 关键约定
 
-- **Timezone**: All timestamps stored in UTC
-- **Language Codes**: BCP-47 format (validated by Pydantic)
-- **Terminology/Glossary**: Optional JSON config; applied before/after translation
-- **Format Detection**: Auto-detect subtitle format from file extension
+- **时区**：所有时间戳均以 UTC 存储
+- **语言代码**：BCP-47 格式（由 Pydantic 验证）
+- **术语表/词汇表**：可选的 JSON 配置；在翻译前后应用
+- **格式检测**：根据文件扩展名自动检测字幕格式
 
-## Code Style & Contributing
+## 代码风格与贡献
 
-### Python (Backend)
+### Python（后端）
 
-- Formatter: ruff + black
-- Type checking: mypy for critical modules
-- Commit format: Conventional Commits (`feat:`, `fix:`, `docs:`)
+- 格式化：ruff + black
+- 类型检查：关键模块使用 mypy
+- 提交格式：Conventional Commits（`feat:`、`fix:`、`docs:`）
 
-### TypeScript (Frontend)
+### TypeScript（前端）
 
-- Linter: eslint
-- Formatter: prettier
-- Commit format: Conventional Commits
+- Linter：eslint
+- 格式化：prettier
+- 提交格式：Conventional Commits
 
-### Pull Requests
+### Pull Request
 
-- Link related issue
-- Include change description and risk assessment
-- API changes: Update `docs/03-API_CONTRACT.md`
-- Database changes: Include Alembic migration script and rollback assessment
+- 关联相关 issue
+- 包含变更描述和风险评估
+- API 变更：更新 `docs/03-API_CONTRACT.md`
+- 数据库变更：包含 Alembic 迁移脚本和回滚评估
 
-## Testing Strategy
+## 测试策略
 
-### Test Pyramid
+### 测试金字塔
 
-- **Unit**: Subtitle parsing/saving, prompt generation, OllamaClient streaming, DB CRUD
-- **Integration**: Ollama + Jellyfin + Redis + DB integration
-- **E2E**: Frontend task creation → SSE progress → writeback verification
+- **单元测试**：字幕解析/保存、提示词生成、OllamaClient 流式传输、DB CRUD
+- **集成测试**：Ollama + Jellyfin + Redis + DB 集成
+- **端到端测试**：前端任务创建 → SSE 进度 → 回写验证
 
-### Multi-Database CI Matrix
+### 多数据库 CI 矩阵
 
-Test against PostgreSQL, MySQL, SQLite, SQL Server:
-- Migration success (`alembic upgrade head`)
-- CRUD and pagination consistency
-- Missing language detection query correctness
+针对 PostgreSQL、MySQL、SQLite、SQL Server 进行测试：
+- 迁移成功（`alembic upgrade head`）
+- CRUD 和分页一致性
+- 缺失语言检测查询正确性
 
-### Typical Test Cases
+### 典型测试用例
 
-1. Manual SRT upload → translate → preview → upload to Jellyfin
-2. Media without subtitle → ASR → translate → upload
-3. Missing model → auto `/api/pull` → translate → success
-4. Sidecar writeback → Jellyfin auto-detection
-5. Long audio → correct segmentation → continuous timeline
+1. 手动 SRT 上传 → 翻译 → 预览 → 上传到 Jellyfin
+2. 无字幕媒体 → ASR → 翻译 → 上传
+3. 缺失模型 → 自动 `/api/pull` → 翻译 → 成功
+4. 侧载回写 → Jellyfin 自动检测
+5. 长音频 → 正确分段 → 连续时间轴
 
-## Performance Optimization
+## 性能优化
 
-### Backend
+### 后端
 
-- Worker concurrency and `prefetch_multiplier` tuning (avoid GPU/ASR contention)
-- Large file segmentation for ASR; batch translation with controlled memory
-- Jellyfin retry logic with rate limiting
-- Ollama `/api/pull` heartbeat detection
+- Worker 并发和 `prefetch_multiplier` 调优（避免 GPU/ASR 竞争）
+- ASR 大文件分段；受控内存的批量翻译
+- 带速率限制的 Jellyfin 重试逻辑
+- Ollama `/api/pull` 心跳检测
 
-### Frontend
+### 前端
 
-- Route-level code splitting
-- TanStack Query smart caching and background refresh
-- List virtualization (media library, job queue)
-- Memo/selector to avoid large object re-renders
+- 路由级代码分割
+- TanStack Query 智能缓存和后台刷新
+- 列表虚拟化（媒体库、任务队列）
+- Memo/selector 避免大对象重渲染
 
-## Deployment Notes
+## 部署注意事项
 
-- **Processes**: api (Uvicorn), worker (Celery multi-replica), beat (single instance), ollama (separate container)
-- **Monitoring**: Structured JSON logs with `job_id, phase, duration, media_id, model`
-- **Metrics**: Task throughput/latency/failure rate, model pull time, ASR/MT phase distribution
-- **Security**: Minimal Jellyfin API key permissions; internal network in production; optional JWT/Key auth for API
-- **Rollback**: Container images with tags; Alembic `downgrade` (use cautiously)
+- **进程**：api（Uvicorn）、worker（Celery 多副本）、beat（单实例）、ollama（独立容器）
+- **监控**：结构化 JSON 日志，包含 `job_id、phase、duration、media_id、model`
+- **指标**：任务吞吐量/延迟/失败率、模型拉取时间、ASR/MT 阶段分布
+- **安全**：最小 Jellyfin API key 权限；生产环境内部网络；API 可选 JWT/Key 认证
+- **回滚**：带标签的容器镜像；Alembic `downgrade`（谨慎使用）
 
-## Documentation Structure
+## 文档结构
 
-- `docs/00-README.md`: Project overview and quick start
-- `docs/01-BACKEND.md`: Backend architecture and development
-- `docs/02-FRONTEND.md`: Frontend architecture and development
-- `docs/03-API_CONTRACT.md`: OpenAPI endpoint summary
-- `docs/04-DATA_MODEL_AND_DB.md`: Database schema and multi-DB strategy
-- `docs/05-PIPELINES_ASR_MT_SUBTITLES.md`: AI pipeline details
-- `docs/06-DEPLOYMENT_DEVOPS.md`: Deployment and operations
-- `docs/07-TESTING_QA.md`: Testing strategy and quality assurance
-- `docs/08-CONTRIBUTING.md`: Collaboration and code standards
+- `docs/00-README.md`：项目概览和快速开始
+- `docs/01-BACKEND.md`：后端架构和开发
+- `docs/02-FRONTEND.md`：前端架构和开发
+- `docs/03-API_CONTRACT.md`：OpenAPI 端点摘要
+- `docs/04-DATA_MODEL_AND_DB.md`：数据库模式和多数据库策略
+- `docs/05-PIPELINES_ASR_MT_SUBTITLES.md`：AI 管线详情
+- `docs/06-DEPLOYMENT_DEVOPS.md`：部署和运维
+- `docs/07-TESTING_QA.md`：测试策略和质量保证
+- `docs/08-CONTRIBUTING.md`：协作和代码标准
+
+## 文件创建策略
+
+**🚫 未经明确用户许可，禁止创建文档文件**
+- 除非用户明确要求，否则不要创建任何 `.md` 文件（文档、README、指南等）
+- 不要主动创建 `docs/` 文件
+- 始终先询问用户："是否应为 [目的] 创建文档文件？"
+
+**🚫 未经明确用户许可，禁止创建测试文件**
+- 除非用户明确要求，否则不要创建测试文件（`test_*.py`、`*.test.ts`、`*.spec.ts` 等）
+- 不要主动创建测试 fixtures 或测试数据文件
+- 始终先询问用户："是否应为 [功能] 创建测试？"
+
+**✅ 何时需要请求许可**
+- 创建任何新的 `.md` 文件之前
+- 在 `tests/`、`__tests__/` 或类似目录中创建任何测试文件之前
+- 创建示例文件或示例代码文件之前
+
+**✅ 无需询问即可创建的内容**
+- 作为实际应用程序一部分的源代码文件（`.py`、`.ts`、`.tsx` 等）
+- 应用程序运行所需的配置文件
+- 实现数据库更改时的数据库迁移文件
+- 构建过程中的构建产物或生成的代码

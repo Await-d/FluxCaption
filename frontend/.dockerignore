@@ -1,0 +1,44 @@
+# Node modules
+node_modules
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build output
+dist
+build
+.vite
+.turbo
+
+# Development files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage
+.nyc_output
+
+# Git
+.git
+.gitignore
+
+# Documentation
+*.md
+docs
+
+# Misc
+.eslintcache
+.prettierignore

@@ -1,0 +1,242 @@
+version: '3.8'
+
+services:
+  # =============================================================================
+  # PostgreSQL Database
+  # =============================================================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: fluxcaption-postgres
+    environment:
+      POSTGRES_USER: fluxcaption
+      POSTGRES_PASSWORD: fluxcaption
+      POSTGRES_DB: fluxcaption
+    expose:
+      - "5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fluxcaption"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - fluxcaption-network
+
+  # =============================================================================
+  # Redis (Message Broker & Cache)
+  # =============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: fluxcaption-redis
+    command: redis-server --appendonly yes
+    expose:
+      - "6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - fluxcaption-network
+
+  # =============================================================================
+  # Ollama (LLM Inference Engine)
+  # =============================================================================
+  ollama:
+    image: ollama/ollama:latest
+    container_name: fluxcaption-ollama
+    expose:
+      - "11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    # Uncomment the following lines to enable GPU support
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - fluxcaption-network
+
+  # =============================================================================
+  # FastAPI Application (Backend)
+  # =============================================================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fluxcaption-backend
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    expose:
+      - "8000"
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql+psycopg://fluxcaption:fluxcaption@postgres:5432/fluxcaption
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - JELLYFIN_BASE_URL=${JELLYFIN_BASE_URL:-http://jellyfin:8096}
+      - JELLYFIN_API_KEY=${JELLYFIN_API_KEY:-your_jellyfin_api_key_here}
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/migrations:/app/migrations
+      - ./backend/alembic.ini:/app/alembic.ini
+      - api_logs:/app/logs
+      - subtitle_output:/app/output/subtitles
+      - whisper_models:/app/models/whisper
+      - temp_files:/tmp/fluxcaption
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - fluxcaption-network
+
+  # =============================================================================
+  # Celery Worker
+  # =============================================================================
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fluxcaption-worker
+    command: celery -A app.workers.celery_app worker -l INFO -Q default,scan,translate,asr -c 4
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql+psycopg://fluxcaption:fluxcaption@postgres:5432/fluxcaption
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - JELLYFIN_BASE_URL=${JELLYFIN_BASE_URL:-http://jellyfin:8096}
+      - JELLYFIN_API_KEY=${JELLYFIN_API_KEY:-your_jellyfin_api_key_here}
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/migrations:/app/migrations
+      - worker_logs:/app/logs
+      - subtitle_output:/app/output/subtitles
+      - whisper_models:/app/models/whisper
+      - temp_files:/tmp/fluxcaption
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - fluxcaption-network
+    # Uncomment to enable GPU support for ASR/LLM inference in workers
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # =============================================================================
+  # Celery Beat (Scheduler)
+  # =============================================================================
+  beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fluxcaption-beat
+    command: celery -A app.workers.celery_app beat -l INFO
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql+psycopg://fluxcaption:fluxcaption@postgres:5432/fluxcaption
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    volumes:
+      - ./backend/app:/app/app
+      - beat_logs:/app/logs
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - fluxcaption-network
+
+  # =============================================================================
+  # Frontend (Nginx + React)
+  # =============================================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: fluxcaption-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - fluxcaption-network
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  ollama_data:
+    driver: local
+  api_logs:
+    driver: local
+  worker_logs:
+    driver: local
+  beat_logs:
+    driver: local
+  subtitle_output:
+    driver: local
+  whisper_models:
+    driver: local
+  temp_files:
+    driver: local
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  fluxcaption-network:
+    driver: bridge
