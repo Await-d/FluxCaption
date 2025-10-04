@@ -58,6 +58,7 @@ class JellyfinLibrary(BaseModel):
     type: Optional[str] = Field(None, alias="CollectionType", description="Type: movies, tvshows, music, etc.")
     item_count: Optional[int] = Field(None, alias="ChildCount", description="Number of items in library")
     image_tags: Optional[dict[str, str]] = Field(None, alias="ImageTags", description="Image tags for different image types")
+    image_item_id: Optional[str] = Field(None, description="ID of the item to use for image (library ID or first item ID)")
     image_url: Optional[str] = Field(None, description="Library primary image URL")
 
 

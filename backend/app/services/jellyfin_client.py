@@ -209,6 +209,8 @@ class JellyfinClient:
     async def list_libraries(self) -> list[JellyfinLibrary]:
         """
         List all libraries/collections in Jellyfin with item counts and image tags.
+        
+        For libraries without a primary image, uses the first item's image as fallback.
 
         Returns:
             List of libraries with populated ChildCount and ImageTags
@@ -239,8 +241,9 @@ class JellyfinClient:
                     )
                     
                     # Extract ImageTags from the library item
-                    if "ImageTags" in library_item:
+                    if "ImageTags" in library_item and library_item["ImageTags"]:
                         library.image_tags = library_item.get("ImageTags")
+                        library.image_item_id = library.id  # Use library's own ID
                     
                     # Query Items API with Limit=1 to get TotalRecordCount efficiently
                     items_response = await self._request_with_retry(
@@ -253,10 +256,23 @@ class JellyfinClient:
                         }
                     )
                     library.item_count = items_response.get("TotalRecordCount", 0)
+                    
+                    # If library doesn't have a Primary image, try to get first item's image
+                    if not library.image_tags or 'Primary' not in library.image_tags:
+                        items = items_response.get("Items", [])
+                        if items and len(items) > 0:
+                            first_item = items[0]
+                            # Use first item's ImageTags if available
+                            if "ImageTags" in first_item and first_item["ImageTags"]:
+                                library.image_tags = first_item.get("ImageTags")
+                                library.image_item_id = first_item.get("Id")  # Use first item's ID
+                                logger.info(f"Using first item's image for library {library.name}")
+                                
                 except Exception as e:
                     logger.warning(f"Failed to get details for library {library.name}: {e}")
                     library.item_count = 0
                     library.image_tags = None
+                    library.image_item_id = None
         except Exception as e:
             logger.warning(f"Failed to get user ID, item counts and images will be unavailable: {e}")
             # Keep item_count as None or 0
