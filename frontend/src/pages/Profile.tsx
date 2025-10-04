@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { User as UserIcon, Key, LogOut, Shield, Clock } from 'lucide-react'
+import { User as UserIcon, Key, LogOut, Shield, Clock, Edit2, Check, X } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -13,7 +13,13 @@ import { useNavigate } from 'react-router-dom'
 export function Profile() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const { user, clearAuth } = useAuthStore()
+  const { user, clearAuth, updateUser } = useAuthStore()
+
+  // Username edit state
+  const [isEditingUsername, setIsEditingUsername] = useState(false)
+  const [newUsername, setNewUsername] = useState(user?.username || '')
+  const [usernameError, setUsernameError] = useState<string | null>(null)
+  const [usernameSuccess, setUsernameSuccess] = useState(false)
 
   // Password change state
   const [oldPassword, setOldPassword] = useState('')
@@ -21,6 +27,25 @@ export function Profile() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [passwordError, setPasswordError] = useState<string | null>(null)
   const [passwordSuccess, setPasswordSuccess] = useState(false)
+
+  // Username update mutation
+  const updateUsernameMutation = useMutation({
+    mutationFn: () =>
+      authApi.updateProfile({
+        username: newUsername,
+      }),
+    onSuccess: (updatedUser) => {
+      updateUser(updatedUser)
+      setUsernameSuccess(true)
+      setUsernameError(null)
+      setIsEditingUsername(false)
+      setTimeout(() => setUsernameSuccess(false), 3000)
+    },
+    onError: (err: any) => {
+      setUsernameError(err.response?.data?.detail || err.message || '用户名修改失败')
+      setUsernameSuccess(false)
+    },
+  })
 
   // Password change mutation
   const changePasswordMutation = useMutation({
@@ -42,6 +67,35 @@ export function Profile() {
       setPasswordSuccess(false)
     },
   })
+
+  const handleUpdateUsername = () => {
+    setUsernameError(null)
+    setUsernameSuccess(false)
+
+    // Validation
+    if (!newUsername.trim()) {
+      setUsernameError('用户名不能为空')
+      return
+    }
+
+    if (newUsername.trim().length < 3) {
+      setUsernameError('用户名至少需要3个字符')
+      return
+    }
+
+    if (newUsername === user?.username) {
+      setIsEditingUsername(false)
+      return
+    }
+
+    updateUsernameMutation.mutate()
+  }
+
+  const handleCancelUsernameEdit = () => {
+    setNewUsername(user?.username || '')
+    setIsEditingUsername(false)
+    setUsernameError(null)
+  }
 
   const handleChangePassword = (e: React.FormEvent) => {
     e.preventDefault()
@@ -86,12 +140,61 @@ export function Profile() {
           <CardDescription>您的基本账户信息</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {usernameSuccess && (
+            <Alert className="text-sm bg-green-50 border-green-200 text-green-800">
+              <Check className="h-4 w-4 text-green-600" />
+              用户名修改成功！
+            </Alert>
+          )}
+
+          {usernameError && (
+            <Alert variant="destructive" className="text-sm">
+              {usernameError}
+            </Alert>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="text-sm font-medium text-muted-foreground">
                 用户名
               </label>
-              <p className="text-base mt-1">{user?.username}</p>
+              {isEditingUsername ? (
+                <div className="mt-1 flex gap-2">
+                  <Input
+                    value={newUsername}
+                    onChange={(e) => setNewUsername(e.target.value)}
+                    disabled={updateUsernameMutation.isPending}
+                    placeholder="请输入新用户名"
+                    className="flex-1"
+                  />
+                  <Button
+                    size="sm"
+                    onClick={handleUpdateUsername}
+                    disabled={updateUsernameMutation.isPending || !newUsername.trim()}
+                  >
+                    <Check className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleCancelUsernameEdit}
+                    disabled={updateUsernameMutation.isPending}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="mt-1 flex items-center gap-2">
+                  <p className="text-base">{user?.username}</p>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setIsEditingUsername(true)}
+                  >
+                    <Edit2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              )}
             </div>
 
             <div>

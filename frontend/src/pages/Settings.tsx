@@ -1,11 +1,9 @@
 import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { Save, FolderOpen, Plus, X, Key, Check, AlertCircle } from 'lucide-react'
+import { Save, FolderOpen, Plus, X } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import { Alert } from '@/components/ui/Alert'
-import authApi from '@/lib/authApi'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/Select'
 import api from '@/lib/api'
 import type { AppSettings } from '@/types/api'
@@ -14,13 +12,6 @@ import { useTranslation } from 'react-i18next'
 export function Settings() {
   const { t } = useTranslation()
   const [newPath, setNewPath] = useState('')
-  
-  // Password change state
-  const [oldPassword, setOldPassword] = useState('')
-  const [newPassword, setNewPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [passwordError, setPasswordError] = useState<string | null>(null)
-  const [passwordSuccess, setPasswordSuccess] = useState(false)
   
   // Fetch settings
   const { data: settings, isLoading, refetch } = useQuery<AppSettings>({
@@ -33,45 +24,6 @@ export function Settings() {
     mutationFn: (data: Partial<AppSettings>) => api.updateSettings(data),
     onSuccess: () => refetch(),
   })
-
-  // Password change mutation
-  const changePasswordMutation = useMutation({
-    mutationFn: () => authApi.changePassword({
-      old_password: oldPassword,
-      new_password: newPassword,
-    }),
-    onSuccess: () => {
-      setPasswordSuccess(true)
-      setPasswordError(null)
-      setOldPassword('')
-      setNewPassword('')
-      setConfirmPassword('')
-      setTimeout(() => setPasswordSuccess(false), 5000)
-    },
-    onError: (err: any) => {
-      setPasswordError(err.detail || err.message || t('profile.changePasswordFailed'))
-      setPasswordSuccess(false)
-    },
-  })
-
-  const handleChangePassword = (e: React.FormEvent) => {
-    e.preventDefault()
-    setPasswordError(null)
-    setPasswordSuccess(false)
-
-    // Validation
-    if (newPassword.length < 6) {
-      setPasswordError(t('profile.passwordTooShort'))
-      return
-    }
-
-    if (newPassword !== confirmPassword) {
-      setPasswordError(t('profile.passwordMismatch'))
-      return
-    }
-
-    changePasswordMutation.mutate()
-  }
 
   if (isLoading) {
     return <div className="text-muted-foreground">{t('settings.loading')}</div>
@@ -253,90 +205,6 @@ export function Settings() {
               />
             </div>
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Security Settings */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
-            <Key className="h-4 w-4 sm:h-5 sm:w-5" />
-            安全设置
-          </CardTitle>
-          <CardDescription className="text-[10px] sm:text-xs">
-            修改账户密码以保护您的账户安全
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleChangePassword} className="space-y-3 sm:space-y-4 max-w-md">
-            {passwordError && (
-              <Alert variant="destructive" className="text-xs sm:text-sm">
-                <AlertCircle className="h-3 w-3 sm:h-4 sm:w-4" />
-                <span>{passwordError}</span>
-              </Alert>
-            )}
-
-            {passwordSuccess && (
-              <Alert className="text-xs sm:text-sm bg-green-50 border-green-200 text-green-800">
-                <Check className="h-3 w-3 sm:h-4 sm:w-4 text-green-600" />
-                <span>密码修改成功</span>
-              </Alert>
-            )}
-
-            <div>
-              <label className="text-xs sm:text-sm font-medium mb-2 block">当前密码</label>
-              <Input
-                type="password"
-                placeholder="请输入当前密码"
-                value={oldPassword}
-                onChange={(e) => setOldPassword(e.target.value)}
-                disabled={changePasswordMutation.isPending}
-                required
-                className="text-xs sm:text-sm"
-              />
-            </div>
-
-            <div>
-              <label className="text-xs sm:text-sm font-medium mb-2 block">新密码</label>
-              <Input
-                type="password"
-                placeholder="请输入新密码（至少6个字符）"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                disabled={changePasswordMutation.isPending}
-                required
-                minLength={6}
-                className="text-xs sm:text-sm"
-              />
-            </div>
-
-            <div>
-              <label className="text-xs sm:text-sm font-medium mb-2 block">确认新密码</label>
-              <Input
-                type="password"
-                placeholder="请再次输入新密码"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                disabled={changePasswordMutation.isPending}
-                required
-                className="text-xs sm:text-sm"
-              />
-            </div>
-
-            <Button
-              type="submit"
-              disabled={
-                changePasswordMutation.isPending ||
-                !oldPassword ||
-                !newPassword ||
-                !confirmPassword
-              }
-              className="text-xs sm:text-sm"
-            >
-              <Key className="mr-2 h-3 w-3 sm:h-4 sm:w-4" />
-              {changePasswordMutation.isPending ? '修改中...' : '修改密码'}
-            </Button>
-          </form>
         </CardContent>
       </Card>
 
