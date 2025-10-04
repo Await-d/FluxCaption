@@ -26,6 +26,35 @@ def run_async(coro):
     return loop.run_until_complete(coro)
 
 
+def save_task_log_sync(job_id: str, phase: str, status: str, progress: float, completed: int = None, total: int = None, error: str = None):
+    """
+    Synchronously save task log to database without using async event publisher.
+
+    This is used in progress callbacks where async operations cause event loop conflicts.
+    """
+    try:
+        from app.core.db import SessionLocal
+        from app.models.task_log import TaskLog
+        from datetime import datetime, timezone
+        import json
+
+        with SessionLocal() as session:
+            log_entry = TaskLog(
+                job_id=job_id,
+                timestamp=datetime.now(timezone.utc),
+                phase=phase,
+                status=status,
+                progress=progress,
+                completed=completed,
+                total=total,
+                extra_data=json.dumps({"error": error}) if error else None,
+            )
+            session.add(log_entry)
+            session.commit()
+    except Exception as e:
+        logger.warning(f"Failed to save task log to database: {e}")
+
+
 # =============================================================================
 # Checkpoint/Resume Helper Functions
 # =============================================================================
@@ -394,18 +423,15 @@ def translate_subtitle_task(self, job_id: str) -> dict:
                         # Use message if provided, otherwise use default
                         status_msg = message if message else f"Translating to {target_lang}"
 
-                        # Publish progress
-                        try:
-                            run_async(event_publisher.publish_job_progress(
-                                job_id=job_id,
-                                phase="mt",
-                                status=status_msg,
-                                progress=current_progress,
-                                completed=completed,
-                                total=total,
-                            ))
-                        except Exception as e:
-                            logger.warning(f"Failed to publish progress: {e}")
+                        # Save directly to database (sync) to avoid event loop conflicts
+                        save_task_log_sync(
+                            job_id=job_id,
+                            phase="mt",
+                            status=status_msg,
+                            progress=current_progress,
+                            completed=completed,
+                            total=total,
+                        )
 
                     # Get asset_id and media_name for translation memory
                     asset_id = None
@@ -951,17 +977,15 @@ def asr_then_translate_task(self, job_id: str) -> dict:
                         # Use message if provided, otherwise use default
                         status_msg = message if message else f"Translating to {target_lang}"
 
-                        try:
-                            run_async(event_publisher.publish_job_progress(
-                                job_id=job_id,
-                                phase="mt",
-                                status=status_msg,
-                                progress=current_progress,
-                                completed=completed,
-                                total=total,
-                            ))
-                        except Exception as e:
-                            logger.warning(f"Failed to publish translation progress: {e}")
+                        # Save directly to database (sync) to avoid event loop conflicts
+                        save_task_log_sync(
+                            job_id=job_id,
+                            phase="mt",
+                            status=status_msg,
+                            progress=current_progress,
+                            completed=completed,
+                            total=total,
+                        )
 
                     # Get asset_id and media_name for translation memory
                     asset_id = None
