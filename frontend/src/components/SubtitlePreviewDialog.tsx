@@ -107,8 +107,8 @@ export function SubtitlePreviewDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[95vw] max-h-[90vh] w-full flex flex-col overflow-hidden">
-        <DialogHeader className="flex-shrink-0">
+      <DialogContent className="max-w-[95vw] h-[90vh] w-full !flex !flex-col !gap-0 p-0">
+        <DialogHeader className="flex-shrink-0 p-6 pb-4">
           <div className="flex items-center justify-between">
             <DialogTitle>字幕对比预览</DialogTitle>
             <div className="flex items-center gap-2">
@@ -162,10 +162,10 @@ export function SubtitlePreviewDialog({
           </div>
         </DialogHeader>
 
-        <div className="flex-1 min-h-0 space-y-4 overflow-hidden flex flex-col">
+        <div className="flex-1 min-h-0 overflow-hidden flex flex-col px-6">
           {/* Subtitle Info */}
           {(sourceData || resultData) && (
-            <div className="flex items-center gap-4 text-sm text-muted-foreground flex-shrink-0">
+            <div className="flex items-center gap-4 text-sm text-muted-foreground flex-shrink-0 pb-4">
               {sourceData && (
                 <>
                   <Badge variant="outline">{sourceData.format.toUpperCase()}</Badge>
@@ -182,8 +182,8 @@ export function SubtitlePreviewDialog({
           )}
 
           {/* Subtitle Content - Side by Side */}
-          <div className="flex-1 min-h-0 rounded-md border overflow-hidden">
-            <div className="grid grid-cols-2 h-full overflow-hidden">
+          <div className="flex-1 min-h-0 rounded-md border overflow-hidden mb-6">
+            <div className="grid grid-cols-2 h-full">
               {/* Left Panel - Source Subtitle */}
               <div className="border-r flex flex-col overflow-hidden">
                 <div className="bg-muted/50 p-3 border-b flex-shrink-0">
