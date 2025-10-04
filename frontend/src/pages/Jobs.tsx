@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { RefreshCw, XCircle, RotateCcw, Download, Eye, PlayCircle } from 'lucide-react'
+import { RefreshCw, XCircle, RotateCcw, Download, Eye, PlayCircle, FileText } from 'lucide-react'
 import { Checkbox } from '@/components/ui/Checkbox'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button'
 import { Progress } from '@/components/ui/Progress'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/Select'
 import { SubtitlePreviewDialog } from '@/components/SubtitlePreviewDialog'
+import { TaskLogsDialog } from '@/components/TaskLogsDialog'
 import api from '@/lib/api'
 import { subscribeToJobProgress } from '@/lib/sse'
 import { getStatusColor, getStatusText, getLanguageName } from '@/lib/utils'
@@ -19,10 +20,11 @@ export function Jobs() {
   const [statusFilter, setStatusFilter] = useState<JobStatus | 'all'>('all')
   const [typeFilter, setTypeFilter] = useState<JobType | 'all'>('all')
   const [previewJob, setPreviewJob] = useState<{ jobId: string; fileIndex?: number } | null>(null)
+  const [logsJobId, setLogsJobId] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize] = useState(20)
   const [selectedJobs, setSelectedJobs] = useState<Set<string>>(new Set())
-  
+
   // Independent state for SSE progress updates (doesn't trigger re-subscription)
   const [jobProgress, setJobProgress] = useState<Record<string, number>>({})
 
@@ -467,6 +469,17 @@ export function Jobs() {
                           <span className="hidden sm:inline">{t('jobs.retry')}</span>
                         </Button>
                       )}
+                      {(job.status === 'success' || job.status === 'failed' || job.status === 'cancelled') && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setLogsJobId(job.id)}
+                          className="h-8 px-2 sm:px-3"
+                        >
+                          <FileText className="h-4 w-4 sm:mr-2" />
+                          <span className="hidden sm:inline">日志</span>
+                        </Button>
+                      )}
                       {job.status === 'success' && job.result_paths && job.result_paths.length > 0 && (
                         <>
                           <Button
@@ -602,6 +615,13 @@ export function Jobs() {
           onOpenChange={(open) => !open && setPreviewJob(null)}
         />
       )}
+
+      {/* Task Logs Dialog */}
+      <TaskLogsDialog
+        jobId={logsJobId}
+        open={!!logsJobId}
+        onOpenChange={(open) => !open && setLogsJobId(null)}
+      />
     </div>
   )
 }

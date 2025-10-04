@@ -1099,3 +1099,92 @@ async def update_subtitle_entries(
             status_code=500,
             detail=f"Failed to update subtitle: {str(e)}"
         )
+
+
+
+@router.get(
+    "/{job_id}/logs",
+    summary="Get job execution logs",
+)
+async def get_job_logs(
+    job_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Get historical execution logs for a translation job.
+    
+    Returns all logged progress events for the job, ordered by timestamp.
+    
+    Args:
+        job_id: Job ID
+        db: Database session
+        
+    Returns:
+        dict: Job logs with metadata
+        
+    Raises:
+        HTTPException: If job not found
+    """
+    from app.models.task_log import TaskLog
+    import sqlalchemy as sa
+    
+    try:
+        # Verify job exists
+        job = db.query(TranslationJob).filter(TranslationJob.id == job_id).first()
+        
+        if not job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Job '{job_id}' not found",
+            )
+        
+        # Get all logs for this job, ordered by timestamp
+        logs = db.query(TaskLog).filter(
+            TaskLog.job_id == str(job_id)
+        ).order_by(
+            TaskLog.timestamp.asc()
+        ).all()
+        
+        # Convert to dict format
+        log_entries = []
+        for log in logs:
+            entry = {
+                "id": log.id,
+                "timestamp": log.timestamp.isoformat(),
+                "phase": log.phase,
+                "status": log.status,
+                "progress": log.progress,
+            }
+            
+            if log.completed is not None:
+                entry["completed"] = log.completed
+            
+            if log.total is not None:
+                entry["total"] = log.total
+            
+            if log.extra_data:
+                try:
+                    entry["extra_data"] = json.loads(log.extra_data)
+                except json.JSONDecodeError:
+                    entry["extra_data"] = log.extra_data
+            
+            log_entries.append(entry)
+        
+        logger.info(f"Retrieved {len(log_entries)} log entries for job {job_id}")
+        
+        return {
+            "job_id": str(job_id),
+            "job_status": job.status,
+            "total_logs": len(log_entries),
+            "logs": log_entries,
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get logs for job {job_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get job logs: {str(e)}",
+        )

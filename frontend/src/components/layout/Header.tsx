@@ -17,6 +17,11 @@ const routeNames: Record<string, string> = {
   '/models': 'nav.models',
   '/cache': 'nav.cache',
   '/settings': 'nav.settings',
+  '/corrections': 'nav.corrections',
+  '/profile': 'nav.profile',
+  '/subtitles': 'nav.subtitles',
+  '/auto-translation': 'nav.autoTranslation',
+  '/task-center': 'nav.taskCenter',
 }
 
 export function Header() {

@@ -39,7 +39,9 @@ export interface JellyfinLibrary {
   name: string
   type: string
   item_count: number
-  image_url?: string
+  image_url?: string | null
+  image_tags?: Record<string, string> | null
+  image_item_id?: string | null
 }
 
 export interface JellyfinMediaItem {

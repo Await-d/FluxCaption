@@ -180,27 +180,19 @@ export function Corrections() {
 
   return (
     <div className="max-w-6xl space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold">纠正规则管理</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            管理翻译内容的自动纠正规则
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setShowImport(true)}>
-            <FileUp className="mr-2 h-4 w-4" />
-            批量导入
-          </Button>
-          <Button variant="outline" onClick={handleExport}>
-            <Download className="mr-2 h-4 w-4" />
-            导出规则
-          </Button>
-          <Button onClick={() => setIsAddingRule(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            添加规则
-          </Button>
-        </div>
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" onClick={() => setShowImport(true)}>
+          <FileUp className="mr-2 h-4 w-4" />
+          批量导入
+        </Button>
+        <Button variant="outline" onClick={handleExport}>
+          <Download className="mr-2 h-4 w-4" />
+          导出规则
+        </Button>
+        <Button onClick={() => setIsAddingRule(true)}>
+          <Plus className="mr-2 h-4 w-4" />
+          添加规则
+        </Button>
       </div>
 
       {/* Import Dialog */}

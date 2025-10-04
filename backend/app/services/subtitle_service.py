@@ -385,12 +385,12 @@ class SubtitleService:
                 batch_translations = []
                 for line_idx, line in enumerate(batch):
                     current_line_num = i + line_idx
-                    
+
                     # Get timing information from the subtitle event
                     event = subs[current_line_num]
                     start_time = event.start / 1000.0  # Convert ms to seconds
                     end_time = event.end / 1000.0
-                    
+
                     # Check cache first if available
                     cached_translation = None
                     if cache_service and line.strip():
@@ -435,7 +435,7 @@ class SubtitleService:
                     if db_session and line.strip():
                         try:
                             from app.models.translation_memory import TranslationMemory
-                            
+
                             tm_record = TranslationMemory(
                                 subtitle_id=subtitle_id,
                                 asset_id=asset_id,
@@ -456,20 +456,15 @@ class SubtitleService:
                         except Exception as e:
                             logger.warning(f"Failed to save translation memory record: {e}")
 
-                translated_texts.extend(batch_translations)
-                completed += len(batch)
+                    # Update progress after each line (real-time progress)
+                    completed += 1
+                    if progress_callback:
+                        source_text = line[:50] + "..." if len(line) > 50 else line
+                        target_text = batch_translations[-1][:50] + "..." if len(batch_translations[-1]) > 50 else batch_translations[-1]
+                        message = f"行 {current_line_num + 1}/{total_events}: {source_text} → {target_text}"
+                        progress_callback(completed, total_events, message)
 
-                # Progress callback with detailed message showing source and translated text
-                if progress_callback:
-                    # Show the actual source text and translation for the last line in this batch
-                    if batch and batch_translations:
-                        source_text = batch[-1]  # Last source text in batch
-                        target_text = batch_translations[-1]  # Last translation in batch
-                        message = f"行 {current_line_num + 1}: {source_text} → {target_text}"
-                    else:
-                        message = f"行 {i+1}-{batch_end}"
-                    
-                    progress_callback(completed, total_events, message)
+                translated_texts.extend(batch_translations)
 
             # Commit all translation memory records at once
             if db_session:

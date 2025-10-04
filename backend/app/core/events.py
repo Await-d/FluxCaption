@@ -87,7 +87,7 @@ class EventPublisher:
         error: str | None = None,
     ) -> None:
         """
-        Publish job progress event.
+        Publish job progress event and save to database log.
 
         Args:
             job_id: Job ID
@@ -115,6 +115,28 @@ class EventPublisher:
             event_data["error"] = error
 
         await self.publish_event(f"job:{job_id}", event_data)
+
+        # Also save to database for historical viewing
+        try:
+            from app.core.db import SessionLocal
+            from app.models.task_log import TaskLog
+            from datetime import datetime, timezone
+
+            with SessionLocal() as session:
+                log_entry = TaskLog(
+                    job_id=job_id,
+                    timestamp=datetime.now(timezone.utc),
+                    phase=phase,
+                    status=status,
+                    progress=progress,
+                    completed=completed,
+                    total=total,
+                    extra_data=json.dumps({"error": error}) if error else None,
+                )
+                session.add(log_entry)
+                session.commit()
+        except Exception as e:
+            logger.warning(f"Failed to save task log to database: {e}")
 
 
 class EventSubscriber:

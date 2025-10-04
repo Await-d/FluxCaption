@@ -64,6 +64,19 @@ class SubtitleContentResponse(BaseModel):
     line_count: int
 
 
+class DeleteSubtitleRequest(BaseModel):
+    """Request for deleting subtitles."""
+    subtitle_ids: list[str]
+    delete_files: bool = False  # Whether to delete physical files
+
+
+class DeleteSubtitleResponse(BaseModel):
+    """Response for subtitle deletion."""
+    deleted_count: int
+    failed_ids: list[str]
+    message: str
+
+
 # =============================================================================
 # Endpoints
 # =============================================================================
@@ -253,4 +266,131 @@ async def get_subtitle_stats(
 
     except Exception as e:
         logger.error(f"Failed to get subtitle stats: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+
+@router.delete("/{subtitle_id}")
+async def delete_subtitle(
+    subtitle_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+    delete_file: bool = Query(default=False, description="Delete physical file"),
+):
+    """
+    Delete a single subtitle record.
+
+    Args:
+        subtitle_id: Subtitle record ID
+        db: Database session
+        delete_file: Whether to delete the physical file
+
+    Returns:
+        Success message
+    """
+    try:
+        # Get subtitle record
+        subtitle = db.query(Subtitle).filter(Subtitle.id == subtitle_id).first()
+
+        if not subtitle:
+            raise HTTPException(status_code=404, detail="Subtitle not found")
+
+        # Delete physical file if requested
+        if delete_file:
+            from pathlib import Path
+            file_path = Path(subtitle.storage_path)
+            if file_path.exists():
+                try:
+                    file_path.unlink()
+                    logger.info(f"Deleted subtitle file: {file_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete subtitle file {file_path}: {e}")
+
+        # Delete database record
+        db.delete(subtitle)
+        db.commit()
+
+        logger.info(f"Deleted subtitle record: {subtitle_id}")
+
+        return {
+            "message": "Subtitle deleted successfully",
+            "subtitle_id": subtitle_id,
+            "file_deleted": delete_file,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete subtitle: {e}", exc_info=True)
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post("/batch-delete", response_model=DeleteSubtitleResponse)
+async def batch_delete_subtitles(
+    request: DeleteSubtitleRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+):
+    """
+    Delete multiple subtitle records in batch.
+
+    Args:
+        request: Batch delete request with subtitle IDs
+        db: Database session
+
+    Returns:
+        Deletion result with count and failed IDs
+    """
+    try:
+        if not request.subtitle_ids:
+            raise HTTPException(status_code=400, detail="No subtitle IDs provided")
+
+        deleted_count = 0
+        failed_ids = []
+
+        for subtitle_id in request.subtitle_ids:
+            try:
+                # Get subtitle record
+                subtitle = db.query(Subtitle).filter(Subtitle.id == subtitle_id).first()
+
+                if not subtitle:
+                    failed_ids.append(subtitle_id)
+                    continue
+
+                # Delete physical file if requested
+                if request.delete_files:
+                    from pathlib import Path
+                    file_path = Path(subtitle.storage_path)
+                    if file_path.exists():
+                        try:
+                            file_path.unlink()
+                            logger.info(f"Deleted subtitle file: {file_path}")
+                        except Exception as e:
+                            logger.warning(f"Failed to delete subtitle file {file_path}: {e}")
+
+                # Delete database record
+                db.delete(subtitle)
+                deleted_count += 1
+
+            except Exception as e:
+                logger.error(f"Failed to delete subtitle {subtitle_id}: {e}")
+                failed_ids.append(subtitle_id)
+
+        # Commit all deletions
+        db.commit()
+
+        logger.info(f"Batch deleted {deleted_count} subtitles, {len(failed_ids)} failed")
+
+        return DeleteSubtitleResponse(
+            deleted_count=deleted_count,
+            failed_ids=failed_ids,
+            message=f"Successfully deleted {deleted_count} subtitle(s), {len(failed_ids)} failed",
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to batch delete subtitles: {e}", exc_info=True)
+        db.rollback()
         raise HTTPException(status_code=500, detail="Internal server error")

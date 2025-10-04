@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Download, Save, Edit2 } from 'lucide-react'
 import {
@@ -31,6 +31,13 @@ export function SubtitlePreviewDialog({
   const [isEditing, setIsEditing] = useState(false)
   const queryClient = useQueryClient()
 
+  // Refs for scroll containers
+  const sourceScrollRef = useRef<HTMLDivElement>(null)
+  const resultScrollRef = useRef<HTMLDivElement>(null)
+
+  // Store scroll positions before loading more
+  const [scrollPositions, setScrollPositions] = useState({ source: 0, result: 0 })
+
   // Fetch source subtitle
   const { data: sourceData, isLoading: sourceLoading, error: sourceError } = useQuery({
     queryKey: ['subtitle-preview', jobId, 'source', limit, offset],
@@ -51,11 +58,29 @@ export function SubtitlePreviewDialog({
       setEditedEntries({})
       setIsEditing(false)
       setLimit(100) // Reset to initial limit
+      setScrollPositions({ source: 0, result: 0 })
     }
   }, [open])
 
-  // Handle load more
+  // Restore scroll positions after data loads
+  useEffect(() => {
+    if (sourceData && sourceScrollRef.current) {
+      sourceScrollRef.current.scrollTop = scrollPositions.source
+    }
+    if (resultData && resultScrollRef.current) {
+      resultScrollRef.current.scrollTop = scrollPositions.result
+    }
+  }, [sourceData, resultData, scrollPositions])
+
+  // Handle load more - save scroll position first
   const handleLoadMore = () => {
+    // Save current scroll positions
+    if (sourceScrollRef.current || resultScrollRef.current) {
+      setScrollPositions({
+        source: sourceScrollRef.current?.scrollTop || 0,
+        result: resultScrollRef.current?.scrollTop || 0,
+      })
+    }
     setLimit(prev => prev + 100)
   }
 
@@ -189,7 +214,7 @@ export function SubtitlePreviewDialog({
                 <div className="bg-muted/50 p-3 border-b flex-shrink-0">
                   <h3 className="font-semibold text-sm">源字幕 {sourceError && '(ASR识别)'}</h3>
                 </div>
-                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                <div ref={sourceScrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
                   {sourceLoading && (
                     <div className="text-center text-muted-foreground">
                       加载中...
@@ -258,7 +283,7 @@ export function SubtitlePreviewDialog({
                 <div className="bg-muted/50 p-3 border-b flex-shrink-0">
                   <h3 className="font-semibold text-sm">翻译字幕 {isEditing && <span className="text-xs text-muted-foreground">(可编辑)</span>}</h3>
                 </div>
-                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                <div ref={resultScrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
                   {isLoading && (
                     <div className="text-center text-muted-foreground">
                       加载中...

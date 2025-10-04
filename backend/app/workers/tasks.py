@@ -27,6 +27,116 @@ def run_async(coro):
 
 
 # =============================================================================
+# Checkpoint/Resume Helper Functions
+# =============================================================================
+
+def save_checkpoint(session, job_id: str, phase: str, **kwargs):
+    """
+    Save a checkpoint for task resumption.
+
+    Args:
+        session: Database session
+        job_id: Job ID
+        phase: Completed phase name
+        **kwargs: Additional checkpoint data (asr_output_path, completed_target_langs, etc.)
+    """
+    from app.models.translation_job import TranslationJob
+    from datetime import datetime, timezone
+
+    job = session.query(TranslationJob).filter(TranslationJob.id == job_id).first()
+    if not job:
+        logger.warning(f"Job {job_id} not found, cannot save checkpoint")
+        return
+
+    # Load existing completed phases
+    completed_phases = []
+    if job.completed_phases:
+        try:
+            completed_phases = json.loads(job.completed_phases)
+        except:
+            completed_phases = []
+
+    # Add new phase if not already present
+    if phase and phase not in completed_phases:
+        completed_phases.append(phase)
+        job.completed_phases = json.dumps(completed_phases)
+
+    # Update checkpoint fields
+    if 'asr_output_path' in kwargs:
+        job.asr_output_path = kwargs['asr_output_path']
+
+    if 'completed_target_lang' in kwargs:
+        # Load existing completed languages
+        completed_langs = []
+        if job.completed_target_langs:
+            try:
+                completed_langs = json.loads(job.completed_target_langs)
+            except:
+                completed_langs = []
+
+        # Add new language if not already present
+        lang = kwargs['completed_target_lang']
+        if lang not in completed_langs:
+            completed_langs.append(lang)
+            job.completed_target_langs = json.dumps(completed_langs)
+
+    # Update checkpoint timestamp
+    job.last_checkpoint_at = datetime.now(timezone.utc)
+
+    session.commit()
+    logger.info(f"Checkpoint saved for job {job_id}: phase={phase}, data={kwargs}")
+
+
+def check_phase_completed(job, phase: str) -> bool:
+    """
+    Check if a phase has been completed.
+
+    Args:
+        job: TranslationJob instance
+        phase: Phase name to check
+
+    Returns:
+        bool: True if phase is completed
+    """
+    if not job.completed_phases:
+        return False
+
+    try:
+        completed = json.loads(job.completed_phases)
+        return phase in completed
+    except:
+        return False
+
+
+def get_remaining_target_langs(job) -> list:
+    """
+    Get list of target languages that haven't been translated yet.
+
+    Args:
+        job: TranslationJob instance
+
+    Returns:
+        list: List of remaining target language codes
+    """
+    try:
+        all_targets = json.loads(job.target_langs)
+
+        if not job.completed_target_langs:
+            return all_targets
+
+        completed = json.loads(job.completed_target_langs)
+        remaining = [lang for lang in all_targets if lang not in completed]
+
+        return remaining
+    except:
+        # On error, return all targets
+        try:
+            return json.loads(job.target_langs)
+        except:
+            return []
+
+
+# =============================================================================
 # Base Task Class
 # =============================================================================
 
@@ -159,53 +269,70 @@ def translate_subtitle_task(self, job_id: str) -> dict:
             model = job.model
             item_id = job.item_id  # Extract item_id for writeback
 
-            # === 2. Ensure model is available ===
+            # === 2. Ensure model is available (with checkpoint support) ===
             from app.services.ollama_client import ollama_client
 
-            logger.info(f"Checking model availability: {model}")
-            job.current_phase = "model_check"
+            # Check if model pull phase was already completed
+            with session_scope() as session:
+                job = session.query(TranslationJob).filter(TranslationJob.id == job_id).first()
+                pull_completed = check_phase_completed(job, "pull")
 
-            model_exists = run_async(ollama_client.check_model_exists(model))
+            if not pull_completed:
+                logger.info(f"Checking model availability: {model}")
+                job.current_phase = "model_check"
 
-            if not model_exists:
-                logger.info(f"Model {model} not found locally, pulling...")
-                job.current_phase = "pull"
+                model_exists = run_async(ollama_client.check_model_exists(model))
 
-                # Publish pull start event
-                run_async(event_publisher.publish_job_progress(
-                    job_id=job_id,
-                    phase="pull",
-                    status="pulling",
-                    progress=0,
-                ))
+                if not model_exists:
+                    logger.info(f"Model {model} not found locally, pulling...")
+                    job.current_phase = "pull"
 
-                # Pull model with progress callback
-                def pull_progress_callback(progress_data: dict):
-                    # Forward progress to SSE
-                    completed = progress_data.get("completed", 0)
-                    total = progress_data.get("total", 0)
-                    status_msg = progress_data.get("status", "")
+                    # Publish pull start event
+                    run_async(event_publisher.publish_job_progress(
+                        job_id=job_id,
+                        phase="pull",
+                        status="pulling",
+                        progress=0,
+                    ))
 
-                    if total > 0:
-                        progress_pct = (completed / total) * 100
-                    else:
-                        progress_pct = 0
+                    # Pull model with progress callback
+                    def pull_progress_callback(progress_data: dict):
+                        # Forward progress to SSE
+                        completed = progress_data.get("completed", 0)
+                        total = progress_data.get("total", 0)
+                        status_msg = progress_data.get("status", "")
 
-                    # Publish to Redis for SSE
-                    try:
-                        run_async(event_publisher.publish_job_progress(
-                            job_id=job_id,
-                            phase="pull",
-                            status=status_msg,
-                            progress=progress_pct,
-                            completed=completed,
-                            total=total,
-                        ))
-                    except Exception as e:
-                        logger.warning(f"Failed to publish progress: {e}")
+                        if total > 0:
+                            progress_pct = (completed / total) * 100
+                        else:
+                            progress_pct = 0
 
-                run_async(ollama_client.pull_model(model, progress_callback=pull_progress_callback))
-                logger.info(f"Model {model} pulled successfully")
+                        # Publish to Redis for SSE
+                        try:
+                            run_async(event_publisher.publish_job_progress(
+                                job_id=job_id,
+                                phase="pull",
+                                status=status_msg,
+                                progress=progress_pct,
+                                completed=completed,
+                                total=total,
+                            ))
+                        except Exception as e:
+                            logger.warning(f"Failed to publish progress: {e}")
+
+                    run_async(ollama_client.pull_model(model, progress_callback=pull_progress_callback))
+                    logger.info(f"Model {model} pulled successfully")
+
+                    # Save checkpoint after successful pull
+                    with session_scope() as session:
+                        save_checkpoint(session, job_id, "pull")
+                else:
+                    logger.info(f"Model {model} already exists locally")
+                    # Save checkpoint even if model exists (no pull needed)
+                    with session_scope() as session:
+                        save_checkpoint(session, job_id, "pull")
+            else:
+                logger.info(f"Model pull phase already completed, skipping...")
 
             # === 3. Load and translate subtitle ===
             from app.services.subtitle_service import SubtitleService
@@ -216,73 +343,108 @@ def translate_subtitle_task(self, job_id: str) -> dict:
             output_dir = Path(settings.subtitle_output_dir)
             output_dir.mkdir(parents=True, exist_ok=True)
 
-            result_paths = []
-            total_targets = len(target_langs)
+            # Get remaining target languages (checkpoint support)
+            with session_scope() as session:
+                job = session.query(TranslationJob).filter(TranslationJob.id == job_id).first()
+                remaining_langs = get_remaining_target_langs(job)
 
-            for idx, target_lang in enumerate(target_langs):
-                logger.info(f"Translating to {target_lang} ({idx+1}/{total_targets})")
-
+            # If all languages completed, use existing result paths
+            if len(remaining_langs) == 0:
+                logger.info("All target languages already translated, skipping translation phase")
+                # Load existing result paths
                 with session_scope() as session:
                     job = session.query(TranslationJob).filter(TranslationJob.id == job_id).first()
-                    job.current_phase = "mt"
-                    session.commit()
+                    if job.result_paths:
+                        result_paths = json.loads(job.result_paths)
+                    else:
+                        result_paths = []
+            else:
+                logger.info(f"Resuming translation: {len(remaining_langs)} languages remaining: {remaining_langs}")
 
-                # Build output path
-                source_file = Path(source_path)
-                output_path = output_dir / f"{source_file.stem}_{target_lang}{source_file.suffix}"
-
-                # Progress callback for translation
-                def progress_callback(completed: int, total: int, message: str = ""):
-                    progress_pct = (completed / total) * 100
-                    base_progress = (idx / total_targets) * 100
-                    current_progress = base_progress + (progress_pct / total_targets)
-
-                    # Use message if provided, otherwise use default
-                    status_msg = message if message else f"Translating to {target_lang}"
-
-                    # Publish progress
-                    try:
-                        run_async(event_publisher.publish_job_progress(
-                            job_id=job_id,
-                            phase="mt",
-                            status=status_msg,
-                            progress=current_progress,
-                            completed=completed,
-                            total=total,
-                        ))
-                    except Exception as e:
-                        logger.warning(f"Failed to publish progress: {e}")
-
-                # Get asset_id and media_name for translation memory
-                asset_id = None
-                media_name = None
-                if item_id:
-                    with session_scope() as session:
-                        from app.models.media_asset import MediaAsset
-                        asset = session.query(MediaAsset).filter_by(item_id=item_id).first()
-                        if asset:
-                            asset_id = str(asset.id)
-                            media_name = asset.name
-
-                # Perform translation with translation memory support
+                # Load existing result paths if any
                 with session_scope() as session:
-                    stats = run_async(SubtitleService.translate_subtitle(
-                        input_path=str(source_path),
-                        output_path=str(output_path),
-                        source_lang=source_lang,
-                        target_lang=target_lang,
-                        model=model,
-                        batch_size=settings.translation_batch_size,
-                        preserve_formatting=settings.preserve_ass_styles,
-                        progress_callback=progress_callback,
-                        db_session=session,
-                        subtitle_id=None,
-                        asset_id=asset_id,
-                        media_name=media_name,
-                    ))
+                    job = session.query(TranslationJob).filter(TranslationJob.id == job_id).first()
+                    if job.result_paths:
+                        result_paths = json.loads(job.result_paths)
+                    else:
+                        result_paths = []
 
-                result_paths.append(str(output_path))
-                logger.info(f"Translation to {target_lang} completed: {stats}")
+                total_targets = len(target_langs)
+                completed_count = total_targets - len(remaining_langs)
+
+                for idx, target_lang in enumerate(remaining_langs):
+                    actual_idx = completed_count + idx
+                    logger.info(f"Translating to {target_lang} ({actual_idx+1}/{total_targets})")
+
+                    with session_scope() as session:
+                        job = session.query(TranslationJob).filter(TranslationJob.id == job_id).first()
+                        job.current_phase = "mt"
+                        session.commit()
+
+                    # Build output path
+                    source_file = Path(source_path)
+                    output_path = output_dir / f"{source_file.stem}_{target_lang}{source_file.suffix}"
+
+                    # Progress callback for translation
+                    def progress_callback(completed: int, total: int, message: str = ""):
+                        progress_pct = (completed / total) * 100
+                        base_progress = (actual_idx / total_targets) * 100
+                        current_progress = base_progress + (progress_pct / total_targets)
+
+                        # Use message if provided, otherwise use default
+                        status_msg = message if message else f"Translating to {target_lang}"
+
+                        # Publish progress
+                        try:
+                            run_async(event_publisher.publish_job_progress(
+                                job_id=job_id,
+                                phase="mt",
+                                status=status_msg,
+                                progress=current_progress,
+                                completed=completed,
+                                total=total,
+                            ))
+                        except Exception as e:
+                            logger.warning(f"Failed to publish progress: {e}")
+
+                    # Get asset_id and media_name for translation memory
+                    asset_id = None
+                    media_name = None
+                    if item_id:
+                        with session_scope() as session:
+                            from app.models.media_asset import MediaAsset
+                            asset = session.query(MediaAsset).filter_by(item_id=item_id).first()
+                            if asset:
+                                asset_id = str(asset.id)
+                                media_name = asset.name
+
+                    # Perform translation with translation memory support
+                    with session_scope() as session:
+                        stats = run_async(SubtitleService.translate_subtitle(
+                            input_path=str(source_path),
+                            output_path=str(output_path),
+                            source_lang=source_lang,
+                            target_lang=target_lang,
+                            model=model,
+                            batch_size=settings.translation_batch_size,
+                            preserve_formatting=settings.preserve_ass_styles,
+                            progress_callback=progress_callback,
+                            db_session=session,
+                            subtitle_id=None,
+                            asset_id=asset_id,
+                            media_name=media_name,
+                        ))
+
+                    result_paths.append(str(output_path))
+                    logger.info(f"Translation to {target_lang} completed: {stats}")
+
+                    # Save checkpoint after each language completes
+                    with session_scope() as session:
+                        save_checkpoint(session, job_id, None, completed_target_lang=target_lang)
+                        # Also save result paths progressively
+                        job = session.query(TranslationJob).filter(TranslationJob.id == job_id).first()
+                        job.result_paths = json.dumps(result_paths)
+                        session.commit()
 
             # === 4. Writeback to Jellyfin (if item_id present) ===
             with session_scope() as session:
@@ -325,17 +487,47 @@ def translate_subtitle_task(self, job_id: str) -> dict:
                             session.add(asset)
                             session.flush()
 
-                        # Create subtitle record
-                        subtitle = Subtitle(
-                            asset_id=asset.id,
-                            lang=target_lang,
-                            format=Path(output_path).suffix.lstrip('.'),
-                            storage_path=output_path,
-                            origin="mt",
-                            source_lang=source_lang,
-                            is_uploaded=False,
-                        )
-                        session.add(subtitle)
+                        # Calculate line count and word count
+                        try:
+                            import pysubs2
+                            subs = pysubs2.load(output_path)
+                            line_count = len(subs)
+                            word_count = sum(len(event.text.split()) for event in subs)
+                        except Exception as e:
+                            logger.warning(f"Failed to calculate subtitle stats: {e}")
+                            line_count = None
+                            word_count = None
+
+                        # Check if subtitle already exists (avoid duplicates)
+                        existing_subtitle = session.query(Subtitle).filter(
+                            Subtitle.asset_id == asset.id,
+                            Subtitle.lang == target_lang,
+                            Subtitle.origin == "mt",
+                            Subtitle.source_lang == source_lang
+                        ).first()
+
+                        if existing_subtitle:
+                            logger.info(f"Subtitle already exists for {target_lang}, updating instead of creating duplicate")
+                            existing_subtitle.storage_path = output_path
+                            existing_subtitle.line_count = line_count
+                            existing_subtitle.word_count = word_count
+                            existing_subtitle.updated_at = datetime.now(timezone.utc)
+                            subtitle = existing_subtitle
+                        else:
+                            # Create subtitle record
+                            subtitle = Subtitle(
+                                asset_id=asset.id,
+                                lang=target_lang,
+                                format=Path(output_path).suffix.lstrip('.'),
+                                storage_path=output_path,
+                                origin="mt",
+                                source_lang=source_lang,
+                                is_uploaded=False,
+                                line_count=line_count,
+                                word_count=word_count,
+                            )
+                            session.add(subtitle)
+
                         session.commit()
 
                         # Perform writeback
@@ -480,110 +672,158 @@ def asr_then_translate_task(self, job_id: str) -> dict:
             if not is_url and (not source_path or not Path(source_path).exists()):
                 raise FileNotFoundError(f"Source media file not found: {source_path}")
 
-            # === 2. Extract audio from media ===
-            from app.services.audio_extractor import AudioExtractor
-
-            logger.info(f"Extracting audio from {source_path}")
-
-            with session_scope() as session:
-                job = session.query(TranslationJob).filter(TranslationJob.id == job_id).first()
-                job.current_phase = "extract"
-                session.commit()
-
-            run_async(event_publisher.publish_job_progress(
-                job_id=job_id,
-                phase="extract",
-                status="extracting audio",
-                progress=5,
-            ))
-
-            # Create temp directory for audio
+            # Define paths that will be used
             audio_temp_dir = Path(settings.temp_dir) / f"asr_{job_id}"
-            audio_temp_dir.mkdir(parents=True, exist_ok=True)
             audio_path = audio_temp_dir / "audio.wav"
-
-            extractor = AudioExtractor()
-
-            def extract_progress_callback(progress: float):
-                try:
-                    run_async(event_publisher.publish_job_progress(
-                        job_id=job_id,
-                        phase="extract",
-                        status="extracting audio",
-                        progress=5 + (progress * 0.15),  # 5-20%
-                    ))
-                except Exception as e:
-                    logger.warning(f"Failed to publish extract progress: {e}")
-
-            extractor.extract_audio(
-                video_path=str(source_path),
-                output_path=str(audio_path),
-                sample_rate=16000,
-                channels=1,
-                progress_callback=extract_progress_callback,
-            )
-
-            logger.info(f"Audio extracted to {audio_path}")
-
-            # === 3. Perform ASR (faster-whisper) ===
-            from app.services.asr_service import get_asr_service
-
-            logger.info("Starting ASR transcription")
-
-            with session_scope() as session:
-                job = session.query(TranslationJob).filter(TranslationJob.id == job_id).first()
-                job.current_phase = "asr"
-                session.commit()
-
-            run_async(event_publisher.publish_job_progress(
-                job_id=job_id,
-                phase="asr",
-                status="transcribing audio",
-                progress=20,
-            ))
-
-            asr_service = get_asr_service()
-
-            # Determine ASR language
-            asr_lang = None if source_lang == "auto" else source_lang
-
-            def asr_progress_callback(completed: int, total: int):
-                try:
-                    if total > 0:
-                        progress_pct = 20 + (completed / total) * 30  # 20-50%
-                    else:
-                        progress_pct = 20
-                    run_async(event_publisher.publish_job_progress(
-                        job_id=job_id,
-                        phase="asr",
-                        status=f"transcribing ({completed} segments)",
-                        progress=progress_pct,
-                        completed=completed,
-                        total=total,
-                    ))
-                except Exception as e:
-                    logger.warning(f"Failed to publish ASR progress: {e}")
-
-            # Create output directory for ASR subtitle
             asr_output_dir = Path(settings.subtitle_output_dir) / "asr"
             asr_output_dir.mkdir(parents=True, exist_ok=True)
             asr_subtitle_path = asr_output_dir / f"{job_id}_original.srt"
 
-            asr_result = asr_service.transcribe_to_srt(
-                audio_path=str(audio_path),
-                output_path=str(asr_subtitle_path),
-                language=asr_lang,
-                vad_filter=settings.asr_vad_filter,
-                vad_threshold=settings.asr_vad_threshold,
-                beam_size=settings.asr_beam_size,
-                best_of=settings.asr_best_of,
-                progress_callback=asr_progress_callback,
-            )
+            # Check if ASR phase was already completed (checkpoint support)
+            with session_scope() as session:
+                job = session.query(TranslationJob).filter(TranslationJob.id == job_id).first()
+                asr_completed = check_phase_completed(job, "asr")
+                # Also check if we have saved ASR output path
+                if job.asr_output_path and Path(job.asr_output_path).exists():
+                    asr_subtitle_path = Path(job.asr_output_path)
+                    if source_lang == "auto":
+                        # Try to load detected language from saved subtitle metadata
+                        # For now, we'll need to re-run ASR if source_lang was auto
+                        # In the future, could save detected language to job metadata
+                        pass
 
-            logger.info(
-                f"ASR complete: {asr_result['num_segments']} segments, "
-                f"language={asr_result['language']}"
-            )
+            if not asr_completed:
+                # === 2. Extract audio from media (with checkpoint support) ===
+                from app.services.audio_extractor import AudioExtractor
+
+                extract_completed = False
+                with session_scope() as session:
+                    job = session.query(TranslationJob).filter(TranslationJob.id == job_id).first()
+                    extract_completed = check_phase_completed(job, "extract")
+
+                if not extract_completed:
+                    logger.info(f"Extracting audio from {source_path}")
+
+                    with session_scope() as session:
+                        job = session.query(TranslationJob).filter(TranslationJob.id == job_id).first()
+                        job.current_phase = "extract"
+                        session.commit()
+
+                    run_async(event_publisher.publish_job_progress(
+                        job_id=job_id,
+                        phase="extract",
+                        status="extracting audio",
+                        progress=5,
+                    ))
+
+                    # Create temp directory for audio
+                    audio_temp_dir.mkdir(parents=True, exist_ok=True)
+
+                    extractor = AudioExtractor()
+
+                    def extract_progress_callback(progress: float):
+                        try:
+                            run_async(event_publisher.publish_job_progress(
+                                job_id=job_id,
+                                phase="extract",
+                                status="extracting audio",
+                                progress=5 + (progress * 0.15),  # 5-20%
+                            ))
+                        except Exception as e:
+                            logger.warning(f"Failed to publish extract progress: {e}")
+
+                    extractor.extract_audio(
+                        video_path=str(source_path),
+                        output_path=str(audio_path),
+                        sample_rate=16000,
+                        channels=1,
+                        progress_callback=extract_progress_callback,
+                    )
+
+                    logger.info(f"Audio extracted to {audio_path}")
+
+                    # Save checkpoint after extraction
+                    with session_scope() as session:
+                        save_checkpoint(session, job_id, "extract")
+                else:
+                    logger.info("Audio extraction phase already completed, skipping...")
+
+                # === 3. Perform ASR (faster-whisper) with checkpoint support ===
+                from app.services.asr_service import get_asr_service
+
+                logger.info("Starting ASR transcription")
+
+                with session_scope() as session:
+                    job = session.query(TranslationJob).filter(TranslationJob.id == job_id).first()
+                    job.current_phase = "asr"
+                    session.commit()
+
+                run_async(event_publisher.publish_job_progress(
+                    job_id=job_id,
+                    phase="asr",
+                    status="transcribing audio",
+                    progress=20,
+                ))
+
+                asr_service = get_asr_service()
+
+                # Determine ASR language
+                asr_lang = None if source_lang == "auto" else source_lang
+
+                def asr_progress_callback(completed: int, total: int):
+                    try:
+                        if total > 0:
+                            progress_pct = 20 + (completed / total) * 30  # 20-50%
+                        else:
+                            progress_pct = 20
+                        run_async(event_publisher.publish_job_progress(
+                            job_id=job_id,
+                            phase="asr",
+                            status=f"transcribing ({completed} segments)",
+                            progress=progress_pct,
+                            completed=completed,
+                            total=total,
+                        ))
+                    except Exception as e:
+                        logger.warning(f"Failed to publish ASR progress: {e}")
+
+                asr_result = asr_service.transcribe_to_srt(
+                    audio_path=str(audio_path),
+                    output_path=str(asr_subtitle_path),
+                    language=asr_lang,
+                    vad_filter=settings.asr_vad_filter,
+                    vad_threshold=settings.asr_vad_threshold,
+                    beam_size=settings.asr_beam_size,
+                    best_of=settings.asr_best_of,
+                    progress_callback=asr_progress_callback,
+                )
+
+                logger.info(
+                    f"ASR complete: {asr_result['num_segments']} segments, "
+                    f"language={asr_result['language']}"
+                )
+
+                # Save checkpoint after ASR with output path
+                with session_scope() as session:
+                    save_checkpoint(session, job_id, "asr", asr_output_path=str(asr_subtitle_path))
+
+                # Clean up audio file after successful ASR
+                if audio_path.exists():
+                    audio_path.unlink(missing_ok=True)
+                    logger.info(f"Cleaned up temporary audio file: {audio_path}")
+            else:
+                logger.info("ASR phase already completed, using existing subtitle")
+                # Load ASR result from existing file
+                asr_result = {"num_segments": 0, "language": source_lang}
+                if asr_subtitle_path.exists():
+                    # Count lines in SRT file for segment count
+                    try:
+                        with open(asr_subtitle_path, 'r', encoding='utf-8') as f:
+                            content = f.read()
+                            # Simple count: number of timestamp lines
+                            asr_result["num_segments"] = content.count('-->')
+                    except:
+                        pass
 
             # Update source language if it was auto-detected
             if source_lang == "auto":
@@ -608,25 +848,48 @@ def asr_then_translate_task(self, job_id: str) -> dict:
                     session.add(asset)
                     session.flush()
 
-                # Create subtitle record for ASR source
-                asr_source_subtitle = Subtitle(
-                    asset_id=asset.id,
-                    lang=source_lang,
-                    format="srt",
-                    storage_path=str(asr_subtitle_path),
-                    origin="asr",
-                    source_lang=None,  # This IS the source, no source_lang
-                    is_uploaded=False,
-                    line_count=asr_result.get("num_segments", 0),
-                )
-                session.add(asr_source_subtitle)
+                # Calculate word count for ASR subtitle
+                try:
+                    import pysubs2
+                    subs = pysubs2.load(str(asr_subtitle_path))
+                    asr_word_count = sum(len(event.text.split()) for event in subs)
+                except Exception as e:
+                    logger.warning(f"Failed to calculate ASR word count: {e}")
+                    asr_word_count = None
+
+                # Check if ASR subtitle already exists (avoid duplicates)
+                existing_asr_subtitle = session.query(Subtitle).filter(
+                    Subtitle.asset_id == asset.id,
+                    Subtitle.lang == source_lang,
+                    Subtitle.origin == "asr"
+                ).first()
+
+                if existing_asr_subtitle:
+                    logger.info(f"ASR subtitle already exists for {source_lang}, updating instead of creating duplicate")
+                    existing_asr_subtitle.storage_path = str(asr_subtitle_path)
+                    existing_asr_subtitle.line_count = asr_result.get("num_segments", 0)
+                    existing_asr_subtitle.word_count = asr_word_count
+                    existing_asr_subtitle.updated_at = datetime.now(timezone.utc)
+                    asr_source_subtitle = existing_asr_subtitle
+                else:
+                    # Create subtitle record for ASR source
+                    asr_source_subtitle = Subtitle(
+                        asset_id=asset.id,
+                        lang=source_lang,
+                        format="srt",
+                        storage_path=str(asr_subtitle_path),
+                        origin="asr",
+                        source_lang=None,  # This IS the source, no source_lang
+                        is_uploaded=False,
+                        line_count=asr_result.get("num_segments", 0),
+                        word_count=asr_word_count,
+                    )
+                    session.add(asr_source_subtitle)
+
                 session.commit()
                 logger.info(f"Saved ASR source subtitle to database: {source_lang}, {asr_result.get('num_segments', 0)} segments")
 
-            # Clean up audio file
-            audio_path.unlink(missing_ok=True)
-
-            # === 4. Translate generated subtitle ===
+            # === 4. Translate generated subtitle (with checkpoint support) ===
             from app.services.subtitle_service import SubtitleService
 
             logger.info("Starting translation of ASR-generated subtitle")
@@ -640,53 +903,104 @@ def asr_then_translate_task(self, job_id: str) -> dict:
             output_dir = Path(settings.subtitle_output_dir)
             output_dir.mkdir(parents=True, exist_ok=True)
 
-            result_paths = []
-            total_targets = len(target_langs)
+            # Get remaining target languages (checkpoint support)
+            with session_scope() as session:
+                job = session.query(TranslationJob).filter(TranslationJob.id == job_id).first()
+                remaining_langs = get_remaining_target_langs(job)
 
-            for idx, target_lang in enumerate(target_langs):
-                logger.info(f"Translating to {target_lang} ({idx+1}/{total_targets})")
-
-                # Build output path
-                source_file = Path(asr_subtitle_path)
-                output_path = output_dir / f"{source_file.stem}_{target_lang}.srt"
-
-                # Progress callback for translation
-                def progress_callback(completed: int, total: int, message: str = ""):
-                    base_progress = 50 + (idx / total_targets) * 30
-                    if total > 0:
-                        current_progress = base_progress + ((completed / total) * (30 / total_targets))
+            # If all languages completed, use existing result paths
+            if len(remaining_langs) == 0:
+                logger.info("All target languages already translated, skipping translation phase")
+                # Load existing result paths
+                with session_scope() as session:
+                    job = session.query(TranslationJob).filter(TranslationJob.id == job_id).first()
+                    if job.result_paths:
+                        result_paths = json.loads(job.result_paths)
                     else:
-                        current_progress = base_progress
+                        result_paths = []
+            else:
+                logger.info(f"Resuming translation: {len(remaining_langs)} languages remaining: {remaining_langs}")
 
-                    # Use message if provided, otherwise use default
-                    status_msg = message if message else f"Translating to {target_lang}"
+                # Load existing result paths if any
+                with session_scope() as session:
+                    job = session.query(TranslationJob).filter(TranslationJob.id == job_id).first()
+                    if job.result_paths:
+                        result_paths = json.loads(job.result_paths)
+                    else:
+                        result_paths = []
 
-                    try:
-                        run_async(event_publisher.publish_job_progress(
-                            job_id=job_id,
-                            phase="mt",
-                            status=status_msg,
-                            progress=current_progress,
-                            completed=completed,
-                            total=total,
+                total_targets = len(target_langs)
+                completed_count = total_targets - len(remaining_langs)
+
+                for idx, target_lang in enumerate(remaining_langs):
+                    actual_idx = completed_count + idx
+                    logger.info(f"Translating to {target_lang} ({actual_idx+1}/{total_targets})")
+
+                    # Build output path
+                    source_file = Path(asr_subtitle_path)
+                    output_path = output_dir / f"{source_file.stem}_{target_lang}.srt"
+
+                    # Progress callback for translation
+                    def progress_callback(completed: int, total: int, message: str = ""):
+                        base_progress = 50 + (actual_idx / total_targets) * 30
+                        if total > 0:
+                            current_progress = base_progress + ((completed / total) * (30 / total_targets))
+                        else:
+                            current_progress = base_progress
+
+                        # Use message if provided, otherwise use default
+                        status_msg = message if message else f"Translating to {target_lang}"
+
+                        try:
+                            run_async(event_publisher.publish_job_progress(
+                                job_id=job_id,
+                                phase="mt",
+                                status=status_msg,
+                                progress=current_progress,
+                                completed=completed,
+                                total=total,
+                            ))
+                        except Exception as e:
+                            logger.warning(f"Failed to publish translation progress: {e}")
+
+                    # Get asset_id and media_name for translation memory
+                    asset_id = None
+                    media_name = None
+                    if item_id:
+                        with session_scope() as session:
+                            from app.models.media_asset import MediaAsset
+                            asset = session.query(MediaAsset).filter_by(item_id=item_id).first()
+                            if asset:
+                                asset_id = str(asset.id)
+                                media_name = asset.name
+
+                    # Perform translation with translation memory support
+                    with session_scope() as session:
+                        stats = run_async(SubtitleService.translate_subtitle(
+                            input_path=str(asr_subtitle_path),
+                            output_path=str(output_path),
+                            source_lang=source_lang,
+                            target_lang=target_lang,
+                            model=model,
+                            batch_size=settings.translation_batch_size,
+                            preserve_formatting=settings.preserve_ass_styles,
+                            progress_callback=progress_callback,
+                            db_session=session,
+                            subtitle_id=None,
+                            asset_id=asset_id,
+                            media_name=media_name,
                         ))
-                    except Exception as e:
-                        logger.warning(f"Failed to publish translation progress: {e}")
 
-                # Perform translation
-                stats = run_async(SubtitleService.translate_subtitle(
-                    input_path=str(asr_subtitle_path),
-                    output_path=str(output_path),
-                    source_lang=source_lang,
-                    target_lang=target_lang,
-                    model=model,
-                    batch_size=settings.translation_batch_size,
-                    preserve_formatting=settings.preserve_ass_styles,
-                    progress_callback=progress_callback,
-                ))
+                    result_paths.append(str(output_path))
+                    logger.info(f"Translation to {target_lang} completed: {stats}")
 
-                result_paths.append(str(output_path))
-                logger.info(f"Translation to {target_lang} completed: {stats}")
+                    # Save checkpoint after each language completes
+                    with session_scope() as session:
+                        save_checkpoint(session, job_id, None, completed_target_lang=target_lang)
+                        # Also save result paths progressively
+                        job = session.query(TranslationJob).filter(TranslationJob.id == job_id).first()
+                        job.result_paths = json.dumps(result_paths)
+                        session.commit()
 
             # === 5. Writeback to Jellyfin (if item_id present) ===
             if item_id:
@@ -725,17 +1039,47 @@ def asr_then_translate_task(self, job_id: str) -> dict:
                             session.add(asset)
                             session.flush()
 
-                        # Create subtitle record with origin="mt" (machine translated)
-                        subtitle = Subtitle(
-                            asset_id=asset.id,
-                            lang=target_lang,
-                            format="srt",
-                            storage_path=output_path,
-                            origin="mt",  # Mark as machine translated
-                            source_lang=source_lang,
-                            is_uploaded=False,
-                        )
-                        session.add(subtitle)
+                        # Calculate line count and word count
+                        try:
+                            import pysubs2
+                            subs = pysubs2.load(output_path)
+                            line_count = len(subs)
+                            word_count = sum(len(event.text.split()) for event in subs)
+                        except Exception as e:
+                            logger.warning(f"Failed to calculate subtitle stats: {e}")
+                            line_count = None
+                            word_count = None
+
+                        # Check if subtitle already exists (avoid duplicates)
+                        existing_subtitle = session.query(Subtitle).filter(
+                            Subtitle.asset_id == asset.id,
+                            Subtitle.lang == target_lang,
+                            Subtitle.origin == "mt",
+                            Subtitle.source_lang == source_lang
+                        ).first()
+
+                        if existing_subtitle:
+                            logger.info(f"Subtitle already exists for {target_lang}, updating instead of creating duplicate")
+                            existing_subtitle.storage_path = output_path
+                            existing_subtitle.line_count = line_count
+                            existing_subtitle.word_count = word_count
+                            existing_subtitle.updated_at = datetime.now(timezone.utc)
+                            subtitle = existing_subtitle
+                        else:
+                            # Create subtitle record with origin="mt" (machine translated)
+                            subtitle = Subtitle(
+                                asset_id=asset.id,
+                                lang=target_lang,
+                                format="srt",
+                                storage_path=output_path,
+                                origin="mt",  # Mark as machine translated
+                                source_lang=source_lang,
+                                is_uploaded=False,
+                                line_count=line_count,
+                                word_count=word_count,
+                            )
+                            session.add(subtitle)
+
                         session.commit()
 
                         # Perform writeback
