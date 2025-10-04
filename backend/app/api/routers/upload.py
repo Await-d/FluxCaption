@@ -5,10 +5,13 @@ Handles subtitle file uploads for translation.
 """
 
 import uuid
+from typing import Annotated
 from pathlib import Path
-from fastapi import APIRouter, UploadFile, File, HTTPException, status
+from fastapi import APIRouter, UploadFile, File, HTTPException, status, Depends
 
 from app.core.config import settings
+from app.models.user import User
+from app.api.routers.auth import get_current_user
 from app.core.logging import get_logger
 from app.schemas.upload import UploadResponse, UploadError
 from app.services.subtitle_service import SubtitleService
@@ -35,6 +38,7 @@ MAX_FILE_SIZE = settings.max_upload_size_mb * 1024 * 1024  # Convert MB to bytes
     },
 )
 async def upload_subtitle(
+    current_user: Annotated[User, Depends(get_current_user)],
     file: UploadFile = File(..., description="Subtitle file to upload"),
 ) -> UploadResponse:
     """

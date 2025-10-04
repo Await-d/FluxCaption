@@ -1,21 +1,29 @@
-import { Moon, Sun, Monitor, Languages } from 'lucide-react'
+import { Moon, Sun, Monitor, Languages, LogOut, User } from 'lucide-react'
 import { useThemeStore } from '@/stores/useThemeStore'
+import { useAuthStore } from '@/stores/authStore'
 import { Button } from '@/components/ui/Button'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { useMutation } from '@tanstack/react-query'
+import authApi from '@/lib/authApi'
 
 const routeNames: Record<string, string> = {
   '/': 'nav.dashboard',
   '/library': 'nav.library',
+  '/local-media': 'nav.localMedia',
   '/jobs': 'nav.jobs',
+  '/live-progress': 'nav.liveProgress',
   '/translate': 'nav.translate',
   '/models': 'nav.models',
+  '/cache': 'nav.cache',
   '/settings': 'nav.settings',
 }
 
 export function Header() {
   const { theme, setTheme } = useThemeStore()
+  const { user, clearAuth } = useAuthStore()
   const location = useLocation()
+  const navigate = useNavigate()
   const { t, i18n } = useTranslation()
 
   const cycleTheme = () => {
@@ -29,6 +37,14 @@ export function Header() {
     const newLang = i18n.language === 'zh-CN' ? 'en' : 'zh-CN'
     i18n.changeLanguage(newLang)
   }
+
+  const logoutMutation = useMutation({
+    mutationFn: () => authApi.logout(),
+    onSettled: () => {
+      clearAuth()
+      navigate('/login')
+    },
+  })
 
   const getThemeIcon = () => {
     switch (theme) {
@@ -51,6 +67,12 @@ export function Header() {
       </div>
 
       <div className="flex items-center gap-4">
+        {user && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <User className="h-4 w-4" />
+            <span>{user.username}</span>
+          </div>
+        )}
         <Button
           variant="ghost"
           size="icon"
@@ -67,6 +89,15 @@ export function Header() {
           aria-label={`Switch to ${theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light'} theme`}
         >
           {getThemeIcon()}
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => logoutMutation.mutate()}
+          aria-label="Logout"
+          title={i18n.language === 'zh-CN' ? '退出登录' : 'Logout'}
+        >
+          <LogOut className="h-5 w-5" />
         </Button>
       </div>
     </header>

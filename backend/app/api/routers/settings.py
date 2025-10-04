@@ -4,17 +4,21 @@ Settings management API endpoints.
 Provides endpoints for retrieving and updating application configuration.
 """
 
-from fastapi import APIRouter, HTTPException, status
-from typing import Any
+from typing import Any, Annotated
+from fastapi import APIRouter, HTTPException, status, Depends
 
 from app.core.config import settings
+from app.models.user import User
+from app.api.routers.auth import get_current_user
 from app.schemas.settings import SettingsResponse, SettingsUpdateRequest
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 
 @router.get("", response_model=SettingsResponse)
-async def get_settings() -> SettingsResponse:
+async def get_settings(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> SettingsResponse:
     """
     Get current application settings.
 
@@ -34,7 +38,9 @@ async def get_settings() -> SettingsResponse:
         translation_preserve_formatting=settings.translation_preserve_formatting,
         # Model Configuration
         default_mt_model=settings.default_mt_model,
+        asr_engine=settings.asr_engine,
         asr_model=settings.asr_model,
+        funasr_model=settings.funasr_model,
         asr_language=settings.asr_language,
         asr_compute_type=settings.asr_compute_type,
         asr_device=settings.asr_device,
@@ -55,6 +61,8 @@ async def get_settings() -> SettingsResponse:
         scan_task_timeout=settings.scan_task_timeout,
         translate_task_timeout=settings.translate_task_timeout,
         asr_task_timeout=settings.asr_task_timeout,
+        # Local Media Configuration
+        favorite_media_paths=settings.favorite_media_paths if isinstance(settings.favorite_media_paths, list) else [],
         # System Info (read-only)
         environment=settings.environment,
         db_vendor=settings.db_vendor,
@@ -64,7 +72,10 @@ async def get_settings() -> SettingsResponse:
 
 
 @router.patch("", response_model=SettingsResponse)
-async def update_settings(request: SettingsUpdateRequest) -> SettingsResponse:
+async def update_settings(
+    request: SettingsUpdateRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> SettingsResponse:
     """
     Update application settings.
 
@@ -108,7 +119,9 @@ async def update_settings(request: SettingsUpdateRequest) -> SettingsResponse:
 
 
 @router.post("/reset", response_model=SettingsResponse)
-async def reset_settings_to_defaults() -> SettingsResponse:
+async def reset_settings_to_defaults(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> SettingsResponse:
     """
     Reset settings to default values.
 
@@ -145,7 +158,9 @@ async def reset_settings_to_defaults() -> SettingsResponse:
 
 
 @router.get("/validate")
-async def validate_settings() -> dict[str, Any]:
+async def validate_settings(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> dict[str, Any]:
     """
     Validate current settings configuration.
 

@@ -290,9 +290,11 @@ class OllamaClient:
         """
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             try:
-                response = await client.delete(
+                response = await client.request(
+                    "DELETE",
                     f"{self.base_url}/api/delete",
-                    json={"name": model_name},
+                    content=json.dumps({"name": model_name}),
+                    headers={"Content-Type": "application/json"},
                 )
                 response.raise_for_status()
                 logger.info(f"Successfully deleted model: {model_name}")

@@ -1,10 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
-import { Activity, CheckCircle2, XCircle, Clock, Server } from 'lucide-react'
+import { Activity, CheckCircle2, XCircle, Server, TrendingUp, FileText, AlertCircle, CalendarDays, Percent, BarChart3, Languages } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import api from '@/lib/api'
 import type { HealthResponse, JobListResponse } from '@/types/api'
 import { useTranslation } from 'react-i18next'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts'
+import { useMemo } from 'react'
 
 export function Dashboard() {
   const { t } = useTranslation()
@@ -17,9 +19,16 @@ export function Dashboard() {
 
   // Fetch recent jobs
   const { data: recentJobs, isLoading: jobsLoading } = useQuery<JobListResponse>({
-    queryKey: ['jobs', { limit: 5 }],
-    queryFn: () => api.getJobs({ limit: 5 }),
+    queryKey: ['jobs', { page: 1, page_size: 5 }],
+    queryFn: () => api.getJobs({ page: 1, page_size: 5 }),
     refetchInterval: 10000, // Refresh every 10 seconds
+  })
+
+  // Fetch all jobs for statistics
+  const { data: allJobs } = useQuery<JobListResponse>({
+    queryKey: ['jobs', { page: 1, page_size: 100 }],
+    queryFn: () => api.getJobs({ page: 1, page_size: 100 }),
+    refetchInterval: 60000, // Refresh every minute
   })
 
   const getStatusBadge = (status: string) => {
@@ -36,113 +45,455 @@ export function Dashboard() {
   const healthyServices = Object.values(services).filter((s) => s === 'ok').length
   const totalServices = Object.keys(services).length
 
+  // Process jobs data for charts
+  const chartData = useMemo(() => {
+    if (!allJobs?.jobs) return []
+
+    // Get last 7 days
+    const days = 7
+    const today = new Date()
+    const data = []
+
+    for (let i = days - 1; i >= 0; i--) {
+      const date = new Date(today)
+      date.setDate(date.getDate() - i)
+      date.setHours(0, 0, 0, 0)
+
+      const nextDate = new Date(date)
+      nextDate.setDate(nextDate.getDate() + 1)
+
+      // Filter jobs created on this day
+      const dayJobs = allJobs.jobs.filter((job) => {
+        const jobDate = new Date(job.created_at)
+        return jobDate >= date && jobDate < nextDate
+      })
+
+      // Count by status
+      const created = dayJobs.length
+      const completed = dayJobs.filter((j) => j.status === 'completed').length
+      const failed = dayJobs.filter((j) => j.status === 'failed').length
+
+      data.push({
+        date: `${date.getMonth() + 1}/${date.getDate()}`,
+        创建任务: created,
+        完成任务: completed,
+        失败任务: failed,
+      })
+    }
+
+    return data
+  }, [allJobs])
+
+  // Calculate overall statistics
+  const stats = useMemo(() => {
+    if (!allJobs?.jobs) return {
+      total: 0,
+      completed: 0,
+      failed: 0,
+      running: 0,
+      pending: 0,
+      today: 0,
+      successRate: 0
+    }
+
+    const total = allJobs.jobs.length
+    const completed = allJobs.jobs.filter(j => j.status === 'completed').length
+    const failed = allJobs.jobs.filter(j => j.status === 'failed').length
+    const running = allJobs.jobs.filter(j => j.status === 'running').length
+    const pending = allJobs.jobs.filter(j => j.status === 'pending').length
+
+    // Today's jobs
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const todayJobs = allJobs.jobs.filter(job => {
+      const jobDate = new Date(job.created_at)
+      return jobDate >= today
+    }).length
+
+    // Success rate
+    const finishedJobs = completed + failed
+    const successRate = finishedJobs > 0 ? Math.round((completed / finishedJobs) * 100) : 0
+
+    return { total, completed, failed, running, pending, today: todayJobs, successRate }
+  }, [allJobs])
+
+  // Success rate trend data
+  const successRateData = useMemo(() => {
+    if (!allJobs?.jobs) return []
+
+    const days = 7
+    const today = new Date()
+    const data = []
+
+    for (let i = days - 1; i >= 0; i--) {
+      const date = new Date(today)
+      date.setDate(date.getDate() - i)
+      date.setHours(0, 0, 0, 0)
+
+      const nextDate = new Date(date)
+      nextDate.setDate(nextDate.getDate() + 1)
+
+      const dayJobs = allJobs.jobs.filter((job) => {
+        const jobDate = new Date(job.created_at)
+        return jobDate >= date && jobDate < nextDate
+      })
+
+      const completed = dayJobs.filter(j => j.status === 'completed').length
+      const failed = dayJobs.filter(j => j.status === 'failed').length
+      const finished = completed + failed
+      const rate = finished > 0 ? Math.round((completed / finished) * 100) : 0
+
+      data.push({
+        date: `${date.getMonth() + 1}/${date.getDate()}`,
+        成功率: rate,
+        完成: completed,
+        失败: failed
+      })
+    }
+
+    return data
+  }, [allJobs])
+
+  // Task type distribution
+  const taskTypeData = useMemo(() => {
+    if (!allJobs?.jobs) return []
+
+    const typeCount: Record<string, number> = {}
+    allJobs.jobs.forEach(job => {
+      const type = job.source_type || 'unknown'
+      typeCount[type] = (typeCount[type] || 0) + 1
+    })
+
+    return Object.entries(typeCount).map(([type, count]) => ({
+      name: type,
+      value: count
+    }))
+  }, [allJobs])
+
+  // Language distribution
+  const languageData = useMemo(() => {
+    if (!allJobs?.jobs) return []
+
+    const langCount: Record<string, number> = {}
+    allJobs.jobs.forEach(job => {
+      job.target_langs.forEach(lang => {
+        langCount[lang] = (langCount[lang] || 0) + 1
+      })
+    })
+
+    return Object.entries(langCount)
+      .map(([lang, count]) => ({ name: lang, value: count }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 6) // Top 6 languages
+  }, [allJobs])
+
+  const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
+
   return (
     <div className="space-y-6">
-      {/* System Status */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">{t('dashboard.systemStatus')}</CardTitle>
-            <Activity className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {healthLoading ? '...' : health?.status || 'Unknown'}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {healthLoading ? t('common.loading') : getStatusBadge(health?.status || 'down')}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">{t('dashboard.stats')}</CardTitle>
-            <Server className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {healthLoading ? '...' : `${healthyServices}/${totalServices}`}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {healthLoading ? t('common.loading') : t('dashboard.stats')}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">{t('dashboard.running')}</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {jobsLoading ? '...' : recentJobs?.jobs.filter((j) => j.status === 'running').length || 0}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">{t('dashboard.running')}</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">{t('dashboard.completed')}</CardTitle>
-            <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {jobsLoading ? '...' : recentJobs?.jobs.filter((j) => j.status === 'completed').length || 0}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">{t('dashboard.completed')}</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Service Health Details */}
+      {/* Task Statistics Chart */}
       <Card>
-        <CardHeader>
-          <CardTitle>{t('dashboard.systemStatus')}</CardTitle>
+        <CardHeader className="px-4 sm:px-6">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base sm:text-lg">最近7天任务统计</CardTitle>
+            <TrendingUp className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground" />
+          </div>
         </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {Object.entries(services).map(([service, status]) => (
-              <div key={service} className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  {status === 'ok' ? (
-                    <CheckCircle2 className="h-5 w-5 text-green-500" />
-                  ) : (
-                    <XCircle className="h-5 w-5 text-red-500" />
-                  )}
-                  <span className="font-medium capitalize">{service}</span>
-                </div>
-                <Badge variant={status === 'ok' ? 'default' : 'destructive'}>
-                  {String(status)}
-                </Badge>
-              </div>
-            ))}
+        <CardContent className="px-2 sm:px-4">
+          <div className="h-[250px] sm:h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                <XAxis
+                  dataKey="date"
+                  className="text-xs"
+                  tick={{ fontSize: 12 }}
+                />
+                <YAxis
+                  className="text-xs"
+                  tick={{ fontSize: 12 }}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: 'hsl(var(--background))',
+                    border: '1px solid hsl(var(--border))',
+                    borderRadius: '6px',
+                    fontSize: '12px'
+                  }}
+                />
+                <Legend
+                  wrapperStyle={{ fontSize: '12px' }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="创建任务"
+                  stroke="hsl(var(--primary))"
+                  strokeWidth={2}
+                  dot={{ r: 3 }}
+                  activeDot={{ r: 5 }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="完成任务"
+                  stroke="hsl(142 76% 36%)"
+                  strokeWidth={2}
+                  dot={{ r: 3 }}
+                  activeDot={{ r: 5 }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="失败任务"
+                  stroke="hsl(var(--destructive))"
+                  strokeWidth={2}
+                  dot={{ r: 3 }}
+                  activeDot={{ r: 5 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
           </div>
         </CardContent>
       </Card>
 
+      {/* System Status */}
+      <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-3 sm:px-4">
+            <CardTitle className="text-xs sm:text-sm font-medium">系统状态</CardTitle>
+            <Activity className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent className="px-3 sm:px-4">
+            <div className="text-xl sm:text-2xl font-bold">
+              {healthLoading ? '...' : health?.status || 'Unknown'}
+            </div>
+            <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">
+              {healthLoading ? '加载中...' : getStatusBadge(health?.status || 'down')}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-3 sm:px-4">
+            <CardTitle className="text-xs sm:text-sm font-medium">服务状态</CardTitle>
+            <Server className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent className="px-3 sm:px-4">
+            <div className="text-xl sm:text-2xl font-bold">
+              {healthLoading ? '...' : `${healthyServices}/${totalServices}`}
+            </div>
+            <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">
+              {healthLoading ? '加载中...' : '健康服务'}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-3 sm:px-4">
+            <CardTitle className="text-xs sm:text-sm font-medium">总任务数</CardTitle>
+            <FileText className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent className="px-3 sm:px-4">
+            <div className="text-xl sm:text-2xl font-bold">{stats.total}</div>
+            <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">累计任务</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-3 sm:px-4">
+            <CardTitle className="text-xs sm:text-sm font-medium">今日任务</CardTitle>
+            <CalendarDays className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent className="px-3 sm:px-4">
+            <div className="text-xl sm:text-2xl font-bold">{stats.today}</div>
+            <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">今日创建</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-3 sm:px-4">
+            <CardTitle className="text-xs sm:text-sm font-medium">成功率</CardTitle>
+            <Percent className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent className="px-3 sm:px-4">
+            <div className="text-xl sm:text-2xl font-bold">{stats.successRate}%</div>
+            <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">任务成功率</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-3 sm:px-4">
+            <CardTitle className="text-xs sm:text-sm font-medium">失败任务</CardTitle>
+            <AlertCircle className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent className="px-3 sm:px-4">
+            <div className="text-xl sm:text-2xl font-bold text-destructive">{stats.failed}</div>
+            <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">需要关注</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Success Rate & Distribution Charts */}
+      <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
+        {/* Success Rate Trend */}
+        <Card>
+          <CardHeader className="px-4 sm:px-6">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base sm:text-lg">任务成功率趋势</CardTitle>
+              <Percent className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground" />
+            </div>
+          </CardHeader>
+          <CardContent className="px-2 sm:px-4">
+            <div className="h-[250px] sm:h-[280px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={successRateData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis dataKey="date" className="text-xs" tick={{ fontSize: 12 }} />
+                  <YAxis className="text-xs" tick={{ fontSize: 12 }} domain={[0, 100]} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: 'hsl(var(--background))',
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '6px',
+                      fontSize: '12px'
+                    }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: '12px' }} />
+                  <Line
+                    type="monotone"
+                    dataKey="成功率"
+                    stroke="hsl(142 76% 36%)"
+                    strokeWidth={3}
+                    dot={{ r: 4 }}
+                    activeDot={{ r: 6 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Task Type Distribution */}
+        <Card>
+          <CardHeader className="px-4 sm:px-6">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base sm:text-lg">任务类型分布</CardTitle>
+              <BarChart3 className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground" />
+            </div>
+          </CardHeader>
+          <CardContent className="px-2 sm:px-4">
+            <div className="h-[250px] sm:h-[280px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={taskTypeData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis dataKey="name" className="text-xs" tick={{ fontSize: 12 }} />
+                  <YAxis className="text-xs" tick={{ fontSize: 12 }} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: 'hsl(var(--background))',
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '6px',
+                      fontSize: '12px'
+                    }}
+                  />
+                  <Bar dataKey="value" fill="hsl(var(--primary))" radius={[8, 8, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Language Distribution & Service Health */}
+      <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
+        {/* Language Distribution */}
+        <Card>
+          <CardHeader className="px-4 sm:px-6">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base sm:text-lg">翻译语言分布 (Top 6)</CardTitle>
+              <Languages className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground" />
+            </div>
+          </CardHeader>
+          <CardContent className="px-2 sm:px-4">
+            <div className="h-[250px] sm:h-[280px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={languageData}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {languageData.map((_entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: 'hsl(var(--background))',
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '6px',
+                      fontSize: '12px'
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Service Health Details */}
+        <Card>
+          <CardHeader className="px-4 sm:px-6">
+            <CardTitle className="text-base sm:text-lg">服务健康状态</CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 sm:px-6">
+            <div className="space-y-3 sm:space-y-4">
+              {Object.entries(services).map(([service, status]) => (
+                <div key={service} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {status === 'ok' ? (
+                      <CheckCircle2 className="h-4 w-4 sm:h-5 sm:w-5 text-green-500" />
+                    ) : (
+                      <XCircle className="h-4 w-4 sm:h-5 sm:w-5 text-red-500" />
+                    )}
+                    <span className="text-sm sm:text-base font-medium capitalize">{service}</span>
+                  </div>
+                  <Badge
+                    variant={status === 'ok' ? 'default' : 'destructive'}
+                    className="text-[10px] sm:text-xs"
+                  >
+                    {String(status)}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Recent Jobs */}
       <Card>
-        <CardHeader>
-          <CardTitle>{t('dashboard.recentJobs')}</CardTitle>
+        <CardHeader className="px-4 sm:px-6">
+          <CardTitle className="text-base sm:text-lg">{t('dashboard.recentJobs')}</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-4 sm:px-6">
           {jobsLoading ? (
-            <p className="text-muted-foreground">{t('dashboard.loading')}</p>
+            <p className="text-sm sm:text-base text-muted-foreground">{t('dashboard.loading')}</p>
           ) : recentJobs?.jobs.length === 0 ? (
-            <p className="text-muted-foreground">{t('dashboard.noJobs')}</p>
+            <p className="text-sm sm:text-base text-muted-foreground">{t('dashboard.noJobs')}</p>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2 sm:space-y-3">
               {recentJobs?.jobs.map((job) => (
                 <div
                   key={job.id}
-                  className="flex items-center justify-between rounded-lg border p-3"
+                  className="flex items-center justify-between rounded-lg border p-2 sm:p-3"
                 >
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{job.source_type}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                      <span className="text-sm sm:text-base font-medium truncate">{job.source_type}</span>
                       <Badge
                         variant={
                           job.status === 'completed'
@@ -151,16 +502,17 @@ export function Dashboard() {
                             ? 'destructive'
                             : 'outline'
                         }
+                        className="text-[10px] sm:text-xs"
                       >
                         {job.status}
                       </Badge>
                     </div>
-                    <p className="text-sm text-muted-foreground mt-1">
+                    <p className="text-xs sm:text-sm text-muted-foreground mt-1 truncate">
                       {job.target_langs.join(', ')} • {new Date(job.created_at).toLocaleString()}
                     </p>
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm font-medium">{job.progress}%</p>
+                  <div className="text-right ml-2 flex-shrink-0">
+                    <p className="text-xs sm:text-sm font-medium">{job.progress}%</p>
                   </div>
                 </div>
               ))}

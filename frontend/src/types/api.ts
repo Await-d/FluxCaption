@@ -8,7 +8,7 @@
 // Common Types
 // =============================================================================
 
-export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+export type JobStatus = 'queued' | 'running' | 'success' | 'failed' | 'cancelled'
 export type JobType = 'scan' | 'translate' | 'asr_then_translate'
 export type SubtitleFormat = 'srt' | 'ass' | 'vtt'
 export type SubtitleOrigin = 'manual' | 'asr' | 'mt'
@@ -64,6 +64,7 @@ export interface JellyfinMediaItem {
   season_name: string | null
   episode_number: number | null
   season_number: number | null
+  child_count: number | null  // For Series items: number of episodes/seasons
 }
 
 export interface ScanLibraryRequest {
@@ -122,15 +123,15 @@ export interface CreateJobResponse {
 export interface JobListParams {
   status?: JobStatus
   type?: JobType
-  limit?: number
-  offset?: number
+  page?: number
+  page_size?: number
 }
 
 export interface JobListResponse {
   jobs: TranslationJob[]
   total: number
-  limit: number
-  offset: number
+  page: number
+  page_size: number
 }
 
 // =============================================================================
@@ -152,6 +153,24 @@ export interface OllamaModel {
 
 export interface OllamaModelListResponse {
   models: OllamaModel[]
+}
+
+export interface ModelInfo {
+  name: string
+  status: string
+  size_bytes: number
+  family?: string
+  parameter_size?: string
+  quantization?: string
+  last_checked?: string
+  last_used?: string
+  usage_count: number
+  is_default: boolean
+}
+
+export interface ModelListResponse {
+  models: ModelInfo[]
+  total: number
 }
 
 export interface PullModelRequest {
@@ -235,7 +254,9 @@ export interface AppSettings {
 
   // Model Configuration
   default_mt_model: string
+  asr_engine: 'faster-whisper' | 'funasr'
   asr_model: string
+  funasr_model: string
   asr_language: string
   asr_compute_type: 'int8' | 'int8_float16' | 'float16' | 'float32'
   asr_device: 'cpu' | 'cuda' | 'auto'
@@ -259,6 +280,9 @@ export interface AppSettings {
   scan_task_timeout: number
   translate_task_timeout: number
   asr_task_timeout: number
+
+  // Local Media Configuration
+  favorite_media_paths: string[]
 
   // System Info (read-only)
   environment: 'development' | 'production' | 'testing'
@@ -352,4 +376,130 @@ export interface CacheStats {
 export interface ClearEntriesResponse {
   deleted_count: number
   message: string
+}
+
+// =============================================================================
+// Local Media Files
+// =============================================================================
+
+export interface MediaFileResponse {
+  filepath: string
+  filename: string
+  size_bytes: number
+  existing_subtitle_langs: string[]
+  missing_languages: string[]
+  subtitle_files: string[]
+}
+
+export interface ScanDirectoryRequest {
+  directory: string
+  recursive: boolean
+  max_depth: number
+  required_langs?: string[]
+}
+
+export interface ScanDirectoryResponse {
+  directory: string
+  media_files: MediaFileResponse[]
+  total_count: number
+  required_langs: string[]
+}
+
+export interface DirectoryStatsResponse {
+  directory: string
+  total_media_files: number
+  total_size_bytes: number
+  total_subtitle_files: number
+  video_formats: Record<string, number>
+}
+
+export interface CreateLocalJobRequest {
+  filepath: string
+  target_langs: string[]
+  source_lang?: string
+}
+
+// =============================================================================
+// Auto Translation Rules
+// =============================================================================
+
+export interface AutoTranslationRule {
+  id: string
+  user_id: string
+  name: string
+  enabled: boolean
+  jellyfin_library_ids: string[]
+  source_lang: string | null
+  target_langs: string[]
+  auto_start: boolean
+  priority: number
+  created_at: string
+  updated_at: string
+}
+
+export interface AutoTranslationRuleCreate {
+  name: string
+  enabled?: boolean
+  jellyfin_library_ids?: string[]
+  source_lang?: string | null
+  target_langs: string[]
+  auto_start?: boolean
+  priority?: number
+}
+
+export interface AutoTranslationRuleUpdate {
+  name?: string
+  enabled?: boolean
+  jellyfin_library_ids?: string[]
+  source_lang?: string | null
+  target_langs?: string[]
+  auto_start?: boolean
+  priority?: number
+}
+
+export interface AutoTranslationRuleListResponse {
+  rules: AutoTranslationRule[]
+  total: number
+}
+
+// System Management Types
+export interface BatchOperationResponse {
+  success: boolean
+  affected_count: number
+  message: string
+}
+
+export interface ScanAllLibrariesRequest {
+  force_rescan?: boolean
+  required_langs?: string[]
+}
+
+export interface ScanAllLibrariesResponse {
+  task_id: string
+  message: string
+}
+
+export interface SystemStats {
+  total_jobs: number
+  queued_jobs: number
+  running_jobs: number
+  completed_jobs: number
+  failed_jobs: number
+  cancelled_jobs: number
+}
+
+export interface QueueStats {
+  translate_queue: number
+  asr_queue: number
+  scan_queue: number
+  total: number
+}
+
+export interface WorkerStats {
+  active_workers: number
+  workers: Array<{
+    name: string
+    total_tasks: Record<string, any>
+    pool: Record<string, any>
+  }>
 }

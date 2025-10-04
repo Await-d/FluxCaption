@@ -112,9 +112,13 @@ class AudioExtractor:
             VideoFileNotFoundError: Video file not found
             AudioExtractionFailedError: Extraction failed
         """
-        video_file = Path(video_path)
-        if not video_file.exists():
-            raise VideoFileNotFoundError(f"Video file not found: {video_path}")
+        # Check if input is a URL or local file
+        is_url = video_path.startswith(("http://", "https://"))
+        
+        if not is_url:
+            video_file = Path(video_path)
+            if not video_file.exists():
+                raise VideoFileNotFoundError(f"Video file not found: {video_path}")
 
         output_file = Path(output_path)
         output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -127,7 +131,7 @@ class AudioExtractor:
         # Build ffmpeg command
         cmd = [
             self.ffmpeg_path,
-            "-i", str(video_file),
+            "-i", video_path if is_url else str(video_file),
             "-vn",  # No video
             "-acodec", audio_codec,
             "-ar", str(sample_rate),
@@ -142,19 +146,23 @@ class AudioExtractor:
         cmd.extend(["-y", str(output_file)])
 
         try:
-            # Get duration for progress tracking
-            duration = self._get_duration(video_path)
+            # Get duration for progress tracking (skip for URLs as it may be slow/unreliable)
+            duration = None if is_url else self._get_duration(video_path)
 
             # Run ffmpeg
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                universal_newlines=True,
+                text=True,
+                encoding='utf-8',
+                errors='ignore',  # Ignore encoding errors from media metadata
             )
 
-            # Monitor progress
+            # Monitor progress and collect stderr
+            stderr_lines = []
             for line in process.stderr:
+                stderr_lines.append(line)
                 if progress_callback and duration:
                     # Parse time from ffmpeg output
                     # Example: time=00:01:30.45
@@ -170,7 +178,7 @@ class AudioExtractor:
             process.wait()
 
             if process.returncode != 0:
-                stderr = process.stderr.read() if process.stderr else ""
+                stderr = ''.join(stderr_lines)
                 raise AudioExtractionFailedError(
                     f"FFmpeg failed with code {process.returncode}: {stderr}"
                 )

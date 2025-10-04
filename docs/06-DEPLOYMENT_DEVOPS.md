@@ -33,10 +33,19 @@ WRITEBACK_MODE=upload
 
 ## 3. Compose 与进程
 
-- **api**：Uvicorn；副本数随 QPS 调整。
-- **worker**：Celery 多副本；按 GPU/CPU 资源分配队列。
-- **beat**：定时扫描/清理/健康检查。
+- **backend**：FastAPI (Uvicorn) + Celery Worker 合并服务；通过 `/app/start.sh` 同时启动 API 和 Worker。
+  - Worker 并发度设为 `1`（内存受限环境优化，避免 OOM）
+  - Worker 监听队列：`default, scan, translate, asr`
+  - 如系统内存充足（>16GB），可在 `start.sh` 中提高并发度（`-c 2` 或更高）
+- **beat**：Celery Beat 调度器；定时扫描/清理/健康检查（单实例）。
 - **ollama**：独立容器；根据显存选择模型大小。
+- **postgres** / **redis**：数据库与消息队列服务。
+- **frontend**：Nginx 静态文件服务 + React SPA。
+
+**架构说明**：
+- Backend 容器同时运行 API 和 Worker，简化了部署和资源管理
+- Worker 在后台运行（`celery ... &`），API 在前台运行（`exec uvicorn ...`）
+- 并发度=1 是为防止 ASR 模型加载时内存溢出导致进程被 OOM Killer 终止
 
 ---
 

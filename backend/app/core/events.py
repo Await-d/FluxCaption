@@ -51,7 +51,7 @@ class EventPublisher:
 
     async def publish_event(self, channel: str, event_data: dict) -> None:
         """
-        Publish an event to a channel.
+        Publish an event to a channel and store in history.
 
         Args:
             channel: Channel name (typically "job:{job_id}")
@@ -62,8 +62,17 @@ class EventPublisher:
 
         try:
             event_json = json.dumps(event_data)
+
+            # Publish to subscribers
             await self._redis.publish(channel, event_json)
-            logger.debug(f"Published event to {channel}: {event_data}")
+
+            # Store in history list (keep last 100 events)
+            history_key = f"{channel}:history"
+            await self._redis.lpush(history_key, event_json)
+            await self._redis.ltrim(history_key, 0, 99)  # Keep only last 100
+            await self._redis.expire(history_key, 3600)  # Auto-delete after 1 hour
+
+            logger.info(f"Published event to {channel}: {event_data}")
         except Exception as e:
             logger.error(f"Failed to publish event: {e}", exc_info=True)
 
@@ -177,17 +186,48 @@ event_subscriber = EventSubscriber()
 # SSE Response Generator
 # =============================================================================
 
-async def generate_sse_response(channel: str) -> AsyncGenerator[str, None]:
+async def generate_sse_response(channel: str, initial_job_state: dict | None = None) -> AsyncGenerator[str, None]:
     """
-    Generate SSE response stream.
+    Generate SSE response stream with historical events.
 
     Args:
         channel: Channel to subscribe to
+        initial_job_state: Optional initial job state to send first
 
     Yields:
         str: SSE formatted event
     """
     try:
+        # Send initial job state if provided (to handle race conditions)
+        if initial_job_state:
+            sse_data = f"data: {json.dumps(initial_job_state)}\n\n"
+            yield sse_data
+            logger.info(f"Sent initial job state for {channel}")
+
+        # Send historical events from Redis
+        redis = await aioredis.from_url(
+            settings.redis_url,
+            encoding="utf-8",
+            decode_responses=True,
+        )
+        try:
+            history_key = f"{channel}:history"
+            # Get last 100 events (in reverse chronological order)
+            history_events = await redis.lrange(history_key, 0, -1)
+
+            if history_events:
+                # Reverse to get chronological order (oldest first)
+                for event_json in reversed(history_events):
+                    try:
+                        sse_data = f"data: {event_json}\n\n"
+                        yield sse_data
+                    except Exception as e:
+                        logger.error(f"Failed to send historical event: {e}")
+                logger.info(f"Sent {len(history_events)} historical events for {channel}")
+        finally:
+            await redis.close()
+
+        # Subscribe to real-time events
         async for event_data in event_subscriber.subscribe(channel):
             # Format as SSE
             sse_data = f"data: {json.dumps(event_data)}\n\n"

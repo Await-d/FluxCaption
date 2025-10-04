@@ -3,14 +3,46 @@
     "title": "FluxCaption",
     "subtitle": "AI Subtitle Translation System"
   },
+  "auth": {
+    "login": "Login",
+    "loggingIn": "Logging in...",
+    "username": "Username",
+    "password": "Password",
+    "usernamePlaceholder": "Enter username",
+    "passwordPlaceholder": "Enter password",
+    "loginFailed": "Login failed",
+    "invalidCredentials": "Invalid username or password",
+    "defaultAdminHint": "Default admin account on first run: admin",
+    "passwordInLogsHint": "Password will be shown in backend logs",
+    "errors": {
+      "invalidCredentials": "Invalid username or password",
+      "networkError": "Network error, please check server status",
+      "serverError": "Server error, please try again later",
+      "unknown": "Login failed, please try again"
+    }
+  },
   "nav": {
     "dashboard": "Dashboard",
     "models": "Models",
     "library": "Library",
+    "localMedia": "Local Media",
     "jobs": "Jobs",
+    "liveProgress": "Live Progress",
+    "taskCenter": "Task Center",
+    "subtitles": "Subtitles",
     "translate": "Translate",
+    "autoTranslation": "Auto Translation",
     "cache": "Translation Cache",
-    "settings": "Settings"
+    "settings": "Settings",
+    "corrections": "Correction Rules",
+    "profile": "Profile",
+    "group": {
+      "overview": "Overview",
+      "media": "Media Management",
+      "tasks": "Task Processing",
+      "system": "System Tools",
+      "settings": "Settings"
+    }
   },
   "dashboard": {
     "title": "System Overview",
@@ -117,7 +149,8 @@
     "useDefault": "Use default model",
     "defaultModel": "Default",
     "translate": "Translate",
-    "uploading": "Uploading..."
+    "uploading": "Uploading...",
+    "backToUpload": "Back to Upload"
   },
   "settings": {
     "title": "System Settings",
@@ -143,6 +176,35 @@
     "refresh": "Refresh Settings",
     "saving": "Saving...",
     "loading": "Loading settings..."
+  },
+  "taskCenter": {
+    "startSuccess": "Successfully started {{count}} task(s)",
+    "startFailed": "Failed to start: {{error}}",
+    "cancelSuccess": "Successfully cancelled {{count}} task(s)",
+    "cancelFailed": "Failed to cancel: {{error}}",
+    "deleteSuccess": "Successfully deleted {{count}} completed task(s)",
+    "deleteFailed": "Failed to delete: {{error}}",
+    "scanCreated": "Scan task created: {{message}}",
+    "scanFailed": "Scan failed: {{error}}",
+    "noPendingTasks": "No pending tasks",
+    "noRunningTasks": "No running or queued tasks",
+    "noCompletedTasks": "No completed tasks"
+  },
+  "models": {
+    "setDefaultSuccess": "Set \"{{model}}\" as default translation model",
+    "setDefaultFailed": "Failed to set default model: {{error}}"
+  },
+  "corrections": {
+    "importFailed": "Import failed: {{error}}"
+  },
+  "profile": {
+    "changePasswordFailed": "Failed to change password",
+    "passwordTooShort": "Password must be at least 6 characters",
+    "passwordMismatch": "Passwords do not match"
+  },
+  "translation": {
+    "translationFailed": "Translation failed",
+    "connectionLost": "Connection lost"
   },
   "common": {
     "yes": "Yes",

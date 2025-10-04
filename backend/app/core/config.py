@@ -94,6 +94,10 @@ class Settings(BaseSettings):
     # =============================================================================
     # ASR Configuration
     # =============================================================================
+    asr_engine: Literal["faster-whisper", "funasr"] = Field(
+        default="faster-whisper",
+        description="ASR engine to use: faster-whisper or funasr"
+    )
     asr_model: str = Field(default="medium", description="Whisper model: tiny/base/small/medium/large")
     asr_compute_type: Literal["int8", "int8_float16", "float16", "float32"] = Field(default="int8")
     asr_device: Literal["cpu", "cuda", "auto"] = Field(default="auto")
@@ -106,6 +110,17 @@ class Settings(BaseSettings):
     asr_num_workers: int = Field(default=4, description="Number of CPU threads for ASR")
     asr_segment_duration: int = Field(default=600, description="Audio segment duration in seconds")
     asr_segment_overlap: int = Field(default=10, description="Overlap between segments in seconds")
+
+    # FunASR Configuration (alternative ASR engine)
+    funasr_model: str = Field(
+        default="paraformer-zh",
+        description="FunASR model: paraformer-zh, sensevoicesmall, etc."
+    )
+    funasr_device: Literal["cpu", "cuda"] = Field(default="cpu")
+    funasr_model_cache_dir: str = Field(
+        default="/app/models/funasr",
+        description="Directory for FunASR models"
+    )
 
     # =============================================================================
     # Subtitle & Translation Pipeline
@@ -130,6 +145,12 @@ class Settings(BaseSettings):
     storage_backend: Literal["local", "s3"] = Field(default="local")
     temp_dir: str = Field(default="/tmp/fluxcaption")
     subtitle_output_dir: str = Field(default="/app/output/subtitles")
+    
+    # Local Media Paths (for users without Jellyfin)
+    favorite_media_paths: str = Field(
+        default="",
+        description="Comma-separated list of favorite local media paths"
+    )
 
     # S3 Configuration (optional)
     s3_bucket: str | None = Field(default=None)
@@ -150,9 +171,29 @@ class Settings(BaseSettings):
     # =============================================================================
     api_key_enabled: bool = Field(default=False)
     api_key: str | None = Field(default=None)
-    jwt_secret_key: str | None = Field(default=None)
+    jwt_secret_key: str = Field(
+        default="your-secret-key-change-this-in-production-min-32-chars-long",
+        description="JWT secret key (must be at least 32 characters)"
+    )
     jwt_algorithm: str = Field(default="HS256")
-    jwt_access_token_expire_minutes: int = Field(default=30)
+    jwt_access_token_expire_minutes: int = Field(default=1440)  # 24 hours
+
+    # Initial admin credentials (used during first run)
+    initial_admin_username: str = Field(default="admin")
+    initial_admin_password: str | None = Field(
+        default=None,
+        description="Initial admin password (auto-generated if not set)"
+    )
+
+    @property
+    def SECRET_KEY(self) -> str:
+        """Get JWT secret key."""
+        return self.jwt_secret_key
+
+    @property
+    def JWT_ALGORITHM(self) -> str:
+        """Get JWT algorithm."""
+        return self.jwt_algorithm
 
     # =============================================================================
     # Performance & Resource Limits

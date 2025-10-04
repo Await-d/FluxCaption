@@ -14,6 +14,7 @@ from typing import Optional, Callable
 from urllib.parse import urljoin
 
 import httpx
+import aiohttp
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -334,6 +335,104 @@ class JellyfinClient:
         logger.info(f"Retrieved item: {item.name} ({item.type})")
         return item
 
+    async def download_item(self, item_id: str, output_path: Path) -> Path:
+        """
+        Download media file from Jellyfin.
+
+        Args:
+            item_id: Jellyfin item ID
+            output_path: Path to save the downloaded file
+
+        Returns:
+            Path: Path to the downloaded file
+
+        Raises:
+            JellyfinError: If download fails
+        """
+        logger.info(f"Downloading item {item_id} from Jellyfin")
+
+        url = self._build_url(f"Items/{item_id}/Download")
+        headers = self._get_headers()
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=3600)) as response:
+                    if response.status == 404:
+                        raise JellyfinNotFoundError(f"Item {item_id} not found")
+                    elif response.status != 200:
+                        error_text = await response.text()
+                        raise JellyfinError(f"Failed to download item: {error_text}")
+
+                    # Create output directory if needed
+                    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+                    # Download file in chunks
+                    total_size = int(response.headers.get('content-length', 0))
+                    downloaded = 0
+                    
+                    with open(output_path, 'wb') as f:
+                        async for chunk in response.content.iter_chunked(8192):
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            if total_size > 0 and downloaded % (10 * 1024 * 1024) == 0:  # Log every 10MB
+                                progress = (downloaded / total_size) * 100
+                                logger.info(f"Download progress: {progress:.1f}%")
+
+                    logger.info(f"Downloaded {item_id} to {output_path} ({downloaded} bytes)")
+                    return output_path
+
+        except aiohttp.ClientError as e:
+            raise JellyfinConnectionError(f"Failed to download item: {e}")
+
+    async def download_subtitle(
+        self,
+        item_id: str,
+        subtitle_index: int,
+        output_path: Path,
+    ) -> Path:
+        """
+        Download subtitle file from Jellyfin.
+
+        Args:
+            item_id: Jellyfin item ID
+            subtitle_index: Index of subtitle stream in MediaStreams
+            output_path: Path to save the downloaded subtitle file
+
+        Returns:
+            Path: Path to the downloaded subtitle file
+
+        Raises:
+            JellyfinError: If download fails
+        """
+        logger.info(f"Downloading subtitle {subtitle_index} for item {item_id}")
+
+        url = self._build_url(f"Videos/{item_id}/Subtitles/{subtitle_index}/Stream")
+        headers = self._get_headers()
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=300)) as response:
+                    if response.status == 404:
+                        raise JellyfinNotFoundError(f"Subtitle {subtitle_index} not found for item {item_id}")
+                    elif response.status != 200:
+                        error_text = await response.text()
+                        raise JellyfinError(f"Failed to download subtitle: {error_text}")
+
+                    # Create output directory if needed
+                    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+                    # Download subtitle content
+                    content = await response.read()
+                    
+                    with open(output_path, 'wb') as f:
+                        f.write(content)
+
+                    logger.info(f"Downloaded subtitle to {output_path} ({len(content)} bytes)")
+                    return output_path
+
+        except aiohttp.ClientError as e:
+            raise JellyfinConnectionError(f"Failed to download subtitle: {e}")
+
     # =========================================================================
     # Subtitle Operations
     # =========================================================================
@@ -421,6 +520,56 @@ class JellyfinClient:
 
         logger.info("Subtitle deleted successfully")
         return response
+
+    async def get_audio_stream_url(
+        self,
+        item_id: str,
+        max_bitrate: int = 320000,
+        audio_codec: str = "aac",
+        container: str = "mp4",
+    ) -> str:
+        """
+        Get audio stream URL for direct FFmpeg processing.
+
+        This endpoint allows streaming audio directly to FFmpeg without
+        downloading the entire video file, significantly reducing bandwidth
+        and storage requirements.
+
+        Args:
+            item_id: Jellyfin item ID
+            max_bitrate: Maximum audio bitrate (default: 320kbps)
+            audio_codec: Audio codec for transcoding (default: aac)
+            container: Container format (default: mp4)
+
+        Returns:
+            Full URL to audio stream with authentication
+
+        Example:
+            url = await client.get_audio_stream_url("abc123")
+            # FFmpeg can now extract from this URL:
+            # ffmpeg -i "url" -vn -acodec pcm_s16le output.wav
+        """
+        logger.info(f"Getting audio stream URL for item {item_id}")
+
+        # Build streaming URL with parameters
+        # Use /stream endpoint which provides direct HTTP streaming suitable for FFmpeg
+        params = {
+            "Container": container,
+            "AudioCodec": audio_codec,
+            "AudioBitrate": max_bitrate,
+            "api_key": self.api_key,
+        }
+
+        # Build URL with query parameters
+        base_stream_url = self._build_url(f"Audio/{item_id}/stream")
+
+        # Add query parameters
+        from urllib.parse import urlencode
+        query_string = urlencode(params)
+        stream_url = f"{base_stream_url}?{query_string}"
+
+        logger.info(f"Audio stream URL generated for item {item_id}")
+        return stream_url
 
     # =========================================================================
     # Library Refresh

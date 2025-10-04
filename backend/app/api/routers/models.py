@@ -4,10 +4,13 @@ Model management endpoints.
 Provides API for managing Ollama models.
 """
 
+from typing import Annotated
 from fastapi import APIRouter, HTTPException, status, BackgroundTasks, Depends
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
+from app.models.user import User
+from app.api.routers.auth import get_current_user
 from app.services.ollama_client import ollama_client
 from app.models.model_registry import ModelRegistry
 from app.schemas.models import (
@@ -28,7 +31,10 @@ router = APIRouter(prefix="/api/models", tags=["Models"])
     response_model=ModelListResponse,
     summary="List all models",
 )
-async def list_models(db: Session = Depends(get_db)) -> ModelListResponse:
+async def list_models(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+) -> ModelListResponse:
     """
     List all tracked models.
 
@@ -68,7 +74,11 @@ async def list_models(db: Session = Depends(get_db)) -> ModelListResponse:
     response_model=ModelInfo,
     summary="Get model information",
 )
-async def get_model(model_name: str, db: Session = Depends(get_db)) -> ModelInfo:
+async def get_model(
+    model_name: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+) -> ModelInfo:
     """
     Get detailed information about a specific model.
 
@@ -147,6 +157,7 @@ async def pull_model_task(model_name: str, db: Session) -> None:
 async def pull_model(
     request: ModelPullRequest,
     background_tasks: BackgroundTasks,
+    current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
 ) -> dict:
     """
@@ -207,6 +218,7 @@ async def pull_model(
 )
 async def delete_model(
     model_name: str,
+    current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
 ) -> ModelDeleteResponse:
     """
@@ -245,3 +257,249 @@ async def delete_model(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete model: {str(e)}",
         )
+
+
+
+@router.post(
+    "/{model_name}/test",
+    summary="Test a model",
+)
+async def test_model(
+    model_name: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Test a model by running a simple generation task.
+
+    Args:
+        model_name: Name of the model to test
+        db: Database session
+
+    Returns:
+        dict: Test result with response time and output
+
+    Raises:
+        HTTPException: If test fails
+    """
+    import time
+    
+    try:
+        # Check if model exists in Ollama
+        models = await ollama_client.list_models()
+        if not any(m.get("name") == model_name for m in models):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Model '{model_name}' not found in Ollama",
+            )
+
+        # Run test generation
+        test_prompt = "Translate to English: 你好"
+        start_time = time.time()
+        
+        response = await ollama_client.generate(
+            model=model_name,
+            prompt=test_prompt,
+            system="You are a translation assistant. Respond with only the translation.",
+            temperature=0.3,
+            max_tokens=50,
+        )
+        
+        elapsed_time = time.time() - start_time
+
+        # Update model registry
+        model = db.query(ModelRegistry).filter(ModelRegistry.name == model_name).first()
+        if model:
+            model.status = "available"
+            model.last_checked = model.last_checked  # Will be updated by DB trigger
+            db.commit()
+
+        logger.info(f"Successfully tested model {model_name} in {elapsed_time:.2f}s")
+
+        return {
+            "success": True,
+            "model": model_name,
+            "test_prompt": test_prompt,
+            "response": response.strip(),
+            "response_time_seconds": round(elapsed_time, 2),
+            "status": "available",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to test model {model_name}: {e}", exc_info=True)
+        
+        # Update model status to error
+        model = db.query(ModelRegistry).filter(ModelRegistry.name == model_name).first()
+        if model:
+            model.status = "error"
+            db.commit()
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to test model: {str(e)}",
+        )
+
+
+
+@router.post(
+    "/{model_name}/set-default",
+    summary="Set model as default",
+)
+async def set_default_model(
+    model_name: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Set a model as the default translation model.
+
+    Args:
+        model_name: Name of the model to set as default
+        db: Database session
+
+    Returns:
+        dict: Success message
+
+    Raises:
+        HTTPException: If model not found
+    """
+    try:
+        # Check if model exists in registry
+        model = db.query(ModelRegistry).filter(ModelRegistry.name == model_name).first()
+        if not model:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Model '{model_name}' not found in registry",
+            )
+
+        # Check if model is available
+        if model.status != "available":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Model '{model_name}' is not available (status: {model.status})",
+            )
+
+        # Unset all other defaults
+        db.query(ModelRegistry).update({"is_default": False})
+
+        # Set this model as default
+        model.is_default = True
+        db.commit()
+
+        # Update database setting
+        from app.models.setting import Setting
+        default_model_setting = db.query(Setting).filter(
+            Setting.key == "default_mt_model"
+        ).first()
+
+        if default_model_setting:
+            default_model_setting.value = model_name
+        else:
+            default_model_setting = Setting(
+                key="default_mt_model",
+                value=model_name,
+                value_type="string",
+            )
+            db.add(default_model_setting)
+
+        db.commit()
+
+        # Update runtime settings instance
+        from app.core.config import settings
+        settings.default_mt_model = model_name
+
+        logger.info(f"Set default model to: {model_name} (updated both DB and runtime config)")
+
+        return {
+            "success": True,
+            "message": f"Model '{model_name}' set as default",
+            "default_model": model_name,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to set default model: {e}", exc_info=True)
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to set default model: {str(e)}",
+        )
+
+
+@router.get(
+    "/recommended/list",
+    summary="Get recommended models",
+)
+async def get_recommended_models(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> dict:
+    """
+    Get a list of recommended models for translation tasks.
+
+    Returns:
+        dict: List of recommended models with descriptions
+    """
+    recommended = [
+        {
+            "name": "qwen2.5:0.5b-instruct",
+            "display_name": "Qwen2.5 0.5B",
+            "description": "超轻量级模型，内存占用极低（~400MB），适合内存受限环境",
+            "size_estimate": "397 MB",
+            "performance": "fast",
+            "quality": "basic",
+            "recommended_for": "低配置设备",
+        },
+        {
+            "name": "qwen2.5:1.5b-instruct",
+            "display_name": "Qwen2.5 1.5B",
+            "description": "轻量级模型，平衡性能和质量（~1GB）",
+            "size_estimate": "1.0 GB",
+            "performance": "fast",
+            "quality": "good",
+            "recommended_for": "日常使用",
+        },
+        {
+            "name": "qwen2.5:3b-instruct",
+            "display_name": "Qwen2.5 3B",
+            "description": "中型模型，提供更好的翻译质量（~2GB）",
+            "size_estimate": "2.0 GB",
+            "performance": "medium",
+            "quality": "very good",
+            "recommended_for": "推荐使用",
+        },
+        {
+            "name": "qwen2.5:7b-instruct",
+            "display_name": "Qwen2.5 7B (默认)",
+            "description": "默认推荐模型，高质量翻译（~5GB）",
+            "size_estimate": "4.7 GB",
+            "performance": "medium",
+            "quality": "excellent",
+            "recommended_for": "高质量翻译",
+        },
+        {
+            "name": "gemma2:2b-instruct",
+            "display_name": "Gemma2 2B",
+            "description": "Google Gemma2，轻量高效（~1.6GB）",
+            "size_estimate": "1.6 GB",
+            "performance": "fast",
+            "quality": "good",
+            "recommended_for": "快速翻译",
+        },
+        {
+            "name": "llama3.2:3b-instruct",
+            "display_name": "Llama 3.2 3B",
+            "description": "Meta Llama3.2，通用性强（~2GB）",
+            "size_estimate": "2.0 GB",
+            "performance": "medium",
+            "quality": "very good",
+            "recommended_for": "通用场景",
+        },
+    ]
+
+    return {
+        "recommended_models": recommended,
+        "total": len(recommended),
+    }

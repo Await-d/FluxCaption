@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional
 import pysubs2
 from pysubs2 import SSAFile, SSAEvent
+import sqlalchemy as sa
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -151,6 +152,93 @@ def split_long_line(text: str, max_length: int = 42) -> str:
     return '\\N'.join(lines)  # ASS line break
 
 
+def apply_correction_rules(
+    text: str,
+    source_lang: Optional[str],
+    target_lang: Optional[str],
+    db_session: Optional[object] = None
+) -> str:
+    """
+    Apply correction rules to translated text.
+
+    Args:
+        text: Text to apply corrections to
+        source_lang: Source language code
+        target_lang: Target language code
+        db_session: Database session
+
+    Returns:
+        str: Corrected text
+    """
+    if not db_session:
+        return text
+
+    try:
+        from app.models.correction_rule import CorrectionRule
+
+        # Get applicable rules
+        stmt = sa.select(CorrectionRule).where(CorrectionRule.is_active == True)
+
+        # Filter by language
+        if source_lang:
+            stmt = stmt.where(
+                sa.or_(
+                    CorrectionRule.source_lang == source_lang,
+                    CorrectionRule.source_lang.is_(None)
+                )
+            )
+        if target_lang:
+            stmt = stmt.where(
+                sa.or_(
+                    CorrectionRule.target_lang == target_lang,
+                    CorrectionRule.target_lang.is_(None)
+                )
+            )
+
+        # Order by priority (higher priority first)
+        stmt = stmt.order_by(CorrectionRule.priority.desc(), CorrectionRule.created_at.asc())
+
+        rules = list(db_session.scalars(stmt).all())
+
+        # Apply rules
+        corrected_text = text
+        applied_count = 0
+
+        for rule in rules:
+            try:
+                if rule.is_regex:
+                    # Use regex replacement
+                    flags = 0 if rule.is_case_sensitive else re.IGNORECASE
+                    pattern = re.compile(rule.source_pattern, flags)
+                    new_text = pattern.sub(rule.target_text, corrected_text)
+                else:
+                    # Use simple string replacement
+                    if rule.is_case_sensitive:
+                        new_text = corrected_text.replace(rule.source_pattern, rule.target_text)
+                    else:
+                        # Case-insensitive replacement
+                        pattern = re.compile(re.escape(rule.source_pattern), re.IGNORECASE)
+                        new_text = pattern.sub(rule.target_text, corrected_text)
+
+                # Track if rule was applied
+                if new_text != corrected_text:
+                    corrected_text = new_text
+                    applied_count += 1
+
+            except Exception as e:
+                logger.warning(f"Failed to apply correction rule {rule.id}: {e}")
+                continue
+
+        if applied_count > 0:
+            logger.debug(f"Applied {applied_count} correction rules to text")
+
+        return corrected_text
+
+    except Exception as e:
+        logger.warning(f"Failed to apply correction rules: {e}")
+        return text
+
+
 # =============================================================================
 # Subtitle File Operations
 # =============================================================================
@@ -229,6 +317,9 @@ class SubtitleService:
         preserve_formatting: bool = True,
         progress_callback: Optional[callable] = None,
         db_session: Optional[object] = None,
+        subtitle_id: Optional[str] = None,
+        asset_id: Optional[str] = None,
+        media_name: Optional[str] = None,
     ) -> dict:
         """
         Translate a subtitle file.
@@ -242,6 +333,10 @@ class SubtitleService:
             batch_size: Number of lines to translate per batch
             preserve_formatting: Whether to preserve ASS formatting
             progress_callback: Optional callback(completed, total) for progress
+            db_session: Optional database session for caching and translation memory
+            subtitle_id: Optional subtitle ID for translation memory linkage
+            asset_id: Optional asset ID for translation memory linkage
+            media_name: Optional media name for translation memory context
 
         Returns:
             dict: Translation statistics
@@ -288,7 +383,14 @@ class SubtitleService:
 
                 # Process each line in the batch
                 batch_translations = []
-                for line in batch:
+                for line_idx, line in enumerate(batch):
+                    current_line_num = i + line_idx
+                    
+                    # Get timing information from the subtitle event
+                    event = subs[current_line_num]
+                    start_time = event.start / 1000.0  # Convert ms to seconds
+                    end_time = event.end / 1000.0
+                    
                     # Check cache first if available
                     cached_translation = None
                     if cache_service and line.strip():
@@ -329,12 +431,54 @@ class SubtitleService:
                             except Exception as e:
                                 logger.warning(f"Failed to save translation to cache: {e}")
 
+                    # Save to translation memory
+                    if db_session and line.strip():
+                        try:
+                            from app.models.translation_memory import TranslationMemory
+                            
+                            tm_record = TranslationMemory(
+                                subtitle_id=subtitle_id,
+                                asset_id=asset_id,
+                                source_text=line,
+                                target_text=batch_translations[-1],
+                                source_lang=source_lang,
+                                target_lang=target_lang,
+                                context=media_name,
+                                line_number=current_line_num + 1,  # 1-indexed for display
+                                start_time=start_time,
+                                end_time=end_time,
+                                word_count_source=len(line.split()),
+                                word_count_target=len(batch_translations[-1].split()),
+                                translation_model=model,
+                            )
+                            db_session.add(tm_record)
+                            db_session.flush()  # Flush but don't commit yet
+                        except Exception as e:
+                            logger.warning(f"Failed to save translation memory record: {e}")
+
                 translated_texts.extend(batch_translations)
                 completed += len(batch)
 
-                # Progress callback
+                # Progress callback with detailed message showing source and translated text
                 if progress_callback:
-                    progress_callback(completed, total_events)
+                    # Show the actual source text and translation for the last line in this batch
+                    if batch and batch_translations:
+                        source_text = batch[-1]  # Last source text in batch
+                        target_text = batch_translations[-1]  # Last translation in batch
+                        message = f"行 {current_line_num + 1}: {source_text} → {target_text}"
+                    else:
+                        message = f"行 {i+1}-{batch_end}"
+                    
+                    progress_callback(completed, total_events, message)
+
+            # Commit all translation memory records at once
+            if db_session:
+                try:
+                    db_session.commit()
+                    logger.info(f"Saved {len(translated_texts)} translation memory records")
+                except Exception as e:
+                    logger.warning(f"Failed to commit translation memory records: {e}")
+                    db_session.rollback()
 
             # Log cache statistics
             if cache_service:
@@ -350,6 +494,14 @@ class SubtitleService:
 
                     # Normalize text
                     translated_text = normalize_text(translated_text, target_lang)
+
+                    # Apply correction rules
+                    translated_text = apply_correction_rules(
+                        translated_text,
+                        source_lang=source_lang,
+                        target_lang=target_lang,
+                        db_session=db_session
+                    )
 
                     # Split long lines if needed
                     if settings.translation_max_line_length > 0:

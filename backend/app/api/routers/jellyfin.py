@@ -9,13 +9,15 @@ Provides REST API for:
 """
 
 from uuid import UUID
-from typing import Optional
+from typing import Optional, Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from app.core.db import get_db
+from app.models.user import User
+from app.api.routers.auth import get_current_user
 from app.core.logging import get_logger
 from app.schemas.jellyfin import (
     LibraryListResponse,
@@ -48,7 +50,9 @@ router = APIRouter(prefix="/api/jellyfin", tags=["Jellyfin"])
 # =============================================================================
 
 @router.get("/libraries", response_model=LibraryListResponse)
-async def list_libraries():
+async def list_libraries(
+    current_user: Annotated[User, Depends(get_current_user)],
+):
     """
     List all Jellyfin libraries.
 
@@ -61,8 +65,9 @@ async def list_libraries():
 
         # Add image URLs for each library
         for library in libraries:
-            # Generate primary image URL for library
-            library.image_url = f"{jellyfin_client.base_url}Items/{library.id}/Images/Primary"
+            # Generate primary image URL for library with API key for authentication
+            api_key = settings.jellyfin_api_key
+            library.image_url = f"{jellyfin_client.base_url}Items/{library.id}/Images/Primary?api_key={api_key}"
 
         return LibraryListResponse(
             libraries=libraries,
@@ -80,12 +85,15 @@ async def list_libraries():
 @router.get("/libraries/{library_id}/items", response_model=ItemListResponse)
 async def list_library_items(
     library_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     has_subtitle: Optional[bool] = Query(default=None, description="Filter by subtitle presence"),
+    db: Session = Depends(get_db),
 ):
     """
     List items in a Jellyfin library with pagination.
+    Returns Series for tvshows libraries, Movies for movie libraries.
 
     Args:
         library_id: Library ID to query
@@ -94,13 +102,33 @@ async def list_library_items(
         has_subtitle: Filter items by subtitle presence (optional)
 
     Returns:
-        Paginated list of items
+        Paginated list of items (Series/Movies, not individual episodes)
     """
     try:
         jellyfin_client = get_jellyfin_client()
 
+        # Get library info to determine collection type
+        libraries = await jellyfin_client.list_libraries()
+        library = next((lib for lib in libraries if lib.id == library_id), None)
+        
+        if not library:
+            raise HTTPException(status_code=404, detail="Library not found")
+
+        # Determine item types based on library collection type
+        include_item_types = []
+        if library.type == "tvshows":
+            include_item_types = ["Series"]
+        elif library.type == "movies":
+            include_item_types = ["Movie"]
+        else:
+            # For other types (boxsets, mixed, etc), include both
+            include_item_types = ["Series", "Movie"]
+
         # Build filters
-        filters = {}
+        filters = {
+            "IncludeItemTypes": ",".join(include_item_types)
+        }
+        
         if has_subtitle is not None:
             filters["HasSubtitles"] = str(has_subtitle).lower()
 
@@ -119,10 +147,7 @@ async def list_library_items(
                 "CommunityRating",
                 "OfficialRating",
                 "PremiereDate",
-                "SeriesName",
-                "SeasonName",
-                "IndexNumber",
-                "ParentIndexNumber",
+                "ChildCount",  # Number of seasons/episodes for series
             ],
             filters=filters,
         )
@@ -147,7 +172,7 @@ async def list_library_items(
             # Extract language information
             audio_langs = detector.extract_audio_languages(item)
             subtitle_langs = detector.extract_subtitle_languages(item)
-            missing_langs = detector.detect_missing_languages(item, required_langs)
+            missing_langs = detector.detect_missing_languages(item, required_langs, db_session=db)
 
             # Get duration and file size from first media source
             media_sources = item.media_sources
@@ -162,16 +187,17 @@ async def list_library_items(
                     duration_seconds = int(run_time_ticks / 10_000_000)  # Convert to seconds
                 file_size_bytes = first_source.size
 
-            # Generate image URLs
+            # Generate image URLs with API key for authentication
             image_url = None
             backdrop_url = None
+            api_key = settings.jellyfin_api_key
             if hasattr(item, 'image_tags') and item.image_tags:
                 # Primary image (poster)
                 if 'Primary' in item.image_tags:
-                    image_url = f"{jellyfin_client.base_url}Items/{item.id}/Images/Primary"
+                    image_url = f"{jellyfin_client.base_url}Items/{item.id}/Images/Primary?api_key={api_key}"
                 # Backdrop image
                 if 'Backdrop' in item.image_tags:
-                    backdrop_url = f"{jellyfin_client.base_url}Items/{item.id}/Images/Backdrop"
+                    backdrop_url = f"{jellyfin_client.base_url}Items/{item.id}/Images/Backdrop?api_key={api_key}"
 
             # Extract additional metadata from raw item data
             production_year = item_data.get('ProductionYear')
@@ -179,10 +205,7 @@ async def list_library_items(
             official_rating = item_data.get('OfficialRating')
             overview = item_data.get('Overview')
             genres = item_data.get('Genres', [])
-            series_name = item_data.get('SeriesName')
-            season_name = item_data.get('SeasonName')
-            episode_number = item_data.get('IndexNumber')
-            season_number = item_data.get('ParentIndexNumber')
+            child_count = item_data.get('ChildCount', 0)  # Number of episodes/seasons
 
             processed_items.append({
                 "id": item.id,
@@ -202,10 +225,8 @@ async def list_library_items(
                 "official_rating": official_rating,
                 "overview": overview,
                 "genres": genres,
-                "series_name": series_name,
-                "season_name": season_name,
-                "episode_number": episode_number,
-                "season_number": season_number,
+                "series_name": item.name if item.type == "Series" else None,
+                "child_count": child_count,
             })
 
         return ItemListResponse(
@@ -226,7 +247,11 @@ async def list_library_items(
 
 
 @router.get("/items/{item_id}", response_model=ItemDetailResponse)
-async def get_item_detail(item_id: str):
+async def get_item_detail(
+    item_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+):
     """
     Get detailed information about a Jellyfin item with language analysis.
 
@@ -252,7 +277,7 @@ async def get_item_detail(item_id: str):
 
         # Get required languages from settings
         required_langs = settings.required_langs.split(",")
-        missing_subtitles = detector.detect_missing_languages(item, required_langs)
+        missing_subtitles = detector.detect_missing_languages(item, required_langs, db_session=db)
 
         return ItemDetailResponse(
             item=item,
@@ -271,12 +296,144 @@ async def get_item_detail(item_id: str):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+@router.get("/series/{series_id}/episodes", response_model=ItemListResponse)
+async def list_series_episodes(
+    series_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    limit: int = Query(default=200, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+):
+    """
+    Get all episodes for a TV series.
+
+    Args:
+        series_id: Series ID from Jellyfin
+        limit: Max episodes per page (1-1000)
+        offset: Pagination offset
+
+    Returns:
+        Paginated list of episodes with language information
+    """
+    try:
+        jellyfin_client = get_jellyfin_client()
+
+        # Get all episodes for this series
+        filters = {
+            "IncludeItemTypes": "Episode",
+            "ParentId": series_id,
+        }
+
+        response = await jellyfin_client.get_library_items(
+            library_id=None,  # Don't restrict by library, use ParentId instead
+            limit=limit,
+            start_index=offset,
+            recursive=True,
+            fields=[
+                "MediaStreams",
+                "Path",
+                "Overview",
+                "SeriesName",
+                "SeasonName",
+                "IndexNumber",
+                "ParentIndexNumber",
+                "ProductionYear",
+                "PremiereDate",
+            ],
+            filters=filters,
+        )
+
+        items = response.get("Items", [])
+        total = response.get("TotalRecordCount", 0)
+
+        # Use LanguageDetector to analyze episodes
+        detector = LanguageDetector()
+        required_langs = settings.required_langs
+
+        # Process episodes
+        processed_items = []
+        for item_data in items:
+            try:
+                item = JellyfinItem.model_validate(item_data)
+            except Exception as e:
+                logger.warning(f"Failed to parse episode {item_data.get('Id')}: {e}")
+                continue
+
+            # Extract language information
+            audio_langs = detector.extract_audio_languages(item)
+            subtitle_langs = detector.extract_subtitle_languages(item)
+            missing_langs = detector.detect_missing_languages(item, required_langs, db_session=db)
+
+            # Get duration and file size
+            media_sources = item.media_sources
+            duration_seconds = None
+            file_size_bytes = None
+            
+            if media_sources:
+                first_source = media_sources[0]
+                run_time_ticks = first_source.run_time_ticks
+                if run_time_ticks:
+                    duration_seconds = int(run_time_ticks / 10_000_000)
+                file_size_bytes = first_source.size
+
+            # Generate image URLs
+            image_url = None
+            api_key = settings.jellyfin_api_key
+            if hasattr(item, 'image_tags') and item.image_tags and 'Primary' in item.image_tags:
+                image_url = f"{jellyfin_client.base_url}Items/{item.id}/Images/Primary?api_key={api_key}"
+
+            # Extract episode metadata
+            series_name = item_data.get('SeriesName')
+            season_name = item_data.get('SeasonName')
+            episode_number = item_data.get('IndexNumber')
+            season_number = item_data.get('ParentIndexNumber')
+            production_year = item_data.get('ProductionYear')
+            overview = item_data.get('Overview')
+
+            processed_items.append({
+                "id": item.id,
+                "name": item.name,
+                "type": item.type,
+                "path": item.path,
+                "audio_languages": audio_langs,
+                "subtitle_languages": subtitle_langs,
+                "missing_languages": missing_langs,
+                "duration_seconds": duration_seconds,
+                "file_size_bytes": file_size_bytes,
+                "image_url": image_url,
+                "production_year": production_year,
+                "overview": overview,
+                "series_name": series_name,
+                "season_name": season_name,
+                "episode_number": episode_number,
+                "season_number": season_number,
+            })
+
+        return ItemListResponse(
+            items=processed_items,
+            total=total,
+            limit=limit,
+            offset=offset,
+        )
+
+    except JellyfinError as e:
+        logger.error(f"Failed to list series episodes: {e}")
+        raise HTTPException(status_code=502, detail=f"Jellyfin error: {str(e)}")
+    except Exception as e:
+        logger.error(f"Unexpected error listing episodes: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 # =============================================================================
 # Scan Endpoints
 # =============================================================================
 
 @router.post("/scan", response_model=ScanJobResponse)
-async def trigger_scan(request: ScanLibraryRequest, db: Session = Depends(get_db)):
+async def trigger_scan(
+    request: ScanLibraryRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+):
     """
     Trigger a library scan for missing subtitles.
 
@@ -330,6 +487,7 @@ async def trigger_scan(request: ScanLibraryRequest, db: Session = Depends(get_db
 @router.post("/writeback", response_model=WritebackResponse)
 async def manual_writeback(
     request: WritebackRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
 ):
     """
@@ -373,7 +531,9 @@ async def manual_writeback(
 # =============================================================================
 
 @router.get("/health")
-async def jellyfin_health():
+async def jellyfin_health(
+    current_user: Annotated[User, Depends(get_current_user)],
+):
     """
     Check Jellyfin connectivity.
 

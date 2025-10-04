@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # =============================================================================
   # PostgreSQL Database
@@ -63,7 +61,7 @@ services:
     #           count: 1
     #           capabilities: [gpu]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/"]
+      test: ["CMD", "ollama", "list"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -79,9 +77,9 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: fluxcaption-backend
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-    expose:
-      - "8000"
+    command: /app/start.sh
+    ports:
+      - "8000:8000"
     env_file:
       - .env
     environment:
@@ -100,6 +98,7 @@ services:
       - subtitle_output:/app/output/subtitles
       - whisper_models:/app/models/whisper
       - temp_files:/tmp/fluxcaption
+      - ${MEDIA_PATH:-/media}:/media:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -116,51 +115,6 @@ services:
     restart: unless-stopped
     networks:
       - fluxcaption-network
-
-  # =============================================================================
-  # Celery Worker
-  # =============================================================================
-  worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: fluxcaption-worker
-    command: celery -A app.workers.celery_app worker -l INFO -Q default,scan,translate,asr -c 4
-    env_file:
-      - .env
-    environment:
-      - DATABASE_URL=postgresql+psycopg://fluxcaption:fluxcaption@postgres:5432/fluxcaption
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - OLLAMA_BASE_URL=http://ollama:11434
-      - JELLYFIN_BASE_URL=${JELLYFIN_BASE_URL:-http://jellyfin:8096}
-      - JELLYFIN_API_KEY=${JELLYFIN_API_KEY:-your_jellyfin_api_key_here}
-    volumes:
-      - ./backend/app:/app/app
-      - ./backend/migrations:/app/migrations
-      - worker_logs:/app/logs
-      - subtitle_output:/app/output/subtitles
-      - whisper_models:/app/models/whisper
-      - temp_files:/tmp/fluxcaption
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      ollama:
-        condition: service_started
-    restart: unless-stopped
-    networks:
-      - fluxcaption-network
-    # Uncomment to enable GPU support for ASR/LLM inference in workers
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
 
   # =============================================================================
   # Celery Beat (Scheduler)
@@ -188,7 +142,7 @@ services:
     networks:
       - fluxcaption-network
 
-  # =============================================================================
+# =============================================================================
   # Frontend (Nginx + React)
   # =============================================================================
   frontend:
@@ -222,8 +176,6 @@ volumes:
   ollama_data:
     driver: local
   api_logs:
-    driver: local
-  worker_logs:
     driver: local
   beat_logs:
     driver: local

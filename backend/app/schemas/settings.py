@@ -20,7 +20,11 @@ class SettingsResponse(BaseModel):
 
     # Model Configuration
     default_mt_model: str = Field(description="Default machine translation model")
+    asr_engine: Literal["faster-whisper", "funasr"] = Field(
+        description="ASR engine to use (faster-whisper or funasr)"
+    )
     asr_model: str = Field(description="Whisper ASR model (tiny/base/small/medium/large)")
+    funasr_model: str = Field(description="FunASR model (paraformer-zh, sensevoicesmall, etc.)")
     asr_language: str = Field(description="Source language for ASR (auto for detection)")
     asr_compute_type: Literal["int8", "int8_float16", "float16", "float32"] = Field(
         description="ASR compute precision"
@@ -46,6 +50,12 @@ class SettingsResponse(BaseModel):
     scan_task_timeout: int = Field(description="Scan task timeout in seconds")
     translate_task_timeout: int = Field(description="Translation task timeout in seconds")
     asr_task_timeout: int = Field(description="ASR task timeout in seconds")
+
+    # Local Media Configuration
+    favorite_media_paths: list[str] = Field(
+        default_factory=list,
+        description="List of favorite local media directory paths"
+    )
 
     # System Info (read-only)
     environment: Literal["development", "production", "testing"] = Field(description="Current environment")
@@ -73,7 +83,9 @@ class SettingsUpdateRequest(BaseModel):
 
     # Model Configuration
     default_mt_model: str | None = Field(default=None, description="Default MT model")
+    asr_engine: Literal["faster-whisper", "funasr"] | None = Field(default=None, description="ASR engine")
     asr_model: str | None = Field(default=None, description="Whisper ASR model")
+    funasr_model: str | None = Field(default=None, description="FunASR model")
     asr_language: str | None = Field(default=None, description="ASR source language")
     asr_compute_type: Literal["int8", "int8_float16", "float16", "float32"] | None = Field(
         default=None, description="ASR compute precision"
@@ -99,3 +111,6 @@ class SettingsUpdateRequest(BaseModel):
     scan_task_timeout: int | None = Field(default=None, ge=60, le=3600, description="Scan timeout")
     translate_task_timeout: int | None = Field(default=None, ge=60, le=7200, description="Translate timeout")
     asr_task_timeout: int | None = Field(default=None, ge=300, le=14400, description="ASR timeout")
+
+    # Local Media Configuration
+    favorite_media_paths: list[str] | None = Field(default=None, description="Favorite local media paths")

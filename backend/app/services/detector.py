@@ -151,14 +151,18 @@ class LanguageDetector:
         item: JellyfinItem,
         required_langs: list[str],
         check_type: str = "subtitle",
+        db_session = None,
     ) -> list[str]:
         """
         Detect which required languages are missing from an item.
+        
+        Checks both Jellyfin streams AND database records to avoid re-translating.
 
         Args:
             item: Jellyfin item to analyze
             required_langs: List of required BCP-47 language codes
             check_type: Type to check - "subtitle" or "audio"
+            db_session: Optional database session to check for existing subtitles
 
         Returns:
             List of missing language codes (sorted)
@@ -174,6 +178,25 @@ class LanguageDetector:
             existing_langs = LanguageDetector.extract_audio_languages(item)
         else:
             raise ValueError(f"Invalid check_type: {check_type}")
+        
+        # Also check database for generated subtitles
+        if db_session and check_type == "subtitle":
+            from app.models.subtitle import Subtitle
+            from app.models.media_asset import MediaAsset
+            
+            # Find asset by item_id
+            asset = db_session.query(MediaAsset).filter_by(item_id=item.id).first()
+            if asset:
+                # Get all subtitle languages from database
+                db_subtitles = db_session.query(Subtitle).filter_by(asset_id=asset.id).all()
+                db_langs = {sub.lang.lower() for sub in db_subtitles}
+                
+                # Merge with existing languages
+                existing_langs = list(set(existing_langs) | db_langs)
+                
+                logger.debug(
+                    f"Item {item.name}: found {len(db_langs)} subtitles in database: {sorted(db_langs)}"
+                )
 
         # Normalize required languages
         required_normalized = [lang.lower() for lang in required_langs]
