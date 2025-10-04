@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Database, Search, Filter, Trash2, CheckSquare, Square } from 'lucide-react'
+import { Database, Search, Filter, Trash2, CheckSquare, Square, ChevronDown, ChevronUp } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -17,6 +17,72 @@ import {
 } from '@/components/ui/Dialog'
 import api from '@/lib/api'
 import { getLanguageName } from '@/lib/utils'
+
+interface SubtitleContentPreviewProps {
+  subtitleId: string
+  sourceLang?: string
+  targetLang: string
+  origin: string
+}
+
+function SubtitleContentPreview({ subtitleId, sourceLang, targetLang, origin }: SubtitleContentPreviewProps) {
+  const { data: content, isLoading } = useQuery({
+    queryKey: ['subtitle-content', subtitleId],
+    queryFn: () => api.getSubtitleContent(subtitleId, 10), // Show first 10 lines
+  })
+
+  if (isLoading) {
+    return (
+      <div className="mt-4 p-4 bg-muted/30 rounded-lg">
+        <div className="text-sm text-muted-foreground">加载字幕内容...</div>
+      </div>
+    )
+  }
+
+  if (!content || !content.entries || content.entries.length === 0) {
+    return (
+      <div className="mt-4 p-4 bg-muted/30 rounded-lg">
+        <div className="text-sm text-muted-foreground">无可用内容</div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mt-4 p-4 bg-muted/30 rounded-lg space-y-3">
+      <div className="text-sm font-medium text-muted-foreground mb-2">
+        字幕预览 (前 {content.entries.length} 条)
+      </div>
+      <div className="space-y-2 max-h-[400px] overflow-y-auto">
+        {content.entries.map((entry: any, idx: number) => (
+          <div key={idx} className="p-2 bg-background rounded border text-sm">
+            <div className="text-xs text-muted-foreground mb-1">
+              #{entry.index} • {entry.start} → {entry.end}
+            </div>
+            {origin === 'mt' && sourceLang ? (
+              <div className="space-y-1">
+                <div className="text-muted-foreground">
+                  <span className="text-xs font-medium">{getLanguageName(sourceLang)}:</span>{' '}
+                  <span className="italic">原文暂不可用</span>
+                </div>
+                <div>
+                  <span className="text-xs font-medium">{getLanguageName(targetLang)}:</span>{' '}
+                  {entry.text}
+                </div>
+              </div>
+            ) : (
+              <div>{entry.text}</div>
+            )}
+          </div>
+        ))}
+      </div>
+      {content.total > content.entries.length && (
+        <div className="text-xs text-muted-foreground text-center pt-2 border-t">
+          共 {content.total} 条字幕，显示前 {content.entries.length} 条
+        </div>
+      )}
+    </div>
+  )
+}
 
 interface SubtitleRecord {
   id: string
@@ -44,6 +110,7 @@ export function Subtitles() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteFiles, setDeleteFiles] = useState(false)
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
 
   const limit = 50
 
@@ -128,6 +195,16 @@ export function Subtitles() {
 
   const confirmBatchDelete = () => {
     batchDeleteMutation.mutate()
+  }
+
+  const toggleExpanded = (id: string) => {
+    const newExpanded = new Set(expandedIds)
+    if (newExpanded.has(id)) {
+      newExpanded.delete(id)
+    } else {
+      newExpanded.add(id)
+    }
+    setExpandedIds(newExpanded)
   }
 
   const getOriginBadge = (origin: string) => {
@@ -352,6 +429,17 @@ export function Subtitles() {
                       <Button
                         variant="ghost"
                         size="sm"
+                        onClick={() => toggleExpanded(subtitle.id)}
+                      >
+                        {expandedIds.has(subtitle.id) ? (
+                          <ChevronUp className="h-4 w-4" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4" />
+                        )}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => deleteMutation.mutate(subtitle.id)}
                         disabled={deleteMutation.isPending}
                       >
@@ -359,6 +447,16 @@ export function Subtitles() {
                       </Button>
                     </div>
                   </div>
+
+                  {/* Expandable content preview */}
+                  {expandedIds.has(subtitle.id) && (
+                    <SubtitleContentPreview
+                      subtitleId={subtitle.id}
+                      sourceLang={subtitle.source_lang}
+                      targetLang={subtitle.lang}
+                      origin={subtitle.origin}
+                    />
+                  )}
                 </div>
               ))}
 

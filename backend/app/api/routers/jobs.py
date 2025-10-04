@@ -213,6 +213,7 @@ async def list_jobs(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     status: str | None = Query(None, description="Filter by status"),
+    type: str | None = Query(None, description="Filter by source type"),
     db: Session = Depends(get_db),
 ) -> JobListResponse:
     """
@@ -232,6 +233,9 @@ async def list_jobs(
 
     if status:
         query = query.filter(TranslationJob.status == status)
+    
+    if type:
+        query = query.filter(TranslationJob.source_type == type)
 
     # Get total count
     total = query.count()
@@ -428,6 +432,64 @@ async def cancel_job(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to cancel job: {str(e)}",
+        )
+
+
+@router.delete(
+    "/{job_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete job",
+)
+async def delete_job(
+    job_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+) -> None:
+    """
+    Delete a translation job record.
+    
+    Only allows deletion of completed, failed, or cancelled jobs.
+    Running or queued jobs must be cancelled first.
+    
+    Args:
+        job_id: Job ID
+        db: Database session
+        
+    Raises:
+        HTTPException: If job not found or cannot be deleted
+    """
+    job = db.query(TranslationJob).filter(TranslationJob.id == job_id).first()
+
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Job '{job_id}' not found",
+        )
+
+    # Check if job can be deleted
+    if job.status in ("queued", "running"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot delete {job.status} job. Cancel it first.",
+        )
+
+    try:
+        # Delete task logs first (foreign key constraint)
+        from app.models.task_log import TaskLog
+        db.query(TaskLog).filter(TaskLog.job_id == str(job_id)).delete()
+        
+        # Delete the job
+        db.delete(job)
+        db.commit()
+
+        logger.info(f"Deleted job: {job_id}")
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to delete job {job_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete job: {str(e)}",
         )
 
 

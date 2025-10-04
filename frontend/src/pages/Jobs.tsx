@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { RefreshCw, XCircle, RotateCcw, Download, Eye, PlayCircle, FileText } from 'lucide-react'
+import { RefreshCw, XCircle, RotateCcw, Download, Eye, PlayCircle, FileText, Trash2 } from 'lucide-react'
 import { Checkbox } from '@/components/ui/Checkbox'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -71,6 +71,21 @@ export function Jobs() {
       refetch()
     } catch (error) {
       console.error('Failed to retry job:', error)
+    }
+  }
+
+  // Handle job deletion
+  const handleDeleteJob = async (jobId: string) => {
+    try {
+      await api.deleteJob(jobId)
+      setSelectedJobs(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(jobId)
+        return newSet
+      })
+      refetch()
+    } catch (error) {
+      console.error('Failed to delete job:', error)
     }
   }
 
@@ -470,15 +485,26 @@ export function Jobs() {
                         </Button>
                       )}
                       {(job.status === 'success' || job.status === 'failed' || job.status === 'cancelled') && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setLogsJobId(job.id)}
-                          className="h-8 px-2 sm:px-3"
-                        >
-                          <FileText className="h-4 w-4 sm:mr-2" />
-                          <span className="hidden sm:inline">日志</span>
-                        </Button>
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setLogsJobId(job.id)}
+                            className="h-8 px-2 sm:px-3"
+                          >
+                            <FileText className="h-4 w-4 sm:mr-2" />
+                            <span className="hidden sm:inline">日志</span>
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDeleteJob(job.id)}
+                            className="h-8 px-2 sm:px-3 text-destructive hover:bg-destructive/10"
+                          >
+                            <Trash2 className="h-4 w-4 sm:mr-2" />
+                            <span className="hidden sm:inline">删除</span>
+                          </Button>
+                        </>
                       )}
                       {job.status === 'success' && job.result_paths && job.result_paths.length > 0 && (
                         <>

@@ -1,12 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
-import { FileText, X, Clock, AlertCircle } from 'lucide-react'
+import { FileText, Clock, AlertCircle } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/Dialog'
-import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import api from '@/lib/api'
 
@@ -53,19 +52,10 @@ export function TaskLogsDialog({ jobId, open, onOpenChange }: TaskLogsDialogProp
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[80vh]">
         <DialogHeader>
-          <div className="flex items-center justify-between">
-            <DialogTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              任务执行日志
-            </DialogTitle>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onOpenChange(false)}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
+          <DialogTitle className="flex items-center gap-2">
+            <FileText className="h-5 w-5" />
+            任务执行日志
+          </DialogTitle>
         </DialogHeader>
 
         {isLoading ? (
