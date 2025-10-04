@@ -208,10 +208,10 @@ class JellyfinClient:
 
     async def list_libraries(self) -> list[JellyfinLibrary]:
         """
-        List all libraries/collections in Jellyfin with item counts.
+        List all libraries/collections in Jellyfin with item counts and image tags.
 
         Returns:
-            List of libraries with populated ChildCount
+            List of libraries with populated ChildCount and ImageTags
 
         Raises:
             JellyfinError: API error
@@ -229,9 +229,19 @@ class JellyfinClient:
         try:
             user_id = await self._get_user_id()
             
-            # Get item count for each library
+            # Get detailed info for each library including ImageTags
             for library in libraries:
                 try:
+                    # Get library item details to fetch ImageTags
+                    library_item = await self._request_with_retry(
+                        "GET",
+                        f"/Users/{user_id}/Items/{library.id}",
+                    )
+                    
+                    # Extract ImageTags from the library item
+                    if "ImageTags" in library_item:
+                        library.image_tags = library_item.get("ImageTags")
+                    
                     # Query Items API with Limit=1 to get TotalRecordCount efficiently
                     items_response = await self._request_with_retry(
                         "GET",
@@ -244,10 +254,11 @@ class JellyfinClient:
                     )
                     library.item_count = items_response.get("TotalRecordCount", 0)
                 except Exception as e:
-                    logger.warning(f"Failed to get item count for library {library.name}: {e}")
+                    logger.warning(f"Failed to get details for library {library.name}: {e}")
                     library.item_count = 0
+                    library.image_tags = None
         except Exception as e:
-            logger.warning(f"Failed to get user ID, item counts will be 0: {e}")
+            logger.warning(f"Failed to get user ID, item counts and images will be unavailable: {e}")
             # Keep item_count as None or 0
 
         logger.info(f"Found {len(libraries)} libraries")

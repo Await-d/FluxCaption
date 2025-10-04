@@ -63,11 +63,14 @@ async def list_libraries(
         jellyfin_client = get_jellyfin_client()
         libraries = await jellyfin_client.list_libraries()
 
-        # Add image URLs for each library
+        # Add image URLs for libraries that have Primary images
         for library in libraries:
-            # Generate primary image URL for library with API key for authentication
-            api_key = settings.jellyfin_api_key
-            library.image_url = f"{jellyfin_client.base_url}Items/{library.id}/Images/Primary?api_key={api_key}"
+            # Only generate image URL if library has a Primary image tag
+            if library.image_tags and 'Primary' in library.image_tags:
+                api_key = settings.jellyfin_api_key
+                library.image_url = f"{jellyfin_client.base_url}Items/{library.id}/Images/Primary?api_key={api_key}"
+            else:
+                library.image_url = None
 
         return LibraryListResponse(
             libraries=libraries,
