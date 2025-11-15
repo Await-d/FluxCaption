@@ -82,8 +82,8 @@ export function Header() {
           variant="ghost"
           size="icon"
           onClick={toggleLanguage}
-          aria-label="Switch language"
-          title={i18n.language === 'zh-CN' ? 'Switch to English' : '切换到中文'}
+          aria-label={i18n.language === 'zh-CN' ? t('components.header.switchToEnglish') : t('components.header.switchToChinese')}
+          title={i18n.language === 'zh-CN' ? t('components.header.switchToEnglish') : t('components.header.switchToChinese')}
         >
           <Languages className="h-5 w-5" />
         </Button>
@@ -91,7 +91,7 @@ export function Header() {
           variant="ghost"
           size="icon"
           onClick={cycleTheme}
-          aria-label={`Switch to ${theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light'} theme`}
+          aria-label={t('components.header.switchTheme', { theme: theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light' })}
         >
           {getThemeIcon()}
         </Button>
@@ -99,8 +99,8 @@ export function Header() {
           variant="ghost"
           size="icon"
           onClick={() => logoutMutation.mutate()}
-          aria-label="Logout"
-          title={i18n.language === 'zh-CN' ? '退出登录' : 'Logout'}
+          aria-label={t('components.header.logout')}
+          title={t('components.header.logout')}
         >
           <LogOut className="h-5 w-5" />
         </Button>

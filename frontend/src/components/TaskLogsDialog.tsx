@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/Dialog'
 import { Badge } from '@/components/ui/Badge'
 import api from '@/lib/api'
+import { useTranslation } from 'react-i18next'
 
 interface TaskLogsDialogProps {
   jobId: string | null
@@ -16,6 +17,7 @@ interface TaskLogsDialogProps {
 }
 
 export function TaskLogsDialog({ jobId, open, onOpenChange }: TaskLogsDialogProps) {
+  const { t, i18n } = useTranslation()
   const { data, isLoading, error } = useQuery({
     queryKey: ['job-logs', jobId],
     queryFn: () => api.getJobLogs(jobId!),
@@ -38,7 +40,7 @@ export function TaskLogsDialog({ jobId, open, onOpenChange }: TaskLogsDialogProp
   }
 
   const formatTimestamp = (timestamp: string) => {
-    return new Date(timestamp).toLocaleString('zh-CN', {
+    return new Date(timestamp).toLocaleString(i18n.language, {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
@@ -54,20 +56,20 @@ export function TaskLogsDialog({ jobId, open, onOpenChange }: TaskLogsDialogProp
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5" />
-            任务执行日志
+            {t('components.taskLogs.title')}
           </DialogTitle>
         </DialogHeader>
 
         {isLoading ? (
           <div className="py-12 text-center text-muted-foreground">
-            加载日志中...
+            {t('components.taskLogs.loadingLogs')}
           </div>
         ) : error ? (
           <div className="py-12 text-center">
             <AlertCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
-            <p className="text-destructive">加载日志失败</p>
+            <p className="text-destructive">{t('components.taskLogs.loadFailed')}</p>
             <p className="text-sm text-muted-foreground mt-2">
-              {(error as any).detail || '未知错误'}
+              {(error as any).detail || t('components.taskLogs.unknownError')}
             </p>
           </div>
         ) : data && data.logs.length > 0 ? (
@@ -75,16 +77,16 @@ export function TaskLogsDialog({ jobId, open, onOpenChange }: TaskLogsDialogProp
             {/* Stats */}
             <div className="grid grid-cols-2 gap-4 p-4 bg-muted/50 rounded-lg">
               <div>
-                <div className="text-sm text-muted-foreground">任务 ID</div>
+                <div className="text-sm text-muted-foreground">{t('components.taskLogs.jobId')}</div>
                 <div className="font-mono text-xs mt-1">{data.job_id}</div>
               </div>
               <div>
-                <div className="text-sm text-muted-foreground">任务状态</div>
+                <div className="text-sm text-muted-foreground">{t('components.taskLogs.jobStatus')}</div>
                 <div className="font-medium mt-1">{data.job_status}</div>
               </div>
               <div className="col-span-2">
-                <div className="text-sm text-muted-foreground">日志条目</div>
-                <div className="font-medium mt-1">{data.total_logs} 条</div>
+                <div className="text-sm text-muted-foreground">{t('components.taskLogs.logEntries')}</div>
+                <div className="font-medium mt-1">{data.total_logs} {t('components.taskLogs.entries')}</div>
               </div>
             </div>
 
@@ -135,7 +137,7 @@ export function TaskLogsDialog({ jobId, open, onOpenChange }: TaskLogsDialogProp
                       {/* Extra data (errors) */}
                       {log.extra_data && log.extra_data.error && (
                         <div className="mt-2 p-2 bg-destructive/10 text-destructive rounded text-xs break-words">
-                          <div className="font-medium mb-1">错误信息:</div>
+                          <div className="font-medium mb-1">{t('components.taskLogs.errorMessage')}:</div>
                           {log.extra_data.error}
                         </div>
                       )}
@@ -147,7 +149,7 @@ export function TaskLogsDialog({ jobId, open, onOpenChange }: TaskLogsDialogProp
           </div>
         ) : (
           <div className="py-12 text-center text-muted-foreground">
-            暂无日志记录
+            {t('components.taskLogs.noLogs')}
           </div>
         )}
       </DialogContent>

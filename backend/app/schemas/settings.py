@@ -9,8 +9,19 @@ from pydantic import BaseModel, Field
 class SettingsResponse(BaseModel):
     """Response schema for GET /api/settings endpoint."""
 
+    # Jellyfin Integration
+    jellyfin_base_url: str = Field(description="Jellyfin server base URL")
+    jellyfin_api_key: str = Field(description="Jellyfin API key for authentication")
+    jellyfin_timeout: int = Field(description="Jellyfin request timeout in seconds")
+    jellyfin_max_retries: int = Field(description="Jellyfin maximum retry attempts")
+    jellyfin_rate_limit_per_second: int = Field(description="Jellyfin API rate limit per second")
+
+    # Ollama Configuration
+    ollama_base_url: str = Field(description="Ollama API base URL")
+    ollama_timeout: int = Field(description="Ollama request timeout in seconds")
+    ollama_keep_alive: str = Field(description="Ollama model keep alive duration")
+
     # Subtitle & Translation Pipeline
-    required_langs: list[str] = Field(description="Required subtitle languages (BCP-47 codes)")
     writeback_mode: Literal["upload", "sidecar"] = Field(description="Subtitle writeback mode")
     default_subtitle_format: Literal["srt", "ass", "vtt"] = Field(description="Default subtitle format")
     preserve_ass_styles: bool = Field(description="Preserve ASS styles when translating")
@@ -71,7 +82,20 @@ class SettingsUpdateRequest(BaseModel):
     """Request schema for PATCH /api/settings endpoint."""
 
     # All fields are optional for partial updates
-    required_langs: list[str] | None = Field(default=None, description="Required subtitle languages")
+    
+    # Jellyfin Integration
+    jellyfin_base_url: str | None = Field(default=None, description="Jellyfin server base URL")
+    jellyfin_api_key: str | None = Field(default=None, description="Jellyfin API key")
+    jellyfin_timeout: int | None = Field(default=None, ge=5, le=300, description="Jellyfin timeout")
+    jellyfin_max_retries: int | None = Field(default=None, ge=0, le=10, description="Jellyfin max retries")
+    jellyfin_rate_limit_per_second: int | None = Field(default=None, ge=1, le=100, description="Jellyfin rate limit")
+
+    # Ollama Configuration
+    ollama_base_url: str | None = Field(default=None, description="Ollama API base URL")
+    ollama_timeout: int | None = Field(default=None, ge=10, le=600, description="Ollama timeout in seconds")
+    ollama_keep_alive: str | None = Field(default=None, description="Ollama keep alive duration (e.g., '30m', '1h')")
+
+    writeback_mode: list[str] | None = Field(default=None, description="Required subtitle languages")
     writeback_mode: Literal["upload", "sidecar"] | None = Field(default=None, description="Writeback mode")
     default_subtitle_format: Literal["srt", "ass", "vtt"] | None = Field(
         default=None, description="Default subtitle format"

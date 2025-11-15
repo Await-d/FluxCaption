@@ -166,7 +166,7 @@ export function Corrections() {
     try {
       const rules = JSON.parse(importText)
       if (!Array.isArray(rules)) {
-        throw new Error('导入数据必须是数组格式')
+        throw new Error(t('corrections.importDataMustBeArray'))
       }
       importMutation.mutate(importText)
     } catch (error: any) {
@@ -175,7 +175,7 @@ export function Corrections() {
   }
 
   if (isLoading) {
-    return <div className="text-muted-foreground">加载中...</div>
+    return <div className="text-muted-foreground">{t('corrections.loading2')}</div>
   }
 
   return (
@@ -183,15 +183,15 @@ export function Corrections() {
       <div className="flex justify-end gap-2">
         <Button variant="outline" onClick={() => setShowImport(true)}>
           <FileUp className="mr-2 h-4 w-4" />
-          批量导入
+          {t('corrections.batchImport')}
         </Button>
         <Button variant="outline" onClick={handleExport}>
           <Download className="mr-2 h-4 w-4" />
-          导出规则
+          {t('corrections.exportRulesBtn')}
         </Button>
         <Button onClick={() => setIsAddingRule(true)}>
           <Plus className="mr-2 h-4 w-4" />
-          添加规则
+          {t('corrections.addRuleBtn')}
         </Button>
       </div>
 
@@ -199,15 +199,15 @@ export function Corrections() {
       {showImport && (
         <Card>
           <CardHeader>
-            <CardTitle>批量导入纠正规则</CardTitle>
+            <CardTitle>{t('corrections.batchImportTitle')}</CardTitle>
             <CardDescription>
-              粘贴 JSON 格式的规则数据，或从文件中导入
+              {t('corrections.batchImportDesc')}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <textarea
               className="w-full h-64 p-3 border rounded-md font-mono text-sm"
-              placeholder='[\n  {\n    "name": "规则名称",\n    "source_pattern": "源文本",\n    "target_text": "目标文本",\n    "is_regex": false\n  }\n]'
+              placeholder={t('corrections.importPlaceholder')}
               value={importText}
               onChange={(e) => setImportText(e.target.value)}
             />
@@ -219,13 +219,13 @@ export function Corrections() {
                   setImportText('')
                 }}
               >
-                取消
+                {t('corrections.cancelBtn')}
               </Button>
               <Button
                 onClick={handleImport}
                 disabled={importMutation.isPending || !importText.trim()}
               >
-                {importMutation.isPending ? '导入中...' : '开始导入'}
+                {importMutation.isPending ? t('corrections.importing') : t('corrections.startImport')}
               </Button>
             </div>
           </CardContent>
@@ -236,14 +236,14 @@ export function Corrections() {
       {isAddingRule && (
         <Card>
           <CardHeader>
-            <CardTitle>{editingRule ? '编辑规则' : '添加新规则'}</CardTitle>
+            <CardTitle>{editingRule ? t('corrections.editRule') : t('corrections.addNewRule')}</CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-medium mb-2 block">
-                    规则名称 *
+                    {t('corrections.ruleNameRequired')}
                   </label>
                   <Input
                     value={formData.name}
@@ -251,12 +251,12 @@ export function Corrections() {
                       setFormData({ ...formData, name: e.target.value })
                     }
                     required
-                    placeholder="例如：修正专有名词"
+                    placeholder={t('corrections.descriptionPlaceholder2')}
                   />
                 </div>
                 <div>
                   <label className="text-sm font-medium mb-2 block">
-                    优先级 (0-100)
+                    {t('corrections.priorityRange')}
                   </label>
                   <Input
                     type="number"
@@ -276,7 +276,7 @@ export function Corrections() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-medium mb-2 block">
-                    源语言 (可选)
+                    {t('corrections.sourceLangOptional')}
                   </label>
                   <Input
                     value={formData.source_lang}
@@ -288,7 +288,7 @@ export function Corrections() {
                 </div>
                 <div>
                   <label className="text-sm font-medium mb-2 block">
-                    目标语言 (可选)
+                    {t('corrections.targetLangOptional')}
                   </label>
                   <Input
                     value={formData.target_lang}
@@ -302,7 +302,7 @@ export function Corrections() {
 
               <div>
                 <label className="text-sm font-medium mb-2 block">
-                  源文本/模式 *
+                  {t('corrections.sourcePatternRequired')}
                 </label>
                 <Input
                   value={formData.source_pattern}
@@ -310,13 +310,13 @@ export function Corrections() {
                     setFormData({ ...formData, source_pattern: e.target.value })
                   }
                   required
-                  placeholder="要替换的文本或正则表达式"
+                  placeholder={t('corrections.sourcePatternPlaceholder2')}
                 />
               </div>
 
               <div>
                 <label className="text-sm font-medium mb-2 block">
-                  目标文本 *
+                  {t('corrections.targetTextRequired')}
                 </label>
                 <Input
                   value={formData.target_text}
@@ -324,13 +324,13 @@ export function Corrections() {
                     setFormData({ ...formData, target_text: e.target.value })
                   }
                   required
-                  placeholder="替换后的文本"
+                  placeholder={t('corrections.targetTextPlaceholder2')}
                 />
               </div>
 
               <div>
                 <label className="text-sm font-medium mb-2 block">
-                  描述 (可选)
+                  {t('corrections.descriptionOptional')}
                 </label>
                 <textarea
                   className="w-full p-2 border rounded-md text-sm"
@@ -339,7 +339,7 @@ export function Corrections() {
                   onChange={(e) =>
                     setFormData({ ...formData, description: e.target.value })
                   }
-                  placeholder="规则说明"
+                  placeholder={t('corrections.descriptionPlaceholder3')}
                 />
               </div>
 
@@ -352,7 +352,7 @@ export function Corrections() {
                       setFormData({ ...formData, is_regex: e.target.checked })
                     }
                   />
-                  <span className="text-sm">使用正则表达式</span>
+                  <span className="text-sm">{t('corrections.useRegexLabel')}</span>
                 </label>
                 <label className="flex items-center gap-2">
                   <input
@@ -365,7 +365,7 @@ export function Corrections() {
                       })
                     }
                   />
-                  <span className="text-sm">区分大小写</span>
+                  <span className="text-sm">{t('corrections.caseSensitiveLabel')}</span>
                 </label>
                 <label className="flex items-center gap-2">
                   <input
@@ -375,7 +375,7 @@ export function Corrections() {
                       setFormData({ ...formData, is_active: e.target.checked })
                     }
                   />
-                  <span className="text-sm">启用规则</span>
+                  <span className="text-sm">{t('corrections.enableRuleLabel')}</span>
                 </label>
               </div>
 
@@ -389,7 +389,7 @@ export function Corrections() {
                     resetForm()
                   }}
                 >
-                  取消
+                  {t('corrections.cancelBtn')}
                 </Button>
                 <Button
                   type="submit"
@@ -397,7 +397,7 @@ export function Corrections() {
                     createMutation.isPending || updateMutation.isPending
                   }
                 >
-                  {editingRule ? '更新规则' : '添加规则'}
+                  {editingRule ? t('corrections.updateRule') : t('corrections.addRuleAction')}
                 </Button>
               </div>
             </form>
@@ -417,15 +417,15 @@ export function Corrections() {
                       <h3 className="font-semibold">{rule.name}</h3>
                       {rule.is_active ? (
                         <span className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded">
-                          启用
+                          {t('corrections.enabled2')}
                         </span>
                       ) : (
                         <span className="text-xs bg-gray-100 text-gray-800 px-2 py-0.5 rounded">
-                          禁用
+                          {t('corrections.disabled2')}
                         </span>
                       )}
                       <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">
-                        优先级: {rule.priority}
+                        {t('corrections.priorityLabel2')}: {rule.priority}
                       </span>
                     </div>
 
@@ -437,13 +437,13 @@ export function Corrections() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
                       <div>
-                        <span className="font-medium">源文本: </span>
+                        <span className="font-medium">{t('corrections.sourceTextLabel')}: </span>
                         <code className="bg-muted px-2 py-0.5 rounded">
                           {rule.source_pattern}
                         </code>
                       </div>
                       <div>
-                        <span className="font-medium">目标文本: </span>
+                        <span className="font-medium">{t('corrections.targetTextLabel')}: </span>
                         <code className="bg-muted px-2 py-0.5 rounded">
                           {rule.target_text}
                         </code>
@@ -452,13 +452,13 @@ export function Corrections() {
 
                     <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
                       {rule.source_lang && (
-                        <span>源语言: {rule.source_lang}</span>
+                        <span>{t('corrections.sourceLang')}: {rule.source_lang}</span>
                       )}
                       {rule.target_lang && (
-                        <span>目标语言: {rule.target_lang}</span>
+                        <span>{t('corrections.targetLang')}: {rule.target_lang}</span>
                       )}
-                      {rule.is_regex && <span>正则表达式</span>}
-                      {rule.is_case_sensitive && <span>区分大小写</span>}
+                      {rule.is_regex && <span>{t('corrections.regex')}</span>}
+                      {rule.is_case_sensitive && <span>{t('corrections.caseSensitive')}</span>}
                     </div>
                   </div>
 
@@ -475,7 +475,7 @@ export function Corrections() {
                       size="sm"
                       onClick={() => {
                         if (
-                          confirm('确定要删除这条规则吗？')
+                          confirm(t('corrections.confirmDelete'))
                         ) {
                           deleteMutation.mutate(rule.id)
                         }
@@ -491,8 +491,8 @@ export function Corrections() {
         ) : (
           <Card>
             <CardContent className="py-12 text-center text-muted-foreground">
-              <p>暂无纠正规则</p>
-              <p className="text-sm mt-1">点击"添加规则"按钮创建第一条规则</p>
+              <p>{t('corrections.empty')}</p>
+              <p className="text-sm mt-1">{t('corrections.emptyHint')}</p>
             </CardContent>
           </Card>
         )}

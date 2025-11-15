@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { RefreshCw, XCircle, RotateCcw, Download, Eye, PlayCircle, FileText, Trash2 } from 'lucide-react'
+import { RefreshCw, XCircle, RotateCcw, Download, Eye, PlayCircle, FileText, Trash2, Play } from 'lucide-react'
 import { Checkbox } from '@/components/ui/Checkbox'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -71,6 +71,16 @@ export function Jobs() {
       refetch()
     } catch (error) {
       console.error('Failed to retry job:', error)
+    }
+  }
+
+  // Handle job resume (for paused jobs)
+  const handleResumeJob = async (jobId: string) => {
+    try {
+      await api.resumeJob(jobId)
+      refetch()
+    } catch (error) {
+      console.error('Failed to resume job:', error)
     }
   }
 
@@ -232,7 +242,7 @@ export function Jobs() {
           <CardHeader className="p-3 sm:p-6">
             <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
               <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
-              当前正在执行的任务 ({runningJobs.length})
+              {t('jobs.currentlyRunningTasksCount', { count: runningJobs.length })}
             </CardTitle>
           </CardHeader>
           <CardContent className="p-3 sm:p-6">
@@ -267,7 +277,7 @@ export function Jobs() {
                   {/* Progress with larger display */}
                   <div className="space-y-1 sm:space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs sm:text-sm font-medium">翻译进度</span>
+                      <span className="text-xs sm:text-sm font-medium">{t('jobs.translationProgress')}</span>
                       <span className="text-base sm:text-lg font-bold text-blue-500">{jobProgress[job.id] ?? job.progress}%</span>
                     </div>
                     <Progress value={jobProgress[job.id] ?? job.progress} className="h-2 sm:h-3" />
@@ -316,11 +326,11 @@ export function Jobs() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">{t('jobs.allStatuses')}</SelectItem>
-                  <SelectItem value="queued">排队中</SelectItem>
+                  <SelectItem value="queued">{t('jobs.queued')}</SelectItem>
                   <SelectItem value="running">{t('jobs.running')}</SelectItem>
-                  <SelectItem value="success">成功</SelectItem>
+                  <SelectItem value="success">{t('jobs.success')}</SelectItem>
                   <SelectItem value="failed">{t('jobs.failed')}</SelectItem>
-                  <SelectItem value="cancelled">已取消</SelectItem>
+                  <SelectItem value="cancelled">{t('jobs.cancelled')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -360,7 +370,7 @@ export function Jobs() {
                   }}
                 />
                 <span className="text-sm text-muted-foreground">
-                  {selectedJobs.size > 0 ? `已选择 ${selectedJobs.size} 个任务` : '全选'}
+                  {selectedJobs.size > 0 ? t('jobs.selectedCount', { count: selectedJobs.size }) : t('jobs.selectAll')}
                 </span>
               </div>
               
@@ -376,7 +386,7 @@ export function Jobs() {
                     })}
                   >
                     <PlayCircle className="h-4 w-4 mr-2" />
-                    批量启动
+{t('jobs.batchStart')}
                   </Button>
                   <Button
                     variant="outline"
@@ -388,14 +398,14 @@ export function Jobs() {
                     })}
                   >
                     <XCircle className="h-4 w-4 mr-2" />
-                    批量取消
+{t('jobs.batchCancel')}
                   </Button>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={clearSelection}
                   >
-                    清除选择
+{t('jobs.clearSelection')}
                   </Button>
                 </div>
               )}
@@ -421,7 +431,7 @@ export function Jobs() {
         ) : otherJobs.length === 0 && runningJobs.length > 0 ? (
           <Card>
             <CardContent className="py-6 sm:py-8 text-center text-xs sm:text-sm text-muted-foreground">
-              没有其他任务
+{t('jobs.noMoreJobs')}
             </CardContent>
           </Card>
         ) : (
@@ -459,7 +469,7 @@ export function Jobs() {
                           className="h-8 px-2 sm:px-3"
                         >
                           <PlayCircle className="h-4 w-4 sm:mr-2" />
-                          <span className="hidden sm:inline">启动</span>
+                          <span className="hidden sm:inline">{t('jobs.start')}</span>
                         </Button>
                       )}
                       {(job.status === 'queued' || job.status === 'running') && (
@@ -484,6 +494,17 @@ export function Jobs() {
                           <span className="hidden sm:inline">{t('jobs.retry')}</span>
                         </Button>
                       )}
+                      {job.status === 'paused' && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleResumeJob(job.id)}
+                          className="h-8 px-2 sm:px-3 text-amber-600 hover:bg-amber-600/10"
+                        >
+                          <Play className="h-4 w-4 sm:mr-2" />
+                          <span className="hidden sm:inline">{t('jobs.resume')}</span>
+                        </Button>
+                      )}
                       {(job.status === 'success' || job.status === 'failed' || job.status === 'cancelled') && (
                         <>
                           <Button
@@ -493,7 +514,7 @@ export function Jobs() {
                             className="h-8 px-2 sm:px-3"
                           >
                             <FileText className="h-4 w-4 sm:mr-2" />
-                            <span className="hidden sm:inline">日志</span>
+                            <span className="hidden sm:inline">{t('jobs.logs')}</span>
                           </Button>
                           <Button
                             variant="outline"
@@ -502,7 +523,7 @@ export function Jobs() {
                             className="h-8 px-2 sm:px-3 text-destructive hover:bg-destructive/10"
                           >
                             <Trash2 className="h-4 w-4 sm:mr-2" />
-                            <span className="hidden sm:inline">删除</span>
+                            <span className="hidden sm:inline">{t('jobs.delete')}</span>
                           </Button>
                         </>
                       )}
@@ -515,7 +536,7 @@ export function Jobs() {
                             className="h-8 px-2 sm:px-3"
                           >
                             <Eye className="h-4 w-4 sm:mr-2" />
-                            <span className="hidden sm:inline">预览</span>
+                            <span className="hidden sm:inline">{t('jobs.preview')}</span>
                           </Button>
                           <Button
                             variant="outline"
@@ -588,7 +609,7 @@ export function Jobs() {
           <CardContent className="p-4">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="text-sm text-muted-foreground">
-                共 {data?.total || 0} 个任务，第 {currentPage} / {totalPages} 页
+{t('jobs.pagination', { total: data?.total || 0, current: currentPage, total_pages: totalPages })}
               </div>
               <div className="flex items-center gap-2">
                 <Button
@@ -597,7 +618,7 @@ export function Jobs() {
                   onClick={() => setCurrentPage(1)}
                   disabled={currentPage === 1}
                 >
-                  首页
+{t('jobs.firstPage')}
                 </Button>
                 <Button
                   variant="outline"
@@ -605,7 +626,7 @@ export function Jobs() {
                   onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                   disabled={currentPage === 1}
                 >
-                  上一页
+{t('common.previousPage')}
                 </Button>
                 <div className="text-sm">
                   {currentPage} / {totalPages}
@@ -616,7 +637,7 @@ export function Jobs() {
                   onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                   disabled={currentPage === totalPages}
                 >
-                  下一页
+{t('common.nextPage')}
                 </Button>
                 <Button
                   variant="outline"
@@ -624,7 +645,7 @@ export function Jobs() {
                   onClick={() => setCurrentPage(totalPages)}
                   disabled={currentPage === totalPages}
                 >
-                  末页
+{t('jobs.lastPage')}
                 </Button>
               </div>
             </div>

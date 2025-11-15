@@ -83,6 +83,7 @@ async def create_translation_job(
             source_lang=request.source_lang,
             target_langs=json.dumps(request.target_langs),
             model=model,
+            provider=request.provider,  # Save provider selection
             status="queued",
             progress=0.0,
             writeback_mode=request.writeback_mode,
@@ -317,6 +318,7 @@ async def stream_job_progress(
         "phase": job.current_phase or "init",
         "status": job.status,
         "progress": job.progress,
+        "timestamp": (job.started_at or job.created_at).isoformat(),  # Include timestamp
     }
     
     # Add error if present
@@ -1241,7 +1243,7 @@ async def get_job_logs(
             "total_logs": len(log_entries),
             "logs": log_entries,
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -1250,3 +1252,117 @@ async def get_job_logs(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get job logs: {str(e)}",
         )
+
+
+@router.post(
+    "/jobs/{job_id}/resume",
+    response_model=JobResponse,
+    tags=["jobs"],
+)
+async def resume_paused_job(
+    job_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+) -> JobResponse:
+    """
+    Resume a paused translation job.
+
+    When a job is paused due to quota limits, it can be manually resumed
+    using this endpoint. The job will be requeued for processing.
+
+    Args:
+        job_id: Job ID to resume
+        current_user: Current authenticated user
+        db: Database session
+
+    Returns:
+        JobResponse: Updated job information
+
+    Raises:
+        HTTPException: If job not found or cannot be resumed
+    """
+    # Use row-level lock to prevent concurrent resume operations
+    job = (
+        db.query(TranslationJob)
+        .filter(TranslationJob.id == job_id)
+        .with_for_update()
+        .first()
+    )
+
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Job '{job_id}' not found",
+        )
+
+    # Check if job is paused (must check after acquiring lock)
+    if job.status != "paused":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Job is {job.status}, can only resume paused jobs",
+        )
+
+    try:
+        # Reset job status to queued
+        job.status = "queued"
+        job.pause_reason = None
+        job.paused_at = None
+        job.resume_at = None
+        job.error = None
+        job.started_at = None
+
+        db.commit()
+        db.refresh(job)
+
+        logger.info(f"Resumed paused job {job_id}")
+
+        # Resubmit to Celery based on source type
+        if job.source_type == "subtitle":
+            task = translate_subtitle_task.apply_async(
+                args=[str(job.id)],
+                queue="translate",
+                priority=job.priority,
+            )
+        elif job.source_type == "audio":
+            task = asr_then_translate_task.apply_async(
+                args=[str(job.id)],
+                queue="asr",
+                priority=job.priority,
+            )
+        else:
+            raise ValueError(f"Unknown source type: {job.source_type}")
+
+        # Update job with Celery task ID
+        job.celery_task_id = task.id
+        db.commit()
+
+        logger.info(f"Resubmitted resumed job {job_id} as Celery task {task.id}")
+
+        return JobResponse(
+            id=str(job.id),
+            status=job.status,
+            progress=job.progress,
+            source_type=job.source_type,
+            source_lang=job.source_lang,
+            target_langs=json.loads(job.target_langs),
+            model=job.model,
+            provider=job.provider,
+            error=job.error,
+            result_paths=json.loads(job.result_paths) if job.result_paths else [],
+            current_phase=job.current_phase,
+            started_at=job.started_at,
+            finished_at=job.finished_at,
+            created_at=job.created_at,
+            updated_at=job.updated_at,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()  # Rollback on error
+        logger.error(f"Failed to resume job {job_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to resume job: {str(e)}",
+        )
+

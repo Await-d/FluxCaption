@@ -8,7 +8,7 @@
 // Common Types
 // =============================================================================
 
-export type JobStatus = 'queued' | 'running' | 'success' | 'failed' | 'cancelled'
+export type JobStatus = 'queued' | 'running' | 'success' | 'failed' | 'cancelled' | 'paused'
 export type JobType = 'scan' | 'translate' | 'asr_then_translate'
 export type SubtitleFormat = 'srt' | 'ass' | 'vtt'
 export type SubtitleOrigin = 'manual' | 'asr' | 'mt'
@@ -44,6 +44,16 @@ export interface JellyfinLibrary {
   image_item_id?: string | null
 }
 
+export interface SubtitleStream {
+  index: number
+  language: string
+  display_title: string
+  codec: string
+  is_default: boolean
+  is_forced: boolean
+  is_external: boolean
+}
+
 export interface JellyfinMediaItem {
   id: string
   name: string
@@ -51,6 +61,7 @@ export interface JellyfinMediaItem {
   path: string | null
   audio_languages: string[]
   subtitle_languages: string[]
+  subtitle_streams: SubtitleStream[]  // Detailed subtitle stream info
   missing_languages: string[]
   duration_seconds: number | null
   file_size_bytes: number | null
@@ -71,7 +82,7 @@ export interface JellyfinMediaItem {
 
 export interface ScanLibraryRequest {
   library_id: string
-  required_langs: string[]
+  required_langs?: string[]  // Optional: will be inferred from auto translation rules if not provided
   auto_process?: boolean
 }
 
@@ -176,7 +187,7 @@ export interface ModelListResponse {
 }
 
 export interface PullModelRequest {
-  model_name: string
+  name: string
   insecure?: boolean
 }
 
@@ -245,8 +256,19 @@ export interface Subtitle {
 // =============================================================================
 
 export interface AppSettings {
+  // Jellyfin Integration
+  jellyfin_base_url: string
+  jellyfin_api_key: string
+  jellyfin_timeout: number
+  jellyfin_max_retries: number
+  jellyfin_rate_limit_per_second: number
+
+  // Ollama Configuration
+  ollama_base_url: string
+  ollama_timeout: number
+  ollama_keep_alive: string
+
   // Subtitle & Translation Pipeline
-  required_langs: string[]
   writeback_mode: WritebackMode
   default_subtitle_format: SubtitleFormat
   preserve_ass_styles: boolean
@@ -293,7 +315,7 @@ export interface AppSettings {
   log_level: 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL'
 }
 
-export interface UpdateSettingsRequest extends Partial<AppSettings> {}
+export interface UpdateSettingsRequest extends Partial<AppSettings> { }
 
 // =============================================================================
 // SSE Progress Events
@@ -302,12 +324,13 @@ export interface UpdateSettingsRequest extends Partial<AppSettings> {}
 export interface ProgressEvent {
   job_id: string
   phase: 'pull' | 'extract' | 'asr' | 'mt' | 'post' | 'writeback'
-  status: 'started' | 'progress' | 'completed' | 'error'
+  status: 'started' | 'progress' | 'completed' | 'error' | 'paused'
   progress: number
   total?: number
   completed?: number
   message?: string
   error?: string
+  timestamp?: string  // ISO timestamp from server
 }
 
 // =============================================================================
@@ -404,7 +427,6 @@ export interface ScanDirectoryResponse {
   directory: string
   media_files: MediaFileResponse[]
   total_count: number
-  required_langs: string[]
 }
 
 export interface DirectoryStatsResponse {
@@ -485,6 +507,7 @@ export interface SystemStats {
   total_jobs: number
   queued_jobs: number
   running_jobs: number
+  paused_jobs: number
   completed_jobs: number
   failed_jobs: number
   cancelled_jobs: number
@@ -504,4 +527,45 @@ export interface WorkerStats {
     total_tasks: Record<string, any>
     pool: Record<string, any>
   }>
+}
+
+// =============================================================================
+// System Configuration
+// =============================================================================
+
+export interface SystemSettingConstraints {
+  min?: number
+  max?: number
+  step?: number
+  unit?: string
+  description_suffix?: string
+}
+
+export interface SystemSetting {
+  key: string
+  value: string
+  description: string | null
+  category: string | null
+  is_editable: boolean
+  value_type: string
+  updated_at: string
+  updated_by: string | null
+  constraints?: SystemSettingConstraints
+}
+
+export interface SystemConfigCategory {
+  category: string
+  label: string
+  description: string
+  settings: SystemSetting[]
+}
+
+export interface SettingChangeHistory {
+  id: string
+  setting_key: string
+  old_value: string | null
+  new_value: string
+  changed_by: string
+  change_reason: string | null
+  created_at: string
 }

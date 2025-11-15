@@ -161,7 +161,9 @@ async def list_library_items(
 
         # Use LanguageDetector to analyze media items
         detector = LanguageDetector()
-        required_langs = settings.required_langs
+        # 从自动翻译规则推断需要检测的语言
+        from app.services.detector import get_required_langs_from_rules
+        required_langs = get_required_langs_from_rules(db)
 
         # Process items with full media information
         processed_items = []
@@ -176,6 +178,7 @@ async def list_library_items(
             # Extract language information
             audio_langs = detector.extract_audio_languages(item)
             subtitle_langs = detector.extract_subtitle_languages(item)
+            subtitle_streams = detector.extract_subtitle_streams(item)  # Get all subtitle streams
             missing_langs = detector.detect_missing_languages(item, required_langs, db_session=db)
 
             # Get duration and file size from first media source
@@ -218,6 +221,7 @@ async def list_library_items(
                 "path": item.path,
                 "audio_languages": audio_langs,
                 "subtitle_languages": subtitle_langs,
+                "subtitle_streams": subtitle_streams,  # Add full subtitle stream info
                 "missing_languages": missing_langs,
                 "duration_seconds": duration_seconds,
                 "file_size_bytes": file_size_bytes,
@@ -279,8 +283,9 @@ async def get_item_detail(
         existing_subtitles = detector.extract_subtitle_languages(item)
         existing_audio = detector.extract_audio_languages(item)
 
-        # Get required languages from settings
-        required_langs = settings.required_langs.split(",")
+        # 从自动翻译规则推断需要检测的语言
+        from app.services.detector import get_required_langs_from_rules
+        required_langs = get_required_langs_from_rules(db)
         missing_subtitles = detector.detect_missing_languages(item, required_langs, db_session=db)
 
         return ItemDetailResponse(
@@ -352,7 +357,9 @@ async def list_series_episodes(
 
         # Use LanguageDetector to analyze episodes
         detector = LanguageDetector()
-        required_langs = settings.required_langs
+        # 从自动翻译规则推断需要检测的语言
+        from app.services.detector import get_required_langs_from_rules
+        required_langs = get_required_langs_from_rules(db)
 
         # Process episodes
         processed_items = []
@@ -366,6 +373,7 @@ async def list_series_episodes(
             # Extract language information
             audio_langs = detector.extract_audio_languages(item)
             subtitle_langs = detector.extract_subtitle_languages(item)
+            subtitle_streams = detector.extract_subtitle_streams(item)  # Get all subtitle streams
             missing_langs = detector.detect_missing_languages(item, required_langs, db_session=db)
 
             # Get duration and file size
@@ -401,6 +409,7 @@ async def list_series_episodes(
                 "path": item.path,
                 "audio_languages": audio_langs,
                 "subtitle_languages": subtitle_langs,
+                "subtitle_streams": subtitle_streams,  # Add full subtitle stream info
                 "missing_languages": missing_langs,
                 "duration_seconds": duration_seconds,
                 "file_size_bytes": file_size_bytes,
@@ -454,8 +463,12 @@ async def trigger_scan(
         Scan job information
     """
     try:
-        # Get required languages (use request override or settings default)
-        required_langs = request.required_langs or settings.required_langs.split(",")
+        # Get required languages (use request override or infer from rules)
+        if request.required_langs:
+            required_langs = request.required_langs
+        else:
+            from app.services.detector import get_required_langs_from_rules
+            required_langs = get_required_langs_from_rules(db)
 
         # Submit scan task to Celery
         task = scan_library_task.apply_async(

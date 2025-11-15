@@ -25,8 +25,10 @@ import {
 } from '@/components/ui/AlertDialog'
 import api from '@/lib/api'
 import type { CacheEntry } from '@/types/api'
+import { useTranslation } from 'react-i18next'
 
 export function Cache() {
+  const { t } = useTranslation()
   const [search, setSearch] = useState('')
   const [sourceLang, setSourceLang] = useState<string>('all')
   const [targetLang, setTargetLang] = useState<string>('all')
@@ -135,7 +137,7 @@ export function Cache() {
       <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs sm:text-sm font-medium">总缓存条目</CardTitle>
+            <CardTitle className="text-xs sm:text-sm font-medium">{t('cache.totalEntries')}</CardTitle>
             <Database className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -147,7 +149,7 @@ export function Cache() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs sm:text-sm font-medium">总命中次数</CardTitle>
+            <CardTitle className="text-xs sm:text-sm font-medium">{t('cache.totalHits')}</CardTitle>
             <Database className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -159,7 +161,7 @@ export function Cache() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs sm:text-sm font-medium">命中率</CardTitle>
+            <CardTitle className="text-xs sm:text-sm font-medium">{t('cache.hitRate')}</CardTitle>
             <Database className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -171,7 +173,7 @@ export function Cache() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs sm:text-sm font-medium">语言对</CardTitle>
+            <CardTitle className="text-xs sm:text-sm font-medium">{t('cache.languagePairs')}</CardTitle>
             <Database className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -183,7 +185,7 @@ export function Cache() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs sm:text-sm font-medium">模型数</CardTitle>
+            <CardTitle className="text-xs sm:text-sm font-medium">{t('cache.modelCount')}</CardTitle>
             <Database className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -199,31 +201,31 @@ export function Cache() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
             <HardDrive className="h-4 w-4 sm:h-5 sm:w-5" />
-            临时文件统计
+            {t('cache.tempFileStats')}
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
             <div className="space-y-1">
-              <p className="text-xs sm:text-sm text-muted-foreground">总占用空间</p>
+              <p className="text-xs sm:text-sm text-muted-foreground">{t('cache.totalSpace')}</p>
               <p className="text-xl sm:text-2xl font-bold">
                 {tempStatsLoading ? '-' : `${tempStats?.total_size_mb.toFixed(2)} MB`}
               </p>
               <p className="text-xs text-muted-foreground">
-                {tempStatsLoading ? '-' : `${tempStats?.total_dirs} 目录, ${tempStats?.total_files} 文件`}
+                {tempStatsLoading ? '-' : `${tempStats?.total_dirs} ${t('cache.directories')}, ${tempStats?.total_files} ${t('cache.files')}`}
               </p>
             </div>
             <div className="space-y-1">
-              <p className="text-xs sm:text-sm text-muted-foreground">可清理空间</p>
+              <p className="text-xs sm:text-sm text-muted-foreground">{t('cache.cleanableSpace')}</p>
               <p className="text-xl sm:text-2xl font-bold text-orange-600">
                 {tempStatsLoading ? '-' : `${tempStats?.cleanable_size_mb?.toFixed(2) || '0.00'} MB`}
               </p>
               <p className="text-xs text-muted-foreground">
-                {tempStatsLoading ? '-' : `旧文件 + 孤立文件`}
+                {tempStatsLoading ? '-' : t('cache.oldFilesAndOrphaned')}
               </p>
             </div>
             <div className="space-y-1">
-              <p className="text-xs sm:text-sm text-muted-foreground">孤立文件</p>
+              <p className="text-xs sm:text-sm text-muted-foreground">{t('cache.orphanedFiles')}</p>
               <p className="text-xl sm:text-2xl font-bold text-destructive">
                 {tempStatsLoading ? '-' : tempStats?.orphaned_dirs || 0}
               </p>
@@ -241,36 +243,36 @@ export function Cache() {
                     className="w-full text-xs sm:text-sm"
                   >
                     <Trash2 className="mr-1 sm:mr-2 h-4 w-4" />
-                    清理临时文件
+                    {t('cache.cleanTempFiles')}
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>清理临时文件？</AlertDialogTitle>
+                    <AlertDialogTitle>{t('cache.cleanTempFilesTitle')}</AlertDialogTitle>
                     <AlertDialogDescription>
-                      这将删除以下临时文件：
+                      {t('cache.cleanTempFilesDesc')}
                       <ul className="list-disc list-inside mt-2 space-y-1">
-                        <li>超过24小时的旧文件</li>
-                        <li>孤立文件（对应任务已删除）</li>
+                        <li>{t('cache.oldFilesDesc')}</li>
+                        <li>{t('cache.orphanedFilesDesc')}</li>
                       </ul>
                       <p className="mt-2 font-semibold">
-                        预计释放空间：约 {tempStats?.cleanable_size_mb?.toFixed(2) || '0.00'} MB
+                        {t('cache.estimatedSpace')} {tempStats?.cleanable_size_mb?.toFixed(2) || '0.00'} MB
                       </p>
                       {(tempStats?.orphaned_dirs || 0) > 0 && (
                         <p className="mt-2 text-orange-600">
-                          包含 {tempStats?.orphaned_dirs} 个孤立目录
+                          {t('cache.orphanedDirsWarning', { count: tempStats?.orphaned_dirs })}
                           （{tempStats?.orphaned_size_mb?.toFixed(2)} MB）
                         </p>
                       )}
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
-                    <AlertDialogCancel>取消</AlertDialogCancel>
+                    <AlertDialogCancel>{t('cache.cancel')}</AlertDialogCancel>
                     <AlertDialogAction
                       onClick={handleCleanupTemp}
                       disabled={cleanupTempMutation.isPending}
                     >
-                      {cleanupTempMutation.isPending ? '清理中...' : '确认清理'}
+                      {cleanupTempMutation.isPending ? t('cache.cleaning') : t('cache.confirmClean')}
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
@@ -284,30 +286,30 @@ export function Cache() {
       <Card>
         <CardHeader>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <CardTitle className="text-base sm:text-lg">翻译缓存</CardTitle>
+            <CardTitle className="text-base sm:text-lg">{t('cache.translationCache')}</CardTitle>
             <div className="flex items-center gap-2 flex-wrap">
               <Button variant="outline" size="sm" onClick={() => refetch()} className="text-xs sm:text-sm">
                 <RefreshCw className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4" />
-                刷新
+                {t('cache.refresh')}
               </Button>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button variant="outline" size="sm" className="text-xs sm:text-sm">
                     <Trash2 className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4" />
-                    清理旧缓存
+                    {t('cache.cleanOldCache')}
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>清理未使用的缓存</AlertDialogTitle>
+                    <AlertDialogTitle>{t('cache.cleanOldCacheTitle')}</AlertDialogTitle>
                     <AlertDialogDescription>
-                      这将删除90天内未使用且命中次数为0的缓存条目。此操作不可撤销。
+                      {t('cache.cleanOldCacheDesc')}
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
-                    <AlertDialogCancel>取消</AlertDialogCancel>
+                    <AlertDialogCancel>{t('cache.cancel')}</AlertDialogCancel>
                     <AlertDialogAction onClick={handleClearOld}>
-                      确认清理
+                      {t('cache.confirmClean')}
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
@@ -316,23 +318,23 @@ export function Cache() {
                 <AlertDialogTrigger asChild>
                   <Button variant="destructive" size="sm" className="text-xs sm:text-sm">
                     <AlertTriangle className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4" />
-                    清空所有缓存
+                    {t('cache.clearAllCache')}
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>清空所有缓存？</AlertDialogTitle>
+                    <AlertDialogTitle>{t('cache.clearAllCacheTitle')}</AlertDialogTitle>
                     <AlertDialogDescription>
-                      这将删除所有翻译缓存条目。此操作不可撤销，将影响翻译性能。
+                      {t('cache.clearAllCacheDesc')}
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
-                    <AlertDialogCancel>取消</AlertDialogCancel>
+                    <AlertDialogCancel>{t('cache.cancel')}</AlertDialogCancel>
                     <AlertDialogAction
                       onClick={handleClearAll}
                       className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                     >
-                      确认清空
+                      {t('cache.confirmClearAll')}
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
@@ -345,41 +347,41 @@ export function Cache() {
             {/* Search and Filters */}
             <div className="grid gap-2 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
               <Input
-                placeholder="搜索文本..."
+                placeholder={t('cache.searchPlaceholder')}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="text-xs sm:text-sm"
               />
               <Select value={sourceLang} onValueChange={setSourceLang}>
                 <SelectTrigger className="text-xs sm:text-sm">
-                  <SelectValue placeholder="源语言" />
+                  <SelectValue placeholder={t('cache.sourceLangPlaceholder')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">所有源语言</SelectItem>
+                  <SelectItem value="all">{t('cache.allSourceLang')}</SelectItem>
                   <SelectItem value="en">English</SelectItem>
-                  <SelectItem value="zh-CN">简体中文</SelectItem>
-                  <SelectItem value="ja">日本语</SelectItem>
+                  <SelectItem value="zh-CN">{t('languages.zh-CN')}</SelectItem>
+                  <SelectItem value="ja">{t('languages.ja')}</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={targetLang} onValueChange={setTargetLang}>
                 <SelectTrigger className="text-xs sm:text-sm">
-                  <SelectValue placeholder="目标语言" />
+                  <SelectValue placeholder={t('cache.targetLangPlaceholder')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">所有目标语言</SelectItem>
+                  <SelectItem value="all">{t('cache.allTargetLang')}</SelectItem>
                   <SelectItem value="en">English</SelectItem>
-                  <SelectItem value="zh-CN">简体中文</SelectItem>
-                  <SelectItem value="ja">日本语</SelectItem>
+                  <SelectItem value="zh-CN">{t('languages.zh-CN')}</SelectItem>
+                  <SelectItem value="ja">{t('languages.ja')}</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={sortBy} onValueChange={setSortBy}>
                 <SelectTrigger className="text-xs sm:text-sm">
-                  <SelectValue placeholder="排序方式" />
+                  <SelectValue placeholder={t('cache.sortByPlaceholder')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="last_used_at">最后使用时间</SelectItem>
-                  <SelectItem value="hit_count">命中次数</SelectItem>
-                  <SelectItem value="created_at">创建时间</SelectItem>
+                  <SelectItem value="last_used_at">{t('cache.lastUsedTime')}</SelectItem>
+                  <SelectItem value="hit_count">{t('cache.hitCount')}</SelectItem>
+                  <SelectItem value="created_at">{t('cache.createdTime')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -389,11 +391,11 @@ export function Cache() {
               <div className="max-h-[600px] overflow-y-auto">
                 {entriesLoading ? (
                   <div className="p-6 sm:p-8 text-center text-muted-foreground text-xs sm:text-sm">
-                    加载中...
+                    {t('cache.loading')}
                   </div>
                 ) : cacheData?.entries.length === 0 ? (
                   <div className="p-6 sm:p-8 text-center text-muted-foreground text-xs sm:text-sm">
-                    暂无缓存数据
+                    {t('cache.noData')}
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
@@ -401,22 +403,22 @@ export function Cache() {
                       <thead className="sticky top-0 bg-muted">
                         <tr>
                           <th className="p-2 sm:p-3 text-left text-xs sm:text-sm font-medium">
-                            源文本
+                            {t('cache.sourceText')}
                           </th>
                           <th className="p-2 sm:p-3 text-left text-xs sm:text-sm font-medium">
-                            翻译文本
+                            {t('cache.translatedText')}
                           </th>
                           <th className="p-2 sm:p-3 text-left text-xs sm:text-sm font-medium">
-                            语言对
+                            {t('cache.languagePairs')}
                           </th>
                           <th className="p-2 sm:p-3 text-left text-xs sm:text-sm font-medium hidden sm:table-cell">
-                            模型
+                            {t('cache.model')}
                           </th>
                           <th className="p-2 sm:p-3 text-left text-xs sm:text-sm font-medium">
-                            命中
+                            {t('cache.hits')}
                           </th>
                           <th className="p-2 sm:p-3 text-left text-xs sm:text-sm font-medium hidden md:table-cell">
-                            最后使用
+                            {t('cache.lastUsed')}
                           </th>
                         </tr>
                       </thead>
@@ -463,8 +465,8 @@ export function Cache() {
             {cacheData && cacheData.total > 0 && (
               <div className="flex flex-col sm:flex-row items-center justify-between gap-2 sm:gap-0">
                 <div className="text-xs sm:text-sm text-muted-foreground">
-                  显示 {offset + 1} - {offset + cacheData.entries.length} / 共{' '}
-                  {cacheData.total} 条
+                  {t('cache.showing')} {offset + 1} - {offset + cacheData.entries.length} / {t('cache.total')}{' '}
+                  {cacheData.total} {t('cache.items')}
                 </div>
                 <div className="flex gap-2">
                   <Button
@@ -474,7 +476,7 @@ export function Cache() {
                     disabled={offset === 0}
                     className="text-xs sm:text-sm"
                   >
-                    上一页
+                    {t('cache.previousPage')}
                   </Button>
                   <Button
                     variant="outline"
@@ -483,7 +485,7 @@ export function Cache() {
                     disabled={!cacheData.has_more}
                     className="text-xs sm:text-sm"
                   >
-                    下一页
+                    {t('cache.nextPage')}
                   </Button>
                 </div>
               </div>

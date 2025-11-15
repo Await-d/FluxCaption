@@ -5,14 +5,85 @@ Provides endpoints for retrieving and updating application configuration.
 """
 
 from typing import Any, Annotated
+from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, status, Depends
+from sqlalchemy import select
 
 from app.core.config import settings
+from app.core.db import session_scope
 from app.models.user import User
+from app.models.setting import Setting
 from app.api.routers.auth import get_current_user
 from app.schemas.settings import SettingsResponse, SettingsUpdateRequest
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
+
+
+def _get_db_setting(key: str, default: Any = None) -> Any:
+    """
+    Get a setting value from database, return default if not found.
+    
+    Args:
+        key: Setting key
+        default: Default value if setting not found in database
+        
+    Returns:
+        Setting value from database or default
+    """
+    with session_scope() as session:
+        stmt = select(Setting).where(Setting.key == key)
+        setting = session.execute(stmt).scalar_one_or_none()
+        
+        if setting is None:
+            return default
+            
+        # Convert value based on value_type
+        if setting.value_type == "int":
+            return int(setting.value)
+        elif setting.value_type == "float":
+            return float(setting.value)
+        elif setting.value_type == "bool":
+            return setting.value.lower() in ("true", "1", "yes")
+        else:
+            return setting.value
+
+
+def _set_db_setting(key: str, value: Any, value_type: str, category: str = "jellyfin", description: str = "", username: str = "system") -> None:
+    """
+    Set a setting value in database.
+    
+    Args:
+        key: Setting key
+        value: Setting value
+        value_type: Type of value (string, int, float, bool)
+        category: Setting category
+        description: Setting description
+        username: Username who updated the setting
+    """
+    with session_scope() as session:
+        stmt = select(Setting).where(Setting.key == key)
+        setting = session.execute(stmt).scalar_one_or_none()
+        
+        if setting is None:
+            # Create new setting
+            setting = Setting(
+                key=key,
+                value=str(value),
+                value_type=value_type,
+                category=category,
+                description=description,
+                is_editable=True,
+                updated_at=datetime.now(timezone.utc),
+                updated_by=username,
+            )
+            session.add(setting)
+        else:
+            # Update existing setting
+            setting.value = str(value)
+            setting.updated_at = datetime.now(timezone.utc)
+            setting.updated_by = username
+        
+        session.commit()
 
 
 @router.get("", response_model=SettingsResponse)
@@ -27,9 +98,30 @@ async def get_settings(
     Returns:
         SettingsResponse: Current application settings
     """
+    # Get Jellyfin settings from database with fallback to env vars
+    jellyfin_base_url = _get_db_setting("jellyfin_base_url", settings.jellyfin_base_url)
+    jellyfin_api_key = _get_db_setting("jellyfin_api_key", settings.jellyfin_api_key)
+    jellyfin_timeout = _get_db_setting("jellyfin_timeout", settings.jellyfin_timeout)
+    jellyfin_max_retries = _get_db_setting("jellyfin_max_retries", settings.jellyfin_max_retries)
+    jellyfin_rate_limit_per_second = _get_db_setting("jellyfin_rate_limit_per_second", settings.jellyfin_rate_limit_per_second)
+
+    # Get Ollama settings from database with fallback to env vars
+    ollama_base_url = _get_db_setting("ollama_base_url", settings.ollama_base_url)
+    ollama_timeout = _get_db_setting("ollama_timeout", settings.ollama_timeout)
+    ollama_keep_alive = _get_db_setting("ollama_keep_alive", settings.ollama_keep_alive)
+
     return SettingsResponse(
+        # Jellyfin Integration
+        jellyfin_base_url=jellyfin_base_url,
+        jellyfin_api_key=jellyfin_api_key,
+        jellyfin_timeout=jellyfin_timeout,
+        jellyfin_max_retries=jellyfin_max_retries,
+        jellyfin_rate_limit_per_second=jellyfin_rate_limit_per_second,
+        # Ollama Configuration
+        ollama_base_url=ollama_base_url,
+        ollama_timeout=ollama_timeout,
+        ollama_keep_alive=ollama_keep_alive,
         # Subtitle & Translation Pipeline
-        required_langs=settings.required_langs,
         writeback_mode=settings.writeback_mode,
         default_subtitle_format=settings.default_subtitle_format,
         preserve_ass_styles=settings.preserve_ass_styles,
@@ -104,10 +196,49 @@ async def update_settings(
             detail="No fields provided for update",
         )
 
-    # Apply updates to settings instance
+    # Define Jellyfin fields that should be persisted to database
+    jellyfin_fields = {
+        "jellyfin_base_url": ("string", "Jellyfin server base URL"),
+        "jellyfin_api_key": ("string", "Jellyfin API key for authentication"),
+        "jellyfin_timeout": ("int", "Jellyfin request timeout in seconds"),
+        "jellyfin_max_retries": ("int", "Jellyfin maximum retry attempts"),
+        "jellyfin_rate_limit_per_second": ("int", "Jellyfin API rate limit per second"),
+    }
+
+    # Define Ollama fields that should be persisted to database
+    ollama_fields = {
+        "ollama_base_url": ("string", "Ollama API base URL"),
+        "ollama_timeout": ("int", "Ollama request timeout in seconds"),
+        "ollama_keep_alive": ("string", "Ollama model keep alive duration"),
+    }
+
+    # Apply updates to settings instance and persist to database
     for field, value in updated_fields.items():
         if hasattr(settings, field):
             setattr(settings, field, value)
+
+            # Persist Jellyfin settings to database
+            if field in jellyfin_fields:
+                value_type, description = jellyfin_fields[field]
+                _set_db_setting(
+                    key=field,
+                    value=value,
+                    value_type=value_type,
+                    category="jellyfin",
+                    description=description,
+                    username=current_user.username,
+                )
+            # Persist Ollama settings to database
+            elif field in ollama_fields:
+                value_type, description = ollama_fields[field]
+                _set_db_setting(
+                    key=field,
+                    value=value,
+                    value_type=value_type,
+                    category="ollama",
+                    description=description,
+                    username=current_user.username,
+                )
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -115,7 +246,7 @@ async def update_settings(
             )
 
     # Return updated settings
-    return await get_settings()
+    return await get_settings(current_user)
 
 
 @router.post("/reset", response_model=SettingsResponse)
@@ -180,12 +311,7 @@ async def validate_settings(
         "checks": {},
     }
 
-    # Check if required_langs is not empty
-    if not settings.required_langs:
-        validation_results["errors"].append("required_langs cannot be empty")
-        validation_results["valid"] = False
-
-    # Check task limits are reasonable
+# Check task limits are reasonable
     if settings.max_concurrent_translate_tasks < 1:
         validation_results["errors"].append("max_concurrent_translate_tasks must be at least 1")
         validation_results["valid"] = False

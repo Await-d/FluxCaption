@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import api from '@/lib/api'
 import type { SubtitleEntry } from '@/types/api'
+import { useTranslation } from 'react-i18next'
 
 interface SubtitlePreviewDialogProps {
   jobId: string
@@ -25,6 +26,7 @@ export function SubtitlePreviewDialog({
   open,
   onOpenChange,
 }: SubtitlePreviewDialogProps) {
+  const { t } = useTranslation()
   const [limit, setLimit] = useState(100)
   const [offset] = useState(0)
   const [editedEntries, setEditedEntries] = useState<Record<number, string>>({})
@@ -135,7 +137,7 @@ export function SubtitlePreviewDialog({
       <DialogContent className="max-w-[95vw] h-[90vh] w-full !flex !flex-col !gap-0 p-0">
         <DialogHeader className="flex-shrink-0 p-6 pb-4">
           <div className="flex items-center justify-between">
-            <DialogTitle>字幕对比预览</DialogTitle>
+            <DialogTitle>{t('components.subtitlePreview.title')}</DialogTitle>
             <div className="flex items-center gap-2">
               {resultData && !resultError && (
                 !isEditing ? (
@@ -147,7 +149,7 @@ export function SubtitlePreviewDialog({
                       disabled={resultLoading}
                     >
                       <Edit2 className="mr-2 h-4 w-4" />
-                      编辑
+                      {t('components.subtitlePreview.edit')}
                     </Button>
                     <Button
                       variant="outline"
@@ -156,7 +158,7 @@ export function SubtitlePreviewDialog({
                       disabled={resultLoading}
                     >
                       <Download className="mr-2 h-4 w-4" />
-                      下载
+                      {t('components.subtitlePreview.download')}
                     </Button>
                   </>
                 ) : (
@@ -169,7 +171,7 @@ export function SubtitlePreviewDialog({
                         setEditedEntries({})
                       }}
                     >
-                      取消
+                      {t('components.subtitlePreview.cancel')}
                     </Button>
                     <Button
                       variant="default"
@@ -178,7 +180,7 @@ export function SubtitlePreviewDialog({
                       disabled={!hasUnsavedChanges || saveMutation.isPending}
                     >
                       <Save className="mr-2 h-4 w-4" />
-                      {saveMutation.isPending ? '保存中...' : '保存'}
+                      {saveMutation.isPending ? t('components.subtitlePreview.saving') : t('components.subtitlePreview.save')}
                     </Button>
                   </>
                 )
@@ -194,14 +196,14 @@ export function SubtitlePreviewDialog({
               {sourceData && (
                 <>
                   <Badge variant="outline">{sourceData.format.toUpperCase()}</Badge>
-                  <span>总计 {sourceData.total_lines} 行</span>
+                  <span>{t('components.subtitlePreview.total')} {sourceData.total_lines} {t('components.subtitlePreview.lines')}</span>
                   <span>
-                    显示 {sourceData.offset + 1} - {sourceData.offset + sourceData.entries.length}
+                    {t('components.subtitlePreview.showing')} {sourceData.offset + 1} - {sourceData.offset + sourceData.entries.length}
                   </span>
                 </>
               )}
               {isEditing && hasUnsavedChanges && (
-                <Badge variant="default">已修改 {Object.keys(editedEntries).length} 项</Badge>
+                <Badge variant="default">{t('components.subtitlePreview.modified')} {Object.keys(editedEntries).length} {t('components.subtitlePreview.items')}</Badge>
               )}
             </div>
           )}
@@ -212,12 +214,12 @@ export function SubtitlePreviewDialog({
               {/* Left Panel - Source Subtitle */}
               <div className="border-r flex flex-col overflow-hidden">
                 <div className="bg-muted/50 p-3 border-b flex-shrink-0">
-                  <h3 className="font-semibold text-sm">源字幕 {sourceError && '(ASR识别)'}</h3>
+                  <h3 className="font-semibold text-sm">{t('components.subtitlePreview.sourceSubtitle')} {sourceError && t('components.subtitlePreview.asrRecognized')}</h3>
                 </div>
                 <div ref={sourceScrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
                   {sourceLoading && (
                     <div className="text-center text-muted-foreground">
-                      加载中...
+                      {t('components.subtitlePreview.loading')}
                     </div>
                   )}
 
@@ -226,13 +228,13 @@ export function SubtitlePreviewDialog({
                     <div className="flex items-center justify-center h-full">
                       <div className="text-center space-y-2 max-w-md p-6">
                         <p className="text-sm text-muted-foreground">
-                          此任务为 ASR 识别任务，原始音频已通过语音识别生成字幕。
+                          {t('components.subtitlePreview.asrTaskInfo')}
                         </p>
                         <p className="text-sm text-muted-foreground">
-                          ASR 识别的源语言字幕为临时文件，翻译完成后已清理。
+                          {t('components.subtitlePreview.asrTaskInfo2')}
                         </p>
                         <p className="text-sm font-medium">
-                          请查看右侧翻译结果
+                          {t('components.subtitlePreview.asrTaskInfo3')}
                         </p>
                       </div>
                     </div>
@@ -259,7 +261,7 @@ export function SubtitlePreviewDialog({
 
                   {!sourceError && sourceData && sourceData.entries.length === 0 && (
                     <div className="text-center text-muted-foreground">
-                      暂无字幕内容
+                      {t('components.subtitlePreview.noSubtitles')}
                     </div>
                   )}
 
@@ -271,7 +273,7 @@ export function SubtitlePreviewDialog({
                         onClick={handleLoadMore}
                         disabled={sourceLoading}
                       >
-                        加载更多 ({sourceData.total_lines - sourceData.entries.length} 行剩余)
+                        {t('components.subtitlePreview.loadMore')} ({sourceData.total_lines - sourceData.entries.length} {t('components.subtitlePreview.linesRemaining')})
                       </Button>
                     </div>
                   )}
@@ -281,18 +283,18 @@ export function SubtitlePreviewDialog({
               {/* Right Panel - Translated Subtitle */}
               <div className="flex flex-col overflow-hidden">
                 <div className="bg-muted/50 p-3 border-b flex-shrink-0">
-                  <h3 className="font-semibold text-sm">翻译字幕 {isEditing && <span className="text-xs text-muted-foreground">(可编辑)</span>}</h3>
+                  <h3 className="font-semibold text-sm">{t('components.subtitlePreview.translatedSubtitle')} {isEditing && <span className="text-xs text-muted-foreground">{t('components.subtitlePreview.editable')}</span>}</h3>
                 </div>
                 <div ref={resultScrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
                   {isLoading && (
                     <div className="text-center text-muted-foreground">
-                      加载中...
+                      {t('components.subtitlePreview.loading')}
                     </div>
                   )}
 
                   {error && (
                     <div className="text-center text-destructive">
-                      加载失败: {(error as Error).message}
+                      {t('components.subtitlePreview.loadFailed', { message: (error as Error).message })}
                     </div>
                   )}
 
@@ -322,7 +324,7 @@ export function SubtitlePreviewDialog({
                             value={currentText}
                             onChange={(e) => handleEditEntry(entry.index, e.target.value)}
                             className="w-full text-sm leading-relaxed whitespace-pre-wrap bg-background border rounded p-2 min-h-[60px] resize-y"
-                            placeholder="输入翻译文本..."
+                            placeholder={t('components.subtitlePreview.enterTranslation')}
                           />
                         ) : (
                           <div className="text-sm leading-relaxed whitespace-pre-wrap">
@@ -330,7 +332,7 @@ export function SubtitlePreviewDialog({
                           </div>
                         )}
                         {isModified && (
-                          <div className="text-xs text-blue-600">已修改</div>
+                          <div className="text-xs text-blue-600">{t('components.subtitlePreview.modified2')}</div>
                         )}
                       </div>
                     )
@@ -338,7 +340,7 @@ export function SubtitlePreviewDialog({
 
                   {resultData && resultData.entries.length === 0 && (
                     <div className="text-center text-muted-foreground">
-                      暂无字幕内容
+                      {t('components.subtitlePreview.noSubtitles')}
                     </div>
                   )}
 
@@ -350,7 +352,7 @@ export function SubtitlePreviewDialog({
                         onClick={handleLoadMore}
                         disabled={resultLoading}
                       >
-                        加载更多 ({resultData.total_lines - resultData.entries.length} 行剩余)
+                        {t('components.subtitlePreview.loadMore')} ({resultData.total_lines - resultData.entries.length} {t('components.subtitlePreview.linesRemaining')})
                       </Button>
                     </div>
                   )}

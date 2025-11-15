@@ -1,13 +1,13 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { 
-  Library as LibraryIcon, 
-  Play, 
-  Star, 
-  Clock, 
-  HardDrive, 
-  Film, 
-  Tv, 
+import {
+  Library as LibraryIcon,
+  Play,
+  Star,
+  Clock,
+  HardDrive,
+  Film,
+  Tv,
   Filter,
   Languages,
   Info,
@@ -74,7 +74,7 @@ export function Library() {
     mutationFn: (libraryId: string) =>
       api.scanJellyfinLibrary({
         library_id: libraryId,
-        required_langs: ['zh-CN', 'en', 'ja'],
+        // required_langs will be inferred from auto translation rules
         auto_process: true,
       }),
     onSuccess: () => {
@@ -201,10 +201,10 @@ export function Library() {
 
   // Available languages for translation
   const LANGUAGES = [
-    { code: 'zh-CN', name: '简体中文' },
-    { code: 'en', name: 'English' },
-    { code: 'ja', name: '日本語' },
-    { code: 'ko', name: '한국어' },
+    { code: 'zh-CN', name: t('languages.zh-CN') },
+    { code: 'en', name: t('languages.en') },
+    { code: 'ja', name: t('languages.ja') },
+    { code: 'ko', name: t('languages.ko') },
   ]
 
   // Filter and search items (client-side for current page)
@@ -288,9 +288,8 @@ export function Library() {
               libraries?.map((lib) => (
                 <div
                   key={lib.id}
-                  className={`rounded-lg border overflow-hidden cursor-pointer transition-all hover:shadow-lg ${
-                    selectedLibrary === lib.id ? 'border-primary ring-2 ring-primary' : 'hover:border-primary/50'
-                  }`}
+                  className={`rounded-lg border overflow-hidden cursor-pointer transition-all hover:shadow-lg ${selectedLibrary === lib.id ? 'border-primary ring-2 ring-primary' : 'hover:border-primary/50'
+                    }`}
                   onClick={() => {
                     setSelectedLibrary(lib.id)
                     setPage(1) // Reset to first page when selecting library
@@ -313,7 +312,7 @@ export function Library() {
                     {/* Selected indicator */}
                     {selectedLibrary === lib.id && (
                       <div className="absolute top-1.5 right-1.5">
-                        <Badge variant="default" className="text-xs">已选择</Badge>
+                        <Badge variant="default" className="text-xs">{t('library.selected')}</Badge>
                       </div>
                     )}
                   </div>
@@ -322,7 +321,7 @@ export function Library() {
                   <div className="p-2 sm:p-2.5">
                     <h3 className="font-semibold text-sm mb-0.5 truncate" title={lib.name}>{lib.name}</h3>
                     <p className="text-xs text-muted-foreground truncate">
-                      {lib.item_count} {t('library.items')} • {lib.type || '未分类'}
+                      {lib.item_count} {t('library.items')} • {lib.type || t('library.uncategorized')}
                     </p>
                   </div>
                   <Button
@@ -353,7 +352,7 @@ export function Library() {
               <CardTitle className="text-base sm:text-lg">{t('library.mediaItems')}</CardTitle>
               <div className="flex items-center gap-2">
                 <Badge variant="outline" className="text-[10px] sm:text-xs">
-                  显示 {filteredItems.length} 项（总计 {items?.length || 0}）
+                  {t('library.showing')} {filteredItems.length} {t('library.items')}（{t('library.total')} {items?.length || 0}）
                 </Badge>
               </div>
             </div>
@@ -361,7 +360,7 @@ export function Library() {
             {/* Filters */}
             <div className="grid gap-2 sm:gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 mt-3 sm:mt-4">
               <Input
-                placeholder="搜索媒体..."
+                placeholder={t('library.searchPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value)
@@ -373,13 +372,13 @@ export function Library() {
                 handleFilterChange()
               }}>
                 <SelectTrigger>
-                  <SelectValue placeholder="媒体类型" />
+                  <SelectValue placeholder={t('library.mediaType')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">所有类型</SelectItem>
+                  <SelectItem value="all">{t('library.allTypes')}</SelectItem>
                   {availableTypes.map(type => (
                     <SelectItem key={type} value={type}>
-                      {type === 'Movie' ? '电影' : type === 'Episode' ? '剧集' : type}
+                      {type === 'Movie' ? t('library.movie') : type === 'Episode' ? t('library.episode') : type}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -389,10 +388,10 @@ export function Library() {
                 handleFilterChange()
               }}>
                 <SelectTrigger>
-                  <SelectValue placeholder="年份" />
+                  <SelectValue placeholder={t('library.year')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">所有年份</SelectItem>
+                  <SelectItem value="all">{t('library.allYears')}</SelectItem>
                   {availableYears.map(year => (
                     <SelectItem key={year} value={year.toString()}>
                       {year}
@@ -411,8 +410,8 @@ export function Library() {
                   }}
                 >
                   <Filter className="mr-1 sm:mr-2 h-4 w-4" />
-                  <span className="hidden sm:inline">清除过滤</span>
-                  <span className="sm:hidden">清除</span>
+                  <span className="hidden sm:inline">{t('library.clearFilters')}</span>
+                  <span className="sm:hidden">{t('library.clear')}</span>
                 </Button>
               )}
             </div>
@@ -422,7 +421,7 @@ export function Library() {
               <p className="text-muted-foreground">{t('library.loadingItems')}</p>
             ) : filteredItems.length === 0 ? (
               <p className="text-muted-foreground text-center py-8">
-                {items?.length === 0 ? t('library.noItems') : '未找到匹配的媒体项目'}
+                {items?.length === 0 ? t('library.noItems') : t('library.noMatchingItems')}
               </p>
             ) : (
               <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
@@ -450,15 +449,15 @@ export function Library() {
                       <div className="absolute top-2 right-2">
                         <Badge variant={item.type === 'Movie' ? 'default' : 'secondary'}>
                           {item.type === 'Series' && item.child_count
-                            ? `剧集 ${item.child_count}集`
-                            : item.type === 'Movie' ? '电影' : item.type === 'Series' ? '剧集' : item.type}
+                            ? `${t('library.series')} ${item.child_count}${t('library.episodes')}`
+                            : item.type === 'Movie' ? t('library.movie') : item.type === 'Series' ? t('library.series') : item.type}
                         </Badge>
                       </div>
                       {/* Missing Languages Badge */}
                       {item.missing_languages.length > 0 && (
                         <div className="absolute top-2 left-2">
                           <Badge variant="destructive">
-                            缺失 {item.missing_languages.length}
+                            {t('library.missing')} {item.missing_languages.length}
                           </Badge>
                         </div>
                       )}
@@ -472,7 +471,7 @@ export function Library() {
                         </h3>
                         {item.type === 'Series' && item.child_count ? (
                           <p className="text-[10px] sm:text-xs text-muted-foreground">
-                            共 {item.child_count} 集
+                            {t('library.totalEpisodes', { count: item.child_count })}
                           </p>
                         ) : item.series_name && (
                           <p className="text-[10px] sm:text-xs text-muted-foreground">
@@ -533,7 +532,7 @@ export function Library() {
                         {/* Audio Languages */}
                         {item.audio_languages.length > 0 && (
                           <div className="flex items-start gap-1.5 sm:gap-2">
-                            <span className="text-[10px] sm:text-xs text-muted-foreground whitespace-nowrap">音频:</span>
+                            <span className="text-[10px] sm:text-xs text-muted-foreground whitespace-nowrap">{t('library.audio')}:</span>
                             <div className="flex gap-1 flex-wrap">
                               {item.audio_languages.map((lang) => (
                                 <Badge key={lang} variant="outline" className="text-xs">
@@ -544,14 +543,25 @@ export function Library() {
                           </div>
                         )}
 
-                        {/* Subtitle Languages */}
-                        {item.subtitle_languages.length > 0 && (
+                        {/* Subtitle Streams - Detailed View */}
+                        {item.subtitle_streams && item.subtitle_streams.length > 0 && (
                           <div className="flex items-start gap-1.5 sm:gap-2">
-                            <span className="text-[10px] sm:text-xs text-muted-foreground whitespace-nowrap">字幕:</span>
+                            <span className="text-[10px] sm:text-xs text-muted-foreground whitespace-nowrap">{t('library.subtitles')}:</span>
                             <div className="flex gap-1 flex-wrap">
-                              {item.subtitle_languages.map((lang) => (
-                                <Badge key={lang} variant="secondary" className="text-xs">
-                                  {getLanguageName(lang)}
+                              {item.subtitle_streams.map((stream) => (
+                                <Badge
+                                  key={stream.index}
+                                  variant="secondary"
+                                  className="text-xs flex items-center gap-1"
+                                  title={`${stream.display_title} • ${stream.codec.toUpperCase()} • ${stream.is_external ? t('library.externalFile') : t('library.embedded')}`}
+                                >
+                                  {getLanguageName(stream.language)}
+                                  {stream.is_external && (
+                                    <span className="text-[9px] opacity-70">[{t('library.ext')}]</span>
+                                  )}
+                                  {stream.is_default && (
+                                    <span className="text-[9px] opacity-70">⭐</span>
+                                  )}
                                 </Badge>
                               ))}
                             </div>
@@ -561,7 +571,7 @@ export function Library() {
                         {/* Missing Languages */}
                         {item.missing_languages.length > 0 && (
                           <div className="flex items-start gap-1.5 sm:gap-2">
-                            <span className="text-[10px] sm:text-xs text-muted-foreground whitespace-nowrap">缺失:</span>
+                            <span className="text-[10px] sm:text-xs text-muted-foreground whitespace-nowrap">{t('library.missing')}:</span>
                             <div className="flex gap-1 flex-wrap">
                               {item.missing_languages.map((lang) => (
                                 <Badge key={lang} variant="destructive" className="text-xs">
@@ -591,13 +601,13 @@ export function Library() {
                             onClick={() => handleQuickTranslate(item)}
                           >
                             <Languages className="mr-1 sm:mr-2 h-4 w-4" />
-                            <span className="hidden sm:inline">快速翻译</span>
-                            <span className="sm:hidden">翻译</span>
+                            <span className="hidden sm:inline">{t('library.quickTranslate')}</span>
+                            <span className="sm:hidden">{t('library.translate')}</span>
                           </Button>
                         ) : (
                           <div className="flex-1 flex items-center justify-center gap-1 sm:gap-2 text-[10px] sm:text-xs text-green-600">
                             <CheckCircle2 className="h-4 w-4" />
-                            字幕完整
+                            {t('library.subtitlesComplete')}
                           </div>
                         )}
 
@@ -612,7 +622,7 @@ export function Library() {
                               handleViewDetails(item)
                             }
                           }}
-                          title={item.type === 'Series' ? "查看剧集列表" : "查看详情"}
+                          title={item.type === 'Series' ? t('library.viewSeriesList') : t('library.viewDetails')}
                         >
                           <Info className="h-4 w-4" />
                         </Button>
@@ -627,9 +637,9 @@ export function Library() {
             {filteredItems.length > pageSize && (
               <div className="flex items-center justify-between gap-3 pt-3 sm:pt-4 border-t flex-wrap">
                 <div className="text-xs sm:text-sm text-muted-foreground">
-                  第 {page} / {totalPages} 页
+                  {t('library.page')} {page} / {totalPages} {t('library.pages')}
                   <span className="hidden sm:inline">
-                    ，显示 {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, filteredItems.length)} 项（共 {filteredItems.length} 项）
+                    ，{t('library.showing')} {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, filteredItems.length)} {t('library.items')}（{t('library.total')} {filteredItems.length} {t('library.items')}）
                   </span>
                 </div>
                 <div className="flex gap-2">
@@ -639,7 +649,7 @@ export function Library() {
                     onClick={() => setPage(page - 1)}
                     disabled={page === 1}
                   >
-                    上一页
+                    {t('library.previousPage')}
                   </Button>
                   <Button
                     variant="outline"
@@ -647,7 +657,7 @@ export function Library() {
                     onClick={() => setPage(page + 1)}
                     disabled={page >= totalPages}
                   >
-                    下一页
+                    {t('library.nextPage')}
                   </Button>
                 </div>
               </div>
@@ -660,17 +670,17 @@ export function Library() {
       <AlertDialog open={translateDialogOpen} onOpenChange={setTranslateDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>创建翻译任务</AlertDialogTitle>
+            <AlertDialogTitle>{t('library.createTranslationTask')}</AlertDialogTitle>
             <AlertDialogDescription>
               {selectedItem ? (
-                <>为 <strong>{selectedItem.name}</strong> 创建字幕翻译任务</>
+                <>{t('library.createTaskFor')} <strong>{selectedItem.name}</strong> {t('library.createSubtitleTask')}</>
               ) : (
                 <>
-                  为 <strong>{selectedSeries[0]?.series_name}</strong> 的{' '}
+                  {t('library.batchCreateFor')} <strong>{selectedSeries[0]?.series_name}</strong> {t('library.of')}{' '}
                   <strong className="text-destructive">
-                    {selectedSeries.filter(ep => ep.missing_languages.length > 0).length} 集
+                    {selectedSeries.filter(ep => ep.missing_languages.length > 0).length} {t('library.episodes')}
                   </strong>{' '}
-                  批量创建翻译任务
+                  {t('library.batchCreateTasks')}
                 </>
               )}
             </AlertDialogDescription>
@@ -679,61 +689,61 @@ export function Library() {
           <div className="space-y-4 py-4">
             {/* Media Info */}
             {selectedItem && (
-            <div className="space-y-2 text-sm">
-              <div className="flex items-center gap-2">
-                <span className="text-muted-foreground">类型:</span>
-                <Badge variant="outline">
-                  {selectedItem?.type === 'Movie' ? '电影' : selectedItem?.type === 'Episode' ? '剧集' : selectedItem?.type}
-                </Badge>
-              </div>
-              {selectedItem?.series_name && (
+              <div className="space-y-2 text-sm">
                 <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground">剧集:</span>
-                  <span>{selectedItem.series_name}</span>
+                  <span className="text-muted-foreground">{t('library.type')}:</span>
+                  <Badge variant="outline">
+                    {selectedItem?.type === 'Movie' ? t('library.movie') : selectedItem?.type === 'Episode' ? t('library.episode') : selectedItem?.type}
+                  </Badge>
                 </div>
-              )}
-              {selectedItem?.audio_languages && selectedItem.audio_languages.length > 0 && (
-                <div className="flex items-start gap-2">
-                  <span className="text-muted-foreground">现有音频:</span>
-                  <div className="flex gap-1 flex-wrap">
-                    {selectedItem.audio_languages.map((lang) => (
-                      <Badge key={lang} variant="outline" className="text-xs">
-                        {getLanguageName(lang)}
-                      </Badge>
-                    ))}
+                {selectedItem?.series_name && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground">{t('library.series')}:</span>
+                    <span>{selectedItem.series_name}</span>
                   </div>
-                </div>
-              )}
-              {selectedItem?.subtitle_languages && selectedItem.subtitle_languages.length > 0 && (
-                <div className="flex items-start gap-2">
-                  <span className="text-muted-foreground">现有字幕:</span>
-                  <div className="flex gap-1 flex-wrap">
-                    {selectedItem.subtitle_languages.map((lang) => (
-                      <Badge key={lang} variant="secondary" className="text-xs">
-                        {getLanguageName(lang)}
-                      </Badge>
-                    ))}
+                )}
+                {selectedItem?.audio_languages && selectedItem.audio_languages.length > 0 && (
+                  <div className="flex items-start gap-2">
+                    <span className="text-muted-foreground">{t('library.existingAudio')}:</span>
+                    <div className="flex gap-1 flex-wrap">
+                      {selectedItem.audio_languages.map((lang) => (
+                        <Badge key={lang} variant="outline" className="text-xs">
+                          {getLanguageName(lang)}
+                        </Badge>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+                {selectedItem?.subtitle_languages && selectedItem.subtitle_languages.length > 0 && (
+                  <div className="flex items-start gap-2">
+                    <span className="text-muted-foreground">{t('library.existingSubtitles')}:</span>
+                    <div className="flex gap-1 flex-wrap">
+                      {selectedItem.subtitle_languages.map((lang) => (
+                        <Badge key={lang} variant="secondary" className="text-xs">
+                          {getLanguageName(lang)}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
 
             {/* Batch Translation Info */}
             {!selectedItem && selectedSeries.length > 0 && (
               <div className="space-y-2 p-3 bg-muted rounded-lg text-sm">
-                <div className="font-medium">批量翻译说明：</div>
+                <div className="font-medium">{t('library.batchTranslateInfo')}：</div>
                 <ul className="space-y-1 text-muted-foreground ml-4 list-disc">
-                  <li>将为所有缺失字幕的剧集创建翻译任务</li>
-                  <li>每集将根据其缺失的语言创建独立任务</li>
-                  <li>共 {selectedSeries.filter(ep => ep.missing_languages.length > 0).length} 集需要翻译</li>
+                  <li>{t('library.batchTranslateDesc1')}</li>
+                  <li>{t('library.batchTranslateDesc2')}</li>
+                  <li>{t('library.totalEpisodesNeedTranslation', { count: selectedSeries.filter(ep => ep.missing_languages.length > 0).length })}</li>
                 </ul>
               </div>
             )}
 
             {/* Target Languages Selection */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">选择翻译目标语言:</label>
+              <label className="text-sm font-medium">{t('library.selectTargetLanguages')}:</label>
               <div className="flex flex-wrap gap-2">
                 {LANGUAGES.map((lang) => (
                   <Badge
@@ -744,27 +754,27 @@ export function Library() {
                   >
                     {lang.name}
                     {selectedItem?.missing_languages.includes(lang.code) && (
-                      <span className="ml-1 text-xs">(缺失)</span>
+                      <span className="ml-1 text-xs">({t('library.missing')})</span>
                     )}
                   </Badge>
                 ))}
               </div>
               {selectedTargetLangs.length === 0 && (
-                <p className="text-xs text-destructive">请至少选择一个目标语言</p>
+                <p className="text-xs text-destructive">{t('library.selectAtLeastOne')}</p>
               )}
             </div>
 
             {/* Task Info */}
             <div className="text-xs text-muted-foreground space-y-1">
-              <p>• 如果媒体没有字幕，系统将先进行语音识别（ASR）生成字幕</p>
-              <p>• 翻译任务将在后台队列中执行</p>
-              <p>• 可在"任务列表"页面查看进度</p>
+              <p>• {t('library.taskInfo1')}</p>
+              <p>• {t('library.taskInfo2')}</p>
+              <p>• {t('library.taskInfo3')}</p>
             </div>
           </div>
 
           <AlertDialogFooter>
             <AlertDialogCancel disabled={createJobMutation.isPending}>
-              取消
+              {t('library.cancel')}
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={selectedItem ? handleTranslateConfirm : handleBatchTranslateConfirm}
@@ -773,11 +783,11 @@ export function Library() {
               {createJobMutation.isPending && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
-              {selectedItem ? '创建任务' : `批量创建 ${
-                selectedSeries.filter(ep =>
+              {selectedItem ? t('library.createTask') : t('library.batchCreateCount', {
+                count: selectedSeries.filter(ep =>
                   selectedTargetLangs.some(lang => ep.missing_languages.includes(lang))
                 ).length
-              } 个任务`}
+              })}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -787,9 +797,9 @@ export function Library() {
       <AlertDialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
         <AlertDialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
           <AlertDialogHeader>
-            <AlertDialogTitle>媒体详情</AlertDialogTitle>
+            <AlertDialogTitle>{t('library.mediaDetails')}</AlertDialogTitle>
             <AlertDialogDescription>
-              查看 <strong>{selectedItem?.name}</strong> 的完整信息
+              {t('library.viewDetailsFor')} <strong>{selectedItem?.name}</strong> {t('library.fullInfo')}
             </AlertDialogDescription>
           </AlertDialogHeader>
 
@@ -822,8 +832,8 @@ export function Library() {
                   {selectedItem?.series_name && (
                     <p className="text-sm text-muted-foreground mt-1">
                       {selectedItem.series_name}
-                      {selectedItem.season_number && ` - 第${selectedItem.season_number}季`}
-                      {selectedItem.episode_number && ` 第${selectedItem.episode_number}集`}
+                      {selectedItem.season_number && ` - ${t('library.season', { number: selectedItem.season_number })}`}
+                      {selectedItem.episode_number && ` ${t('library.episodeNumber', { number: selectedItem.episode_number })}`}
                     </p>
                   )}
                 </div>
@@ -832,30 +842,30 @@ export function Library() {
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   {selectedItem?.type && (
                     <div>
-                      <span className="text-muted-foreground">类型: </span>
+                      <span className="text-muted-foreground">{t('library.type')}: </span>
                       <Badge variant="outline">
-                        {selectedItem.type === 'Movie' ? '电影' : selectedItem.type === 'Episode' ? '剧集' : selectedItem.type}
+                        {selectedItem.type === 'Movie' ? t('library.movie') : selectedItem.type === 'Episode' ? t('library.episode') : selectedItem.type}
                       </Badge>
                     </div>
                   )}
-                  
+
                   {selectedItem?.production_year && (
                     <div>
-                      <span className="text-muted-foreground">年份: </span>
+                      <span className="text-muted-foreground">{t('library.year')}: </span>
                       <span className="font-medium">{selectedItem.production_year}</span>
                     </div>
                   )}
 
                   {selectedItem?.official_rating && (
                     <div>
-                      <span className="text-muted-foreground">分级: </span>
+                      <span className="text-muted-foreground">{t('library.rating')}: </span>
                       <Badge variant="outline">{selectedItem.official_rating}</Badge>
                     </div>
                   )}
 
                   {selectedItem?.community_rating && (
                     <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground">评分: </span>
+                      <span className="text-muted-foreground">{t('library.score')}: </span>
                       <div className="flex items-center gap-1">
                         <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
                         <span className="font-medium">{selectedItem.community_rating.toFixed(1)}</span>
@@ -881,7 +891,7 @@ export function Library() {
                 {/* Genres */}
                 {selectedItem?.genres && selectedItem.genres.length > 0 && (
                   <div>
-                    <span className="text-sm text-muted-foreground">类型标签: </span>
+                    <span className="text-sm text-muted-foreground">{t('library.genreTags')}: </span>
                     <div className="flex gap-1 flex-wrap mt-1">
                       {selectedItem.genres.map((genre) => (
                         <Badge key={genre} variant="secondary" className="text-xs">
@@ -897,7 +907,7 @@ export function Library() {
             {/* Overview */}
             {selectedItem?.overview && (
               <div>
-                <h4 className="font-semibold mb-2">简介</h4>
+                <h4 className="font-semibold mb-2">{t('library.overview')}</h4>
                 <p className="text-sm text-muted-foreground leading-relaxed">
                   {selectedItem.overview}
                 </p>
@@ -906,11 +916,11 @@ export function Library() {
 
             {/* Language Information */}
             <div className="space-y-3">
-              <h4 className="font-semibold">语言信息</h4>
-              
+              <h4 className="font-semibold">{t('library.languageInfo')}</h4>
+
               {/* Audio Languages */}
               <div>
-                <span className="text-sm text-muted-foreground">音频语言: </span>
+                <span className="text-sm text-muted-foreground">{t('library.audioLanguages')}: </span>
                 <div className="flex gap-1 flex-wrap mt-1">
                   {selectedItem?.audio_languages && selectedItem.audio_languages.length > 0 ? (
                     selectedItem.audio_languages.map((lang) => (
@@ -919,23 +929,46 @@ export function Library() {
                       </Badge>
                     ))
                   ) : (
-                    <span className="text-sm text-muted-foreground">无</span>
+                    <span className="text-sm text-muted-foreground">{t('library.none')}</span>
                   )}
                 </div>
               </div>
 
-              {/* Subtitle Languages */}
+              {/* Subtitle Streams - Detailed Information */}
               <div>
-                <span className="text-sm text-muted-foreground">字幕语言: </span>
-                <div className="flex gap-1 flex-wrap mt-1">
-                  {selectedItem?.subtitle_languages && selectedItem.subtitle_languages.length > 0 ? (
-                    selectedItem.subtitle_languages.map((lang) => (
-                      <Badge key={lang} variant="secondary">
-                        {getLanguageName(lang)}
-                      </Badge>
+                <span className="text-sm text-muted-foreground">{t('library.subtitleDetails')}: </span>
+                <div className="space-y-2 mt-2">
+                  {selectedItem?.subtitle_streams && selectedItem.subtitle_streams.length > 0 ? (
+                    selectedItem.subtitle_streams.map((stream) => (
+                      <div
+                        key={stream.index}
+                        className="flex items-center gap-2 p-2 bg-muted/50 rounded text-sm"
+                      >
+                        <Badge variant="secondary">
+                          {getLanguageName(stream.language)}
+                        </Badge>
+                        <div className="flex gap-1 text-xs text-muted-foreground">
+                          <Badge variant="outline" className="text-xs">
+                            {stream.codec.toUpperCase()}
+                          </Badge>
+                          <Badge variant={stream.is_external ? "default" : "outline"} className="text-xs">
+                            {stream.is_external ? t('library.externalFile') : t('library.embedded')}
+                          </Badge>
+                          {stream.is_default && (
+                            <Badge variant="outline" className="text-xs">
+                              ⭐ {t('library.default')}
+                            </Badge>
+                          )}
+                          {stream.is_forced && (
+                            <Badge variant="outline" className="text-xs">
+                              {t('library.forced')}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
                     ))
                   ) : (
-                    <span className="text-sm text-muted-foreground">无</span>
+                    <span className="text-sm text-muted-foreground">{t('library.none')}</span>
                   )}
                 </div>
               </div>
@@ -943,7 +976,7 @@ export function Library() {
               {/* Missing Languages */}
               {selectedItem?.missing_languages && selectedItem.missing_languages.length > 0 && (
                 <div>
-                  <span className="text-sm text-muted-foreground">缺失语言: </span>
+                  <span className="text-sm text-muted-foreground">{t('library.missingLanguages')}: </span>
                   <div className="flex gap-1 flex-wrap mt-1">
                     {selectedItem.missing_languages.map((lang) => (
                       <Badge key={lang} variant="destructive">
@@ -958,7 +991,7 @@ export function Library() {
             {/* File Path */}
             {selectedItem?.path && (
               <div>
-                <h4 className="font-semibold mb-2">文件路径</h4>
+                <h4 className="font-semibold mb-2">{t('library.filePath')}</h4>
                 <p className="text-xs text-muted-foreground font-mono bg-muted p-2 rounded">
                   {selectedItem.path}
                 </p>
@@ -976,14 +1009,14 @@ export function Library() {
                   }}
                 >
                   <Languages className="mr-2 h-4 w-4" />
-                  创建翻译任务
+                  {t('library.createTranslationTask')}
                 </Button>
               </div>
             )}
           </div>
 
           <AlertDialogFooter>
-            <AlertDialogCancel>关闭</AlertDialogCancel>
+            <AlertDialogCancel>{t('library.close')}</AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -994,12 +1027,12 @@ export function Library() {
           <AlertDialogHeader className="flex-shrink-0">
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1">
-                <AlertDialogTitle>剧集列表</AlertDialogTitle>
+                <AlertDialogTitle>{t('library.episodeList')}</AlertDialogTitle>
                 <AlertDialogDescription>
-                  <strong>{selectedSeries[0]?.series_name}</strong> 共 {selectedSeries.length} 集
+                  <strong>{selectedSeries[0]?.series_name}</strong> {t('library.totalEpisodesCount', { count: selectedSeries.length })}
                   {selectedSeries.filter(ep => ep.missing_languages.length > 0).length > 0 && (
                     <span className="text-destructive ml-2">
-                      • {selectedSeries.filter(ep => ep.missing_languages.length > 0).length} 集缺失字幕
+                      • {t('library.episodesMissingSubtitles', { count: selectedSeries.filter(ep => ep.missing_languages.length > 0).length })}
                     </span>
                   )}
                 </AlertDialogDescription>
@@ -1012,7 +1045,7 @@ export function Library() {
                   className="flex-shrink-0"
                 >
                   <Languages className="mr-2 h-4 w-4" />
-                  一键翻译全部
+                  {t('library.translateAll')}
                 </Button>
               )}
             </div>
@@ -1077,12 +1110,12 @@ export function Library() {
                                   }}
                                 >
                                   <Languages className="mr-1 sm:mr-2 h-4 w-4" />
-                                  <span className="hidden sm:inline">翻译</span>
+                                  <span className="hidden sm:inline">{t('library.translate')}</span>
                                 </Button>
                               ) : (
                                 <div className="flex items-center gap-1 text-[10px] sm:text-xs text-green-600">
                                   <CheckCircle2 className="h-4 w-4" />
-                                  <span className="hidden sm:inline">完整</span>
+                                  <span className="hidden sm:inline">{t('library.complete')}</span>
                                 </div>
                               )}
                               <Button
@@ -1116,24 +1149,35 @@ export function Library() {
 
                           {/* Language Status */}
                           <div className="flex items-center gap-2 flex-wrap text-[10px] sm:text-xs">
-                            {episode.subtitle_languages.length > 0 && (
-                              <div className="flex items-center gap-1">
-                                <span className="text-muted-foreground">字幕:</span>
-                                {episode.subtitle_languages.slice(0, 2).map((lang) => (
-                                  <Badge key={lang} variant="secondary" className="text-xs">
-                                    {getLanguageName(lang)}
+                            {episode.subtitle_streams && episode.subtitle_streams.length > 0 && (
+                              <div className="flex items-center gap-1 flex-wrap">
+                                <span className="text-muted-foreground">{t('library.subtitles')}:</span>
+                                {episode.subtitle_streams.slice(0, 3).map((stream) => (
+                                  <Badge
+                                    key={stream.index}
+                                    variant="secondary"
+                                    className="text-xs flex items-center gap-0.5"
+                                    title={`${stream.display_title} • ${stream.codec.toUpperCase()} • ${stream.is_external ? t('library.externalFile') : t('library.embedded')}`}
+                                  >
+                                    {getLanguageName(stream.language)}
+                                    {stream.is_external && (
+                                      <span className="text-[8px] opacity-70">[{t('library.ext')}]</span>
+                                    )}
+                                    {stream.is_default && (
+                                      <span className="text-[8px]">⭐</span>
+                                    )}
                                   </Badge>
                                 ))}
-                                {episode.subtitle_languages.length > 2 && (
+                                {episode.subtitle_streams.length > 3 && (
                                   <span className="text-muted-foreground">
-                                    +{episode.subtitle_languages.length - 2}
+                                    +{episode.subtitle_streams.length - 3}
                                   </span>
                                 )}
                               </div>
                             )}
                             {episode.missing_languages.length > 0 && (
                               <div className="flex items-center gap-1">
-                                <span className="text-muted-foreground">缺失:</span>
+                                <span className="text-muted-foreground">{t('library.missing')}:</span>
                                 {episode.missing_languages.slice(0, 1).map((lang) => (
                                   <Badge key={lang} variant="destructive" className="text-xs">
                                     {getLanguageName(lang)}
@@ -1156,7 +1200,7 @@ export function Library() {
           </div>
 
           <AlertDialogFooter className="flex-shrink-0 border-t pt-4 mt-0">
-            <AlertDialogCancel>关闭</AlertDialogCancel>
+            <AlertDialogCancel>{t('library.close')}</AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

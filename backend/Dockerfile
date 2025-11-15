@@ -1,7 +1,30 @@
 # =============================================================================
-# FluxCaption Backend Dockerfile
+# FluxCaption Backend Dockerfile (with integrated frontend)
 # =============================================================================
 
+# =============================================================================
+# Stage 1: Build Frontend
+# =============================================================================
+FROM node:20-alpine AS frontend-builder
+
+WORKDIR /frontend
+
+# Copy frontend package files
+COPY frontend/package.json frontend/pnpm-lock.yaml* ./
+
+# Install pnpm and dependencies
+RUN npm install -g pnpm && \
+    pnpm install --frozen-lockfile
+
+# Copy frontend source code
+COPY frontend/ .
+
+# Build frontend
+RUN pnpm build
+
+# =============================================================================
+# Stage 2: Backend Runtime
+# =============================================================================
 FROM python:3.11-slim
 
 # Set environment variables
@@ -24,17 +47,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements file
-COPY requirements.txt .
+COPY backend/requirements.txt .
 
 # Install Python dependencies with Tsinghua mirror
 RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
 
 # Copy application code
-COPY app/ ./app/
-COPY migrations/ ./migrations/
-COPY alembic.ini .
-COPY start.sh /app/start.sh
+COPY backend/app/ ./app/
+COPY backend/migrations/ ./migrations/
+COPY backend/alembic.ini .
+COPY backend/start.sh /app/start.sh
 RUN chmod +x /app/start.sh
+
+# Copy frontend build from frontend-builder stage
+COPY --from=frontend-builder /frontend/dist ./frontend_dist
 
 # Create necessary directories
 RUN mkdir -p /app/logs /app/output/subtitles /app/models/whisper /tmp/fluxcaption

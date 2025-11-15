@@ -502,26 +502,21 @@ class JellyfinClient:
 
         subtitle_content = subtitle_file.read_bytes()
 
-        # Prepare multipart upload
-        files = {
-            "data": (
-                subtitle_file.name,
-                subtitle_content,
-                "application/octet-stream",
-            )
-        }
-
-        params = {
+        # Jellyfin expects JSON payload with Base64-encoded subtitle data
+        import base64
+        encoded_data = base64.b64encode(subtitle_content).decode('utf-8')
+        
+        payload = {
             "Language": language,
             "Format": format,
-            "IsForced": str(is_forced).lower(),
+            "IsForced": is_forced,
+            "Data": encoded_data,
         }
 
         response = await self._request_with_retry(
             "POST",
             f"/Videos/{item_id}/Subtitles",
-            params=params,
-            files=files,
+            json=payload,
         )
 
         logger.info(f"Subtitle uploaded successfully to item {item_id}")

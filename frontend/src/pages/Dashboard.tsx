@@ -75,14 +75,14 @@ export function Dashboard() {
 
       data.push({
         date: `${date.getMonth() + 1}/${date.getDate()}`,
-        创建任务: created,
-        完成任务: completed,
-        失败任务: failed,
+        [t('dashboard.chart.createdTasks')]: created,
+        [t('dashboard.chart.completedTasks')]: completed,
+        [t('dashboard.chart.failedTasks')]: failed,
       })
     }
 
     return data
-  }, [allJobs])
+  }, [allJobs, t])
 
   // Calculate overall statistics
   const stats = useMemo(() => {
@@ -100,6 +100,7 @@ export function Dashboard() {
     const completed = allJobs.jobs.filter(j => j.status === 'completed').length
     const failed = allJobs.jobs.filter(j => j.status === 'failed').length
     const running = allJobs.jobs.filter(j => j.status === 'running').length
+    const paused = allJobs.jobs.filter(j => j.status === 'paused').length
     const pending = allJobs.jobs.filter(j => j.status === 'pending').length
 
     // Today's jobs
@@ -114,7 +115,7 @@ export function Dashboard() {
     const finishedJobs = completed + failed
     const successRate = finishedJobs > 0 ? Math.round((completed / finishedJobs) * 100) : 0
 
-    return { total, completed, failed, running, pending, today: todayJobs, successRate }
+    return { total, completed, failed, running, paused, pending, today: todayJobs, successRate }
   }, [allJobs])
 
   // Success rate trend data
@@ -145,14 +146,14 @@ export function Dashboard() {
 
       data.push({
         date: `${date.getMonth() + 1}/${date.getDate()}`,
-        成功率: rate,
-        完成: completed,
-        失败: failed
+        [t('dashboard.chart.successRate')]: rate,
+        [t('dashboard.chart.completedTasks')]: completed,
+        [t('dashboard.chart.failedTasks')]: failed
       })
     }
 
     return data
-  }, [allJobs])
+  }, [allJobs, t])
 
   // Task type distribution
   const taskTypeData = useMemo(() => {
@@ -165,10 +166,10 @@ export function Dashboard() {
     })
 
     return Object.entries(typeCount).map(([type, count]) => ({
-      name: type,
+      name: t(`dashboard.taskType.${type.toLowerCase()}` as const, type),
       value: count
     }))
-  }, [allJobs])
+  }, [allJobs, t])
 
   // Language distribution
   const languageData = useMemo(() => {
@@ -182,10 +183,10 @@ export function Dashboard() {
     })
 
     return Object.entries(langCount)
-      .map(([lang, count]) => ({ name: lang, value: count }))
+      .map(([lang, count]) => ({ name: t(`languages.${lang}`, { defaultValue: lang }), value: count }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 6) // Top 6 languages
-  }, [allJobs])
+  }, [allJobs, t])
 
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
 
@@ -195,7 +196,7 @@ export function Dashboard() {
       <Card>
         <CardHeader className="px-4 sm:px-6">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-base sm:text-lg">最近7天任务统计</CardTitle>
+            <CardTitle className="text-base sm:text-lg">{t('dashboard.recentTasksChart')}</CardTitle>
             <TrendingUp className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground" />
           </div>
         </CardHeader>
@@ -226,7 +227,7 @@ export function Dashboard() {
                 />
                 <Line
                   type="monotone"
-                  dataKey="创建任务"
+                  dataKey={t('dashboard.chart.createdTasks')}
                   stroke="hsl(var(--primary))"
                   strokeWidth={2}
                   dot={{ r: 3 }}
@@ -234,7 +235,7 @@ export function Dashboard() {
                 />
                 <Line
                   type="monotone"
-                  dataKey="完成任务"
+                  dataKey={t('dashboard.chart.completedTasks')}
                   stroke="hsl(142 76% 36%)"
                   strokeWidth={2}
                   dot={{ r: 3 }}
@@ -242,7 +243,7 @@ export function Dashboard() {
                 />
                 <Line
                   type="monotone"
-                  dataKey="失败任务"
+                  dataKey={t('dashboard.chart.failedTasks')}
                   stroke="hsl(var(--destructive))"
                   strokeWidth={2}
                   dot={{ r: 3 }}
@@ -258,7 +259,7 @@ export function Dashboard() {
       <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-3 sm:px-4">
-            <CardTitle className="text-xs sm:text-sm font-medium">系统状态</CardTitle>
+            <CardTitle className="text-xs sm:text-sm font-medium">{t('dashboard.systemStatus')}</CardTitle>
             <Activity className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent className="px-3 sm:px-4">
@@ -266,14 +267,14 @@ export function Dashboard() {
               {healthLoading ? '...' : health?.status || 'Unknown'}
             </div>
             <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">
-              {healthLoading ? '加载中...' : getStatusBadge(health?.status || 'down')}
+              {healthLoading ? t('dashboard.loading') : getStatusBadge(health?.status || 'down')}
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-3 sm:px-4">
-            <CardTitle className="text-xs sm:text-sm font-medium">服务状态</CardTitle>
+            <CardTitle className="text-xs sm:text-sm font-medium">{t('dashboard.serviceStatus')}</CardTitle>
             <Server className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent className="px-3 sm:px-4">
@@ -281,52 +282,52 @@ export function Dashboard() {
               {healthLoading ? '...' : `${healthyServices}/${totalServices}`}
             </div>
             <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">
-              {healthLoading ? '加载中...' : '健康服务'}
+              {healthLoading ? t('dashboard.loading') : t('dashboard.healthyServices')}
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-3 sm:px-4">
-            <CardTitle className="text-xs sm:text-sm font-medium">总任务数</CardTitle>
+            <CardTitle className="text-xs sm:text-sm font-medium">{t('dashboard.totalJobs')}</CardTitle>
             <FileText className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent className="px-3 sm:px-4">
             <div className="text-xl sm:text-2xl font-bold">{stats.total}</div>
-            <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">累计任务</p>
+            <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">{t('dashboard.cumulativeTasks')}</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-3 sm:px-4">
-            <CardTitle className="text-xs sm:text-sm font-medium">今日任务</CardTitle>
+            <CardTitle className="text-xs sm:text-sm font-medium">{t('dashboard.todayTasks')}</CardTitle>
             <CalendarDays className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent className="px-3 sm:px-4">
             <div className="text-xl sm:text-2xl font-bold">{stats.today}</div>
-            <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">今日创建</p>
+            <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">{t('dashboard.todayCreated')}</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-3 sm:px-4">
-            <CardTitle className="text-xs sm:text-sm font-medium">成功率</CardTitle>
+            <CardTitle className="text-xs sm:text-sm font-medium">{t('dashboard.successRate')}</CardTitle>
             <Percent className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent className="px-3 sm:px-4">
             <div className="text-xl sm:text-2xl font-bold">{stats.successRate}%</div>
-            <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">任务成功率</p>
+            <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">{t('dashboard.taskSuccessRate')}</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-3 sm:px-4">
-            <CardTitle className="text-xs sm:text-sm font-medium">失败任务</CardTitle>
+            <CardTitle className="text-xs sm:text-sm font-medium">{t('dashboard.failedTasksCount')}</CardTitle>
             <AlertCircle className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent className="px-3 sm:px-4">
             <div className="text-xl sm:text-2xl font-bold text-destructive">{stats.failed}</div>
-            <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">需要关注</p>
+            <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">{t('dashboard.needsAttention')}</p>
           </CardContent>
         </Card>
       </div>
@@ -337,7 +338,7 @@ export function Dashboard() {
         <Card>
           <CardHeader className="px-4 sm:px-6">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-base sm:text-lg">任务成功率趋势</CardTitle>
+              <CardTitle className="text-base sm:text-lg">{t('dashboard.successRateTrend')}</CardTitle>
               <Percent className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground" />
             </div>
           </CardHeader>
@@ -359,7 +360,7 @@ export function Dashboard() {
                   <Legend wrapperStyle={{ fontSize: '12px' }} />
                   <Line
                     type="monotone"
-                    dataKey="成功率"
+                    dataKey={t('dashboard.chart.successRate')}
                     stroke="hsl(142 76% 36%)"
                     strokeWidth={3}
                     dot={{ r: 4 }}
@@ -375,7 +376,7 @@ export function Dashboard() {
         <Card>
           <CardHeader className="px-4 sm:px-6">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-base sm:text-lg">任务类型分布</CardTitle>
+              <CardTitle className="text-base sm:text-lg">{t('dashboard.taskTypeDistribution')}</CardTitle>
               <BarChart3 className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground" />
             </div>
           </CardHeader>
@@ -408,7 +409,7 @@ export function Dashboard() {
         <Card>
           <CardHeader className="px-4 sm:px-6">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-base sm:text-lg">翻译语言分布 (Top 6)</CardTitle>
+              <CardTitle className="text-base sm:text-lg">{t('dashboard.languageDistribution')}</CardTitle>
               <Languages className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground" />
             </div>
           </CardHeader>
@@ -447,7 +448,7 @@ export function Dashboard() {
         {/* Service Health Details */}
         <Card>
           <CardHeader className="px-4 sm:px-6">
-            <CardTitle className="text-base sm:text-lg">服务健康状态</CardTitle>
+            <CardTitle className="text-base sm:text-lg">{t('dashboard.serviceHealth')}</CardTitle>
           </CardHeader>
           <CardContent className="px-4 sm:px-6">
             <div className="space-y-3 sm:space-y-4">
@@ -499,8 +500,8 @@ export function Dashboard() {
                           job.status === 'completed'
                             ? 'default'
                             : job.status === 'failed'
-                            ? 'destructive'
-                            : 'outline'
+                              ? 'destructive'
+                              : 'outline'
                         }
                         className="text-[10px] sm:text-xs"
                       >

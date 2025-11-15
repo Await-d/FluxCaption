@@ -8,6 +8,8 @@ from typing import Optional, Annotated
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, func, desc
+import re
+from datetime import datetime, timezone
 
 from app.core.db import get_db
 from app.models.user import User
@@ -55,6 +57,33 @@ class TranslationMemoryStatsResponse(BaseModel):
     total: int
     by_language_pair: dict[str, int]
     by_model: dict[str, int]
+
+
+class UpdateTranslationRequest(BaseModel):
+    target_text: str
+
+
+class BatchDeleteRequest(BaseModel):
+    ids: list[str]
+
+
+class BatchReplaceRequest(BaseModel):
+    ids: list[str]
+    find: str
+    replace: str
+    use_regex: bool = False
+    case_sensitive: bool = True
+
+
+class BatchReplaceResponse(BaseModel):
+    updated: int
+    total: int
+
+
+class ReProofreadResponse(BaseModel):
+    original_text: str
+    proofread_text: str
+    changed: bool
 
 
 # =============================================================================
@@ -208,4 +237,216 @@ async def get_translation_pair(
         word_count_target=tm.word_count_target,
         translation_model=tm.translation_model,
         created_at=tm.created_at.isoformat(),
+    )
+
+
+@router.put("/{pair_id}", response_model=TranslationPairResponse)
+async def update_translation_pair(
+    pair_id: str,
+    request: UpdateTranslationRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+):
+    """Update a translation pair's target text."""
+
+    tm = db.query(TranslationMemory).filter(TranslationMemory.id == pair_id).first()
+
+    if not tm:
+        raise HTTPException(status_code=404, detail="Translation pair not found")
+
+    # Update target text and timestamp
+    tm.target_text = request.target_text
+    tm.updated_at = datetime.now(timezone.utc)
+    tm.word_count_target = len(request.target_text.split())
+
+    db.commit()
+    db.refresh(tm)
+
+    # Get media name for response
+    media_name = None
+    if tm.asset_id:
+        asset = db.query(MediaAsset).filter(MediaAsset.id == tm.asset_id).first()
+        if asset:
+            media_name = asset.name
+
+    return TranslationPairResponse(
+        id=str(tm.id),
+        source_text=tm.source_text,
+        target_text=tm.target_text,
+        source_lang=tm.source_lang,
+        target_lang=tm.target_lang,
+        context=tm.context,
+        media_name=media_name,
+        line_number=tm.line_number,
+        start_time=tm.start_time,
+        end_time=tm.end_time,
+        word_count_source=tm.word_count_source,
+        word_count_target=tm.word_count_target,
+        translation_model=tm.translation_model,
+        created_at=tm.created_at.isoformat(),
+    )
+
+
+@router.delete("/{pair_id}")
+async def delete_translation_pair(
+    pair_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+):
+    """Delete a translation pair."""
+
+    tm = db.query(TranslationMemory).filter(TranslationMemory.id == pair_id).first()
+
+    if not tm:
+        raise HTTPException(status_code=404, detail="Translation pair not found")
+
+    db.delete(tm)
+    db.commit()
+
+    return {"message": "Translation pair deleted successfully", "id": pair_id}
+
+
+@router.post("/batch-delete")
+async def batch_delete_translation_pairs(
+    request: BatchDeleteRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+):
+    """Batch delete translation pairs."""
+
+    # Limit batch size for safety
+    if len(request.ids) > 100:
+        raise HTTPException(
+            status_code=400,
+            detail="Batch delete limited to 100 items at a time"
+        )
+
+    # Delete in transaction
+    deleted_count = db.query(TranslationMemory).filter(
+        TranslationMemory.id.in_(request.ids)
+    ).delete(synchronize_session=False)
+
+    db.commit()
+
+    return {
+        "message": f"Deleted {deleted_count} translation pairs",
+        "deleted": deleted_count,
+        "requested": len(request.ids)
+    }
+
+
+@router.post("/batch-replace", response_model=BatchReplaceResponse)
+async def batch_replace_translation_text(
+    request: BatchReplaceRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+):
+    """Batch find and replace text in translation pairs."""
+
+    # Limit batch size for safety
+    if len(request.ids) > 100:
+        raise HTTPException(
+            status_code=400,
+            detail="Batch replace limited to 100 items at a time"
+        )
+
+    # Validate regex if use_regex is True
+    if request.use_regex:
+        try:
+            re.compile(request.find)
+        except re.error as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid regular expression: {str(e)}"
+            )
+
+    # Get translation pairs
+    pairs = db.query(TranslationMemory).filter(
+        TranslationMemory.id.in_(request.ids)
+    ).all()
+
+    updated_count = 0
+
+    for pair in pairs:
+        original_text = pair.target_text
+
+        if request.use_regex:
+            # Regex replacement
+            flags = 0 if request.case_sensitive else re.IGNORECASE
+            try:
+                new_text = re.sub(request.find, request.replace, original_text, flags=flags)
+            except re.error:
+                continue
+        else:
+            # Simple string replacement
+            if request.case_sensitive:
+                new_text = original_text.replace(request.find, request.replace)
+            else:
+                # Case-insensitive replacement
+                pattern = re.compile(re.escape(request.find), re.IGNORECASE)
+                new_text = pattern.sub(request.replace, original_text)
+
+        # Only update if text changed
+        if new_text != original_text:
+            pair.target_text = new_text
+            pair.updated_at = datetime.now(timezone.utc)
+            pair.word_count_target = len(new_text.split())
+            updated_count += 1
+
+    db.commit()
+
+    return BatchReplaceResponse(
+        updated=updated_count,
+        total=len(request.ids)
+    )
+
+
+@router.post("/{pair_id}/re-proofread", response_model=ReProofreadResponse)
+async def re_proofread_translation(
+    pair_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+):
+    """Re-proofread a translation using AI."""
+
+    tm = db.query(TranslationMemory).filter(TranslationMemory.id == pair_id).first()
+
+    if not tm:
+        raise HTTPException(status_code=404, detail="Translation pair not found")
+
+    # Import AI services
+    from app.services.ollama_client import ollama_client
+    from app.services.prompts import (
+        TRANSLATION_PROOFREADING_SYSTEM_PROMPT,
+        build_proofreading_prompt,
+    )
+    from app.services.subtitle_service import extract_translation_from_response
+    from app.core.config import settings
+
+    # Build proofreading prompt
+    prompt = build_proofreading_prompt(
+        source_lang=tm.source_lang,
+        target_lang=tm.target_lang,
+        source_text=tm.source_text,
+        translated_text=tm.target_text,
+    )
+
+    # Call AI for proofreading
+    proofread_result = await ollama_client.generate(
+        model=settings.default_mt_model,
+        prompt=prompt,
+        system=TRANSLATION_PROOFREADING_SYSTEM_PROMPT,
+        temperature=0.2,
+    )
+
+    # Extract translation from response
+    proofread_text = extract_translation_from_response(proofread_result)
+
+    # Check if translation changed
+    changed = proofread_text != tm.target_text
+
+    return ReProofreadResponse(
+        original_text=tm.target_text,
+        proofread_text=proofread_text,
+        changed=changed,
     )

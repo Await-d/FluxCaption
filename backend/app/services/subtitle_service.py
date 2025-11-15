@@ -6,6 +6,7 @@ Preserves timing information and ASS formatting tags.
 """
 
 import re
+import json
 from pathlib import Path
 from typing import Optional
 import pysubs2
@@ -14,16 +15,101 @@ import sqlalchemy as sa
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.services.ollama_client import ollama_client
+from app.services.ollama_client import ollama_client  # Keep for backward compatibility
+from app.services.unified_ai_client import UnifiedAIClient
 from app.services.prompts import (
     SUBTITLE_TRANSLATION_SYSTEM_PROMPT,
     BATCH_TRANSLATION_SYSTEM_PROMPT,
+    TRANSLATION_PROOFREADING_SYSTEM_PROMPT,
     build_translation_prompt,
     build_batch_translation_prompt,
+    build_proofreading_prompt,
 )
 from app.services.translation_cache_service import TranslationCacheService
 
 logger = get_logger(__name__)
+
+
+# =============================================================================
+# AI Response Parsing
+# =============================================================================
+
+def extract_translation_from_response(response: str) -> str:
+    """
+    Extract translation from AI response, supporting JSON format and plain text.
+
+    This function implements multiple fallback strategies to handle various AI output formats:
+    1. Direct JSON parsing: {"translation": "text"}
+    2. Markdown code block removal + JSON parsing
+    3. Regex extraction of JSON object
+    4. Common prefix removal (Translation:, etc.)
+    5. Return original text as fallback
+
+    Args:
+        response: Raw response from AI model
+
+    Returns:
+        str: Extracted translation text
+    """
+    if not response:
+        return ""
+
+    response = response.strip()
+
+    # Strategy 1: Try parsing entire response as JSON
+    try:
+        data = json.loads(response)
+        if isinstance(data, dict) and "translation" in data:
+            logger.debug(f"Extracted translation via direct JSON parsing")
+            return data["translation"].strip()
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # Strategy 2: Remove markdown code blocks and try parsing
+    # Handles cases like: ```json\n{"translation": "..."}\n```
+    cleaned = re.sub(r'^```(?:json)?\s*\n?|\n?```$', '', response, flags=re.MULTILINE | re.DOTALL)
+    cleaned = cleaned.strip()
+    try:
+        data = json.loads(cleaned)
+        if isinstance(data, dict) and "translation" in data:
+            logger.debug(f"Extracted translation via markdown-cleaned JSON parsing")
+            return data["translation"].strip()
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # Strategy 3: Extract first JSON object with "translation" field using regex
+    # Handles cases where JSON is embedded in text
+    match = re.search(r'\{[^{}]*"translation"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"\s*[^{}]*\}', response, re.DOTALL)
+    if match:
+        try:
+            json_str = match.group(0)
+            data = json.loads(json_str)
+            if isinstance(data, dict) and "translation" in data:
+                logger.debug(f"Extracted translation via regex JSON extraction")
+                return data["translation"].strip()
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # Strategy 4: Remove common prefixes that LLMs might add
+    common_prefixes = [
+        "Translation:",
+        "Here's the translation:",
+        "The translation is:",
+        "Translated text:",
+        "译文：",
+        "翻译：",
+        "翻译结果：",
+    ]
+
+    for prefix in common_prefixes:
+        if response.lower().startswith(prefix.lower()):
+            result = response[len(prefix):].strip()
+            logger.debug(f"Extracted translation by removing prefix: {prefix}")
+            return result
+
+    # Strategy 5: Return original response as fallback
+    logger.debug(f"Using original response as translation (no extraction pattern matched)")
+    return response
 
 
 # =============================================================================
@@ -312,9 +398,11 @@ class SubtitleService:
         output_path: str,
         source_lang: str,
         target_lang: str,
-        model: str,
+        model: Optional[str] = None,
+        provider: Optional[str] = None,
         batch_size: int = 10,
         preserve_formatting: bool = True,
+        enable_proofreading: bool = True,
         progress_callback: Optional[callable] = None,
         db_session: Optional[object] = None,
         subtitle_id: Optional[str] = None,
@@ -322,16 +410,18 @@ class SubtitleService:
         media_name: Optional[str] = None,
     ) -> dict:
         """
-        Translate a subtitle file.
+        Translate a subtitle file using multi-provider AI support.
 
         Args:
             input_path: Input subtitle file path
             output_path: Output subtitle file path
             source_lang: Source language code
             target_lang: Target language code
-            model: Ollama model to use
+            model: Model name to use (optional, uses default if not specified)
+            provider: AI provider to use (optional, auto-selects if not specified)
             batch_size: Number of lines to translate per batch
             preserve_formatting: Whether to preserve ASS formatting
+            enable_proofreading: Whether to enable AI proofreading of translations (default: True)
             progress_callback: Optional callback(completed, total) for progress
             db_session: Optional database session for caching and translation memory
             subtitle_id: Optional subtitle ID for translation memory linkage
@@ -345,6 +435,18 @@ class SubtitleService:
             Exception: If translation fails
         """
         try:
+            # Initialize unified AI client
+            ai_client = UnifiedAIClient(db_session)
+
+            # Resolve model and provider
+            if not model:
+                model = settings.default_mt_model
+
+            logger.info(
+                f"Starting subtitle translation: {source_lang} → {target_lang}\n"
+                f"Model: {model}, Provider: {provider or 'auto'}"
+            )
+
             # Load subtitle
             subs = SubtitleService.load_subtitle(input_path)
             total_events = len(subs)
@@ -371,6 +473,7 @@ class SubtitleService:
             completed = 0
             cache_hits = 0
             cache_misses = 0
+            proofread_count = 0
 
             # Initialize cache service if db session provided
             cache_service = TranslationCacheService(db_session) if db_session else None
@@ -378,8 +481,15 @@ class SubtitleService:
             for i in range(0, total_events, batch_size):
                 batch = texts_to_translate[i:i + batch_size]
                 batch_end = min(i + batch_size, total_events)
+                batch_num = i // batch_size + 1
+                total_batches = (total_events + batch_size - 1) // batch_size
 
-                logger.info(f"Translating batch {i // batch_size + 1}: lines {i}-{batch_end}")
+                logger.info(
+                    f"\n{'='*80}\n"
+                    f"开始翻译批次 {batch_num}/{total_batches} (行 {i+1}-{batch_end}/{total_events})\n"
+                    f"{source_lang} → {target_lang} | 模型: {model}\n"
+                    f"{'='*80}"
+                )
 
                 # Process each line in the batch
                 batch_translations = []
@@ -405,16 +515,71 @@ class SubtitleService:
                         # Use cached translation
                         batch_translations.append(cached_translation)
                         cache_hits += 1
+                        logger.info(
+                            f"[行 {current_line_num + 1}/{total_events}] [缓存命中] "
+                            f"原文: {line}\n"
+                            f"译文: {cached_translation}"
+                        )
                     else:
                         # No cache, do AI translation
                         prompt = build_translation_prompt(source_lang, target_lang, line)
-                        translated = await ollama_client.generate(
+                        translated = await ai_client.generate(
                             model=model,
                             prompt=prompt,
                             system=SUBTITLE_TRANSLATION_SYSTEM_PROMPT,
                             temperature=0.3,
+                            provider=provider,
                         )
-                        translated = translated.strip()
+                        # Extract translation from AI response (supports JSON and plain text)
+                        translated = extract_translation_from_response(translated)
+                        
+                        # Log detailed translation
+                        logger.info(
+                            f"[行 {current_line_num + 1}/{total_events}] [AI翻译] "
+                            f"{source_lang} → {target_lang}\n"
+                            f"原文: {line}\n"
+                            f"译文: {translated}"
+                        )
+
+                        # AI Proofreading: Review and improve the translation
+                        if enable_proofreading and translated and line:
+                            try:
+                                proofread_prompt = build_proofreading_prompt(
+                                    source_lang=source_lang,
+                                    target_lang=target_lang,
+                                    source_text=line,
+                                    translated_text=translated,
+                                )
+                                proofread_result = await ai_client.generate(
+                                    model=model,
+                                    prompt=proofread_prompt,
+                                    system=TRANSLATION_PROOFREADING_SYSTEM_PROMPT,
+                                    temperature=0.2,  # Lower temperature for proofreading
+                                    provider=provider,
+                                )
+                                # Extract translation from proofreading response (supports JSON and plain text)
+                                proofread_result = extract_translation_from_response(proofread_result)
+
+                                # Only use proofread result if it's not empty
+                                if proofread_result:
+                                    # Log if proofreading made changes
+                                    if proofread_result != translated:
+                                        logger.info(
+                                            f"[行 {current_line_num + 1}/{total_events}] [AI校对] 改进翻译\n"
+                                            f"原文: {line}\n"
+                                            f"初译: {translated}\n"
+                                            f"校对: {proofread_result}"
+                                        )
+                                        proofread_count += 1
+                                    else:
+                                        logger.debug(
+                                            f"[行 {current_line_num + 1}/{total_events}] [AI校对] 无需改进"
+                                        )
+                                    translated = proofread_result
+                            except Exception as e:
+                                logger.warning(f"Proofreading failed for line {current_line_num + 1}: {e}")
+                                # Keep original translation if proofreading fails
+
                         batch_translations.append(translated)
                         cache_misses += 1
 
@@ -465,6 +630,14 @@ class SubtitleService:
                         progress_callback(completed, total_events, message)
 
                 translated_texts.extend(batch_translations)
+                
+                # Log batch completion
+                logger.info(
+                    f"\n{'-'*80}\n"
+                    f"批次 {batch_num}/{total_batches} 完成 ✓\n"
+                    f"已翻译: {completed}/{total_events} 行 ({completed/total_events*100:.1f}%)\n"
+                    f"{'-'*80}\n"
+                )
 
             # Commit all translation memory records at once
             if db_session:
@@ -475,12 +648,22 @@ class SubtitleService:
                     logger.warning(f"Failed to commit translation memory records: {e}")
                     db_session.rollback()
 
-            # Log cache statistics
-            if cache_service:
-                logger.info(
-                    f"Translation cache stats: {cache_hits} hits, {cache_misses} misses, "
-                    f"hit rate: {(cache_hits / (cache_hits + cache_misses) * 100):.1f}%"
-                )
+            # Log final translation statistics
+            logger.info(
+                f"\n{'='*80}\n"
+                f"翻译完成汇总 - {source_lang} → {target_lang}\n"
+                f"{'='*80}\n"
+                f"总行数: {total_events}\n"
+                f"已翻译: {len(translated_texts)}\n"
+                f"跳过: {total_events - len(translated_texts)}\n"
+                f"---\n"
+                f"缓存命中: {cache_hits} ({(cache_hits / (cache_hits + cache_misses) * 100) if (cache_hits + cache_misses) > 0 else 0:.1f}%)\n"
+                f"AI翻译: {cache_misses}\n"
+                f"AI校对改进: {proofread_count} ({(proofread_count / cache_misses * 100) if cache_misses > 0 else 0:.1f}%)\n"
+                f"---\n"
+                f"输出文件: {output_path}\n"
+                f"{'='*80}\n"
+            )
 
             # Apply translations back to subtitle events
             for idx, event in enumerate(subs):
@@ -518,6 +701,9 @@ class SubtitleService:
                 "translated": len(translated_texts),
                 "total": total_events,
                 "skipped": total_events - len(translated_texts),
+                "proofread_improved": proofread_count,
+                "cache_hits": cache_hits,
+                "cache_misses": cache_misses,
             }
 
         except Exception as e:
@@ -564,3 +750,138 @@ class SubtitleService:
             return len(subs) > 0
         except Exception:
             return False
+
+    @staticmethod
+    def merge_srt_segments(
+        segment_files: list[dict],
+        output_path: str,
+    ) -> dict:
+        """
+        Merge multiple SRT segment files into a single subtitle file.
+        
+        Each segment should have been generated from a specific time range
+        of the source audio. This function adjusts timestamps to create
+        continuous subtitles.
+        
+        Args:
+            segment_files: List of segment info dicts with:
+                - path: Path to SRT file
+                - start: Start time of this segment in seconds
+                - duration: Duration of this segment in seconds
+            output_path: Path to save merged subtitle file
+            
+        Returns:
+            dict: Merge statistics
+            
+        Raises:
+            Exception: If merge fails
+        """
+        logger.info(f"Merging {len(segment_files)} SRT segments into {output_path}")
+        
+        merged_subs = pysubs2.SSAFile()
+        total_events = 0
+        
+        for segment_idx, segment_info in enumerate(segment_files, start=1):
+            segment_path = segment_info["path"]
+            segment_start_ms = int(segment_info["start"] * 1000)  # Convert to milliseconds
+            
+            logger.debug(f"Processing segment {segment_idx}/{len(segment_files)}: {segment_path}")
+            
+            # Load segment subtitle
+            if not Path(segment_path).exists():
+                logger.warning(f"Segment file not found: {segment_path}, skipping")
+                continue
+                
+            try:
+                segment_subs = pysubs2.load(segment_path)
+            except Exception as e:
+                logger.error(f"Failed to load segment {segment_path}: {e}")
+                continue
+            
+            # Adjust timestamps and merge events
+            for event in segment_subs:
+                # Create a copy of the event
+                new_event = event.copy()
+                
+                # Adjust timestamps by adding segment start offset
+                new_event.start += segment_start_ms
+                new_event.end += segment_start_ms
+                
+                merged_subs.append(new_event)
+                total_events += 1
+        
+        # Sort events by start time (important for proper subtitle display)
+        merged_subs.sort()
+        
+        # Remove potential duplicates at segment boundaries
+        # (due to overlap in audio segments)
+        deduplicated_subs = pysubs2.SSAFile()
+        last_event = None
+        duplicates_removed = 0
+        
+        for event in merged_subs:
+            # Check if this event is a duplicate of the last one
+            if last_event and SubtitleService._are_events_duplicate(last_event, event):
+                duplicates_removed += 1
+                logger.debug(f"Removing duplicate event: {event.text[:50]}")
+                continue
+            
+            deduplicated_subs.append(event)
+            last_event = event
+        
+        # Save merged subtitle
+        deduplicated_subs.save(output_path)
+        
+        logger.info(
+            f"Merged {len(segment_files)} segments into {len(deduplicated_subs)} events "
+            f"(removed {duplicates_removed} duplicates)"
+        )
+        
+        return {
+            "total_segments": len(segment_files),
+            "total_events": len(deduplicated_subs),
+            "duplicates_removed": duplicates_removed,
+        }
+    
+    @staticmethod
+    def _are_events_duplicate(event1: SSAEvent, event2: SSAEvent, time_threshold_ms: int = 100) -> bool:
+        """
+        Check if two subtitle events are duplicates.
+        
+        Events are considered duplicates if they have:
+        - Similar start time (within threshold)
+        - Identical or very similar text
+        
+        Args:
+            event1: First event
+            event2: Second event
+            time_threshold_ms: Maximum time difference to consider as duplicate (ms)
+            
+        Returns:
+            bool: True if events are duplicates
+        """
+        # Check time proximity
+        time_diff = abs(event1.start - event2.start)
+        if time_diff > time_threshold_ms:
+            return False
+        
+        # Check text similarity (normalize for comparison)
+        text1 = event1.plaintext.strip().lower()
+        text2 = event2.plaintext.strip().lower()
+        
+        # Exact match
+        if text1 == text2:
+            return True
+        
+        # Very similar (accounting for minor differences)
+        # Calculate simple similarity ratio
+        if len(text1) > 0 and len(text2) > 0:
+            # Use Levenshtein-like comparison
+            max_len = max(len(text1), len(text2))
+            # Count matching characters
+            matches = sum(c1 == c2 for c1, c2 in zip(text1, text2))
+            similarity = matches / max_len
+            
+            return similarity > 0.9  # 90% similarity threshold
+        
+        return False

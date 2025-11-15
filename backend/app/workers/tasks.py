@@ -28,7 +28,7 @@ def run_async(coro):
 
 def save_task_log_sync(job_id: str, phase: str, status: str, progress: float, completed: int = None, total: int = None, error: str = None):
     """
-    Synchronously save task log to database without using async event publisher.
+    Synchronously save task log to database and publish to Redis for SSE streaming.
 
     This is used in progress callbacks where async operations cause event loop conflicts.
     """
@@ -37,11 +37,15 @@ def save_task_log_sync(job_id: str, phase: str, status: str, progress: float, co
         from app.models.task_log import TaskLog
         from datetime import datetime, timezone
         import json
+        import redis
 
+        timestamp = datetime.now(timezone.utc)
+
+        # Save to database
         with SessionLocal() as session:
             log_entry = TaskLog(
                 job_id=job_id,
-                timestamp=datetime.now(timezone.utc),
+                timestamp=timestamp,
                 phase=phase,
                 status=status,
                 progress=progress,
@@ -51,6 +55,42 @@ def save_task_log_sync(job_id: str, phase: str, status: str, progress: float, co
             )
             session.add(log_entry)
             session.commit()
+
+        # Also publish to Redis for real-time SSE streaming
+        try:
+            from app.core.config import settings
+            redis_client = redis.from_url(settings.redis_url, decode_responses=True)
+            
+            event_data = {
+                "job_id": job_id,
+                "phase": phase,
+                "status": status,
+                "progress": progress,
+                "timestamp": timestamp.isoformat(),
+            }
+            if completed is not None:
+                event_data["completed"] = completed
+            if total is not None:
+                event_data["total"] = total
+            if error:
+                event_data["error"] = error
+            
+            channel = f"job:{job_id}"
+            event_json = json.dumps(event_data)
+            
+            # Publish to subscribers
+            redis_client.publish(channel, event_json)
+            
+            # Also save to history list (keep last 100 events)
+            history_key = f"{channel}:history"
+            redis_client.lpush(history_key, event_json)
+            redis_client.ltrim(history_key, 0, 99)  # Keep only last 100
+            redis_client.expire(history_key, 3600)  # Auto-delete after 1 hour
+            
+            redis_client.close()
+        except Exception as redis_error:
+            logger.warning(f"Failed to publish to Redis: {redis_error}")
+            
     except Exception as e:
         logger.warning(f"Failed to save task log to database: {e}")
 
@@ -296,6 +336,7 @@ def translate_subtitle_task(self, job_id: str) -> dict:
             source_lang = job.source_lang
             target_langs = json.loads(job.target_langs)
             model = job.model
+            provider = job.provider  # Get AI provider from job
             item_id = job.item_id  # Extract item_id for writeback
 
             # === 2. Ensure model is available (with checkpoint support) ===
@@ -405,10 +446,51 @@ def translate_subtitle_task(self, job_id: str) -> dict:
                     actual_idx = completed_count + idx
                     logger.info(f"Translating to {target_lang} ({actual_idx+1}/{total_targets})")
 
+                    # === Check quota before starting translation ===
+                    try:
+                        from app.services.ai_quota_service import AIQuotaService, QuotaPauseException
+                        with session_scope() as session:
+                            quota_service = AIQuotaService(session)
+                            quota_service.check_quota_with_pause(provider)
+                    except QuotaPauseException as e:
+                        # Pause the job - it will be automatically resumed later
+                        logger.warning(
+                            f"Job {job_id} paused due to quota limit: {e}"
+                        )
+
+                        with session_scope() as session:
+                            job = session.query(TranslationJob).filter(TranslationJob.id == job_id).first()
+                            if job:
+                                job.status = "paused"
+                                job.pause_reason = e.reason
+                                job.paused_at = datetime.now(timezone.utc)
+                                job.resume_at = e.resume_at
+                                job.error = f"Paused: {e.limit_type} quota exceeded"
+                                session.commit()
+
+                        # Publish pause event
+                        run_async(event_publisher.publish_job_progress(
+                            job_id=job_id,
+                            phase="mt",
+                            status=f"paused: quota limit exceeded ({e.limit_type})",
+                            progress=(actual_idx / total_targets) * 100,
+                        ))
+
+                        # Stop processing further languages
+                        break
+
                     with session_scope() as session:
                         job = session.query(TranslationJob).filter(TranslationJob.id == job_id).first()
                         job.current_phase = "mt"
                         session.commit()
+
+                    # Publish translation start event for this language
+                    run_async(event_publisher.publish_job_progress(
+                        job_id=job_id,
+                        phase="mt",
+                        status=f"translating to {target_lang} ({actual_idx+1}/{total_targets})",
+                        progress=(actual_idx / total_targets) * 100,
+                    ))
 
                     # Build output path
                     source_file = Path(source_path)
@@ -452,8 +534,10 @@ def translate_subtitle_task(self, job_id: str) -> dict:
                             source_lang=source_lang,
                             target_lang=target_lang,
                             model=model,
+                            provider=provider,
                             batch_size=settings.translation_batch_size,
                             preserve_formatting=settings.preserve_ass_styles,
+                            enable_proofreading=settings.enable_translation_proofreading,
                             progress_callback=progress_callback,
                             db_session=session,
                             subtitle_id=None,
@@ -665,6 +749,7 @@ def asr_then_translate_task(self, job_id: str) -> dict:
                 source_lang = job.source_lang
                 target_langs = json.loads(job.target_langs)
                 model = job.model
+                provider = job.provider  # Get AI provider from job
                 item_id = job.item_id
 
             # If source_path doesn't exist or is None, and we have item_id (Jellyfin), use audio streaming
@@ -784,10 +869,41 @@ def asr_then_translate_task(self, job_id: str) -> dict:
                     job.current_phase = "asr"
                     session.commit()
 
+                # Check audio duration to determine if segmentation is needed
+                extractor = AudioExtractor()
+                audio_duration = extractor._get_duration(str(audio_path))
+
+                # Determine if we need to split audio
+                should_split = audio_duration and audio_duration > settings.asr_auto_segment_threshold
+
+                audio_segments_dir = None  # Initialize to None
+
+                if should_split:
+                    # Split audio into segments
+                    logger.info(
+                        f"Audio duration {audio_duration:.1f}s exceeds threshold "
+                        f"({settings.asr_auto_segment_threshold}s), splitting into segments"
+                    )
+                    audio_segments_dir = temp_dir / "audio_segments"
+                    audio_segments = extractor.split_audio(
+                        video_path=str(source_path),
+                        output_dir=str(audio_segments_dir),
+                        segment_duration=settings.asr_segment_duration,
+                        overlap=settings.asr_segment_overlap,
+                        sample_rate=16000,
+                        channels=1,
+                    )
+                    total_segments = len(audio_segments)
+                    logger.info(f"Split audio into {total_segments} segments")
+                else:
+                    # Process as single audio file
+                    audio_segments = [{"path": str(audio_path), "index": 0, "start": 0, "duration": audio_duration or 0}]
+                    total_segments = 1
+
                 run_async(event_publisher.publish_job_progress(
                     job_id=job_id,
                     phase="asr",
-                    status="transcribing audio",
+                    status=f"transcribing audio ({total_segments} {'segment' if total_segments == 1 else 'segments'})",
                     progress=20,
                 ))
 
@@ -796,33 +912,251 @@ def asr_then_translate_task(self, job_id: str) -> dict:
                 # Determine ASR language
                 asr_lang = None if source_lang == "auto" else source_lang
 
-                def asr_progress_callback(completed: int, total: int):
-                    try:
-                        if total > 0:
-                            progress_pct = 20 + (completed / total) * 30  # 20-50%
+                # Process segments with parallel processing and error recovery
+                from concurrent.futures import ThreadPoolExecutor, as_completed
+                from threading import Lock
+                import time
+                
+                # Thread-safe progress tracking
+                progress_lock = Lock()
+                completed_segments = 0
+                detected_language = None
+                all_segments_results = [None] * total_segments  # Pre-allocate results
+                
+                def process_segment_with_retry(segment_idx: int, audio_segment: dict, detected_lang: str = None) -> tuple:
+                    """
+                    Process a single segment with retry logic.
+                    
+                    Returns:
+                        tuple: (segment_idx, result_dict, error_message)
+                    """
+                    segment_path = audio_segment["path"]
+                    segment_info = f"segment {segment_idx}/{total_segments}" if total_segments > 1 else "audio"
+                    output_path = str(asr_subtitle_path) if total_segments == 1 else str(temp_dir / f"asr_segment_{segment_idx:04d}.srt")
+                    
+                    max_retries = settings.asr_segment_max_retries
+                    
+                    for attempt in range(1, max_retries + 1):
+                        try:
+                            logger.info(f"Processing {segment_info}: {segment_path} (attempt {attempt}/{max_retries})")
+                            
+                            # Publish start event (sync version for thread safety)
+                            save_task_log_sync(
+                                job_id=job_id,
+                                phase="asr",
+                                status=f"transcribing {segment_info}" + (f" (retry {attempt})" if attempt > 1 else ""),
+                                progress=20 + ((segment_idx - 1) / total_segments) * 30,  # 20-50%
+                            )
+                            
+                            def asr_progress_callback(completed: int, total: int):
+                                try:
+                                    nonlocal completed_segments
+                                    with progress_lock:
+                                        # Calculate progress within current segment
+                                        segment_progress = (completed / total) if total > 0 else 0
+                                        overall_progress = 20 + ((segment_idx - 1 + segment_progress) / total_segments) * 30
+                                        
+                                        status_msg = f"transcribing {segment_info} ({completed} segments)" if total_segments > 1 else f"transcribing ({completed} segments)"
+                                        
+                                        # Use sync version to avoid event loop issues in threads
+                                        save_task_log_sync(
+                                            job_id=job_id,
+                                            phase="asr",
+                                            status=status_msg,
+                                            progress=overall_progress,
+                                            completed=completed,
+                                            total=total,
+                                        )
+                                except Exception as e:
+                                    logger.warning(f"Failed to publish ASR progress: {e}")
+                            
+                            # Perform ASR transcription
+                            segment_result = asr_service.transcribe_to_srt(
+                                audio_path=segment_path,
+                                output_path=output_path,
+                                language=asr_lang or detected_lang,
+                                vad_filter=settings.asr_vad_filter,
+                                vad_threshold=settings.asr_vad_threshold,
+                                beam_size=settings.asr_beam_size,
+                                best_of=settings.asr_best_of,
+                                progress_callback=asr_progress_callback,
+                            )
+                            
+                            logger.info(f"Successfully processed {segment_info}: {segment_result.get('num_segments', 0)} segments")
+                            return (segment_idx, segment_result, None)
+                            
+                        except Exception as e:
+                            error_msg = f"Attempt {attempt}/{max_retries} failed for {segment_info}: {str(e)}"
+                            logger.error(error_msg, exc_info=True)
+                            
+                            if attempt < max_retries:
+                                # Wait before retry with exponential backoff
+                                wait_time = 2 ** attempt  # 2, 4, 8 seconds
+                                logger.info(f"Retrying {segment_info} in {wait_time} seconds...")
+                                time.sleep(wait_time)
+                            else:
+                                # All retries exhausted
+                                logger.error(f"All retries exhausted for {segment_info}")
+                                return (segment_idx, None, error_msg)
+                    
+                    return (segment_idx, None, "Unknown error")
+                
+                # Determine parallelism level
+                if total_segments == 1:
+                    # Single segment, no parallelism needed
+                    max_workers = 1
+                else:
+                    # Limit parallel workers based on config and available segments
+                    max_workers = min(settings.asr_max_parallel_segments, total_segments)
+                
+                logger.info(f"Processing {total_segments} segments with {max_workers} parallel workers")
+                
+                # Process segments in parallel
+                failed_segments = []
+                
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    # Submit all segment processing tasks
+                    future_to_segment = {}
+                    
+                    # First, process the first segment to detect language
+                    if total_segments > 1 and asr_lang is None:
+                        logger.info("Processing first segment for language detection...")
+                        first_idx, first_result, first_error = process_segment_with_retry(1, audio_segments[0])
+                        
+                        if first_result:
+                            all_segments_results[0] = first_result
+                            detected_language = first_result.get("language")
+                            logger.info(f"Detected language from first segment: {detected_language}")
+                            
+                            with progress_lock:
+                                completed_segments = 1
                         else:
-                            progress_pct = 20
-                        run_async(event_publisher.publish_job_progress(
-                            job_id=job_id,
-                            phase="asr",
-                            status=f"transcribing ({completed} segments)",
-                            progress=progress_pct,
-                            completed=completed,
-                            total=total,
-                        ))
-                    except Exception as e:
-                        logger.warning(f"Failed to publish ASR progress: {e}")
-
-                asr_result = asr_service.transcribe_to_srt(
-                    audio_path=str(audio_path),
-                    output_path=str(asr_subtitle_path),
-                    language=asr_lang,
-                    vad_filter=settings.asr_vad_filter,
-                    vad_threshold=settings.asr_vad_threshold,
-                    beam_size=settings.asr_beam_size,
-                    best_of=settings.asr_best_of,
-                    progress_callback=asr_progress_callback,
-                )
+                            failed_segments.append((1, first_error))
+                            logger.error(f"First segment failed: {first_error}")
+                        
+                        # Submit remaining segments
+                        for idx in range(2, total_segments + 1):
+                            future = executor.submit(
+                                process_segment_with_retry,
+                                idx,
+                                audio_segments[idx - 1],
+                                detected_language
+                            )
+                            future_to_segment[future] = idx
+                    else:
+                        # Submit all segments
+                        for idx, audio_segment in enumerate(audio_segments, start=1):
+                            future = executor.submit(
+                                process_segment_with_retry,
+                                idx,
+                                audio_segment,
+                                detected_language
+                            )
+                            future_to_segment[future] = idx
+                    
+                    # Collect results as they complete
+                    for future in as_completed(future_to_segment):
+                        segment_idx, result, error = future.result()
+                        
+                        if result:
+                            all_segments_results[segment_idx - 1] = result
+                            
+                            # Update detected language from first successful segment
+                            if not detected_language and result.get("language"):
+                                with progress_lock:
+                                    detected_language = result.get("language")
+                                logger.info(f"Detected language: {detected_language}")
+                            
+                            with progress_lock:
+                                completed_segments += 1
+                                logger.info(f"Completed {completed_segments}/{total_segments} segments")
+                        else:
+                            failed_segments.append((segment_idx, error))
+                
+                # Check if we have any successful segments
+                successful_results = [r for r in all_segments_results if r is not None]
+                
+                if not successful_results:
+                    raise Exception(f"All {total_segments} segments failed to process. Errors: {failed_segments}")
+                
+                if failed_segments:
+                    logger.warning(
+                        f"Completed with {len(failed_segments)} failed segments out of {total_segments}. "
+                        f"Failed: {failed_segments}"
+                    )
+                    
+                    # Publish warning event
+                    run_async(event_publisher.publish_job_progress(
+                        job_id=job_id,
+                        phase="asr",
+                        status=f"Completed with {len(failed_segments)} failed segments",
+                        progress=50,
+                        error=f"Failed segments: {[idx for idx, _ in failed_segments]}",
+                    ))
+                else:
+                    logger.info(f"Successfully processed all {total_segments} segments")
+                
+                # Merge segments if multiple
+                if total_segments > 1:
+                    logger.info(f"Merging ASR segment results (successful: {len(successful_results)}/{total_segments})")
+                    
+                    # Prepare segment files for merging (only successful ones)
+                    segment_files_to_merge = []
+                    for idx, (audio_seg, result) in enumerate(zip(audio_segments, all_segments_results), start=1):
+                        if result is None:
+                            # Skip failed segments
+                            logger.warning(f"Skipping failed segment {idx} in merge")
+                            continue
+                            
+                        segment_srt_path = temp_dir / f"asr_segment_{idx:04d}.srt"
+                        if segment_srt_path.exists():
+                            segment_files_to_merge.append({
+                                "path": str(segment_srt_path),
+                                "start": audio_seg["start"],
+                                "duration": audio_seg["duration"],
+                            })
+                    
+                    # Merge SRT files with proper timestamp adjustment
+                    from app.services.subtitle_service import SubtitleService
+                    
+                    merge_result = SubtitleService.merge_srt_segments(
+                        segment_files=segment_files_to_merge,
+                        output_path=str(asr_subtitle_path),
+                    )
+                    
+                    logger.info(
+                        f"Successfully merged {merge_result['total_segments']} segments into "
+                        f"{merge_result['total_events']} subtitle events "
+                        f"(removed {merge_result['duplicates_removed']} duplicates)"
+                    )
+                    
+                    # Clean up individual segment files
+                    for seg_file in segment_files_to_merge:
+                        try:
+                            Path(seg_file["path"]).unlink(missing_ok=True)
+                        except Exception as e:
+                            logger.warning(f"Failed to delete segment file {seg_file['path']}: {e}")
+                    
+                    # Clean up segment audio files
+                    if audio_segments_dir and audio_segments_dir.exists():
+                        import shutil
+                        try:
+                            shutil.rmtree(audio_segments_dir, ignore_errors=True)
+                            logger.info(f"Cleaned up audio segments directory")
+                        except Exception as e:
+                            logger.warning(f"Failed to clean up audio segments: {e}")
+                    
+                    asr_result = {
+                        "num_segments": merge_result['total_events'],
+                        "language": detected_language or asr_lang or "unknown",
+                        "segments_processed": len(successful_results),
+                        "segments_failed": len(failed_segments),
+                    }
+                else:
+                    asr_result = successful_results[0] if successful_results else {
+                        "num_segments": 0,
+                        "language": "unknown",
+                    }
 
                 logger.info(
                     f"ASR complete: {asr_result['num_segments']} segments, "
@@ -926,6 +1260,14 @@ def asr_then_translate_task(self, job_id: str) -> dict:
                 job.source_lang = source_lang  # Update with detected language
                 session.commit()
 
+            # Publish MT phase start event
+            run_async(event_publisher.publish_job_progress(
+                job_id=job_id,  
+                phase="mt",
+                status=f"starting translation from {source_lang} to {', '.join(target_langs)}",
+                progress=50,
+            ))
+
             output_dir = Path(settings.subtitle_output_dir)
             output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -961,6 +1303,47 @@ def asr_then_translate_task(self, job_id: str) -> dict:
                 for idx, target_lang in enumerate(remaining_langs):
                     actual_idx = completed_count + idx
                     logger.info(f"Translating to {target_lang} ({actual_idx+1}/{total_targets})")
+
+                    # Check quota before translation
+                    try:
+                        from app.services.ai_quota_service import AIQuotaService, QuotaPauseException
+                        with session_scope() as session:
+                            quota_service = AIQuotaService(session)
+                            quota_service.check_quota_with_pause(provider)
+                    except QuotaPauseException as e:
+                        # Pause the job - it will be automatically resumed later
+                        logger.warning(
+                            f"Job {job_id} paused due to quota limit: {e}"
+                        )
+
+                        with session_scope() as session:
+                            job = session.query(TranslationJob).filter(TranslationJob.id == job_id).first()
+                            if job:
+                                job.status = "paused"
+                                job.pause_reason = e.reason
+                                job.paused_at = datetime.now(timezone.utc)
+                                job.resume_at = e.resume_at
+                                job.error = f"Paused: {e.limit_type} quota exceeded"
+                                session.commit()
+
+                        # Publish pause event
+                        run_async(event_publisher.publish_job_progress(
+                            job_id=job_id,
+                            phase="mt",
+                            status=f"paused: quota limit exceeded ({e.limit_type})",
+                            progress=50 + (actual_idx / total_targets) * 30,
+                        ))
+
+                        # Stop processing further languages
+                        break
+
+                    # Publish translation start event for this language
+                    run_async(event_publisher.publish_job_progress(
+                        job_id=job_id,
+                        phase="mt",
+                        status=f"translating to {target_lang} ({actual_idx+1}/{total_targets})",
+                        progress=50 + (actual_idx / total_targets) * 30,
+                    ))
 
                     # Build output path
                     source_file = Path(asr_subtitle_path)
@@ -1006,8 +1389,10 @@ def asr_then_translate_task(self, job_id: str) -> dict:
                             source_lang=source_lang,
                             target_lang=target_lang,
                             model=model,
+                            provider=provider,
                             batch_size=settings.translation_batch_size,
                             preserve_formatting=settings.preserve_ass_styles,
+                            enable_proofreading=settings.enable_translation_proofreading,
                             progress_callback=progress_callback,
                             db_session=session,
                             subtitle_id=None,
@@ -1212,8 +1597,17 @@ def scan_library_task(
         detector = LanguageDetector()
 
         # Get required languages
-        req_langs = required_langs or settings.required_langs.split(",")
-        logger.info(f"Required languages: {req_langs}")
+        # 如果调用方提供了 required_langs 参数，使用它
+        # 否则从自动翻译规则中推断，如果没有规则则使用默认值
+        if required_langs:
+            req_langs = required_langs
+            logger.info(f"Using provided required languages: {req_langs}")
+        else:
+            # 使用新的辅助函数从自动翻译规则推断
+            from app.core.db import session_scope
+            with session_scope() as session:
+                req_langs = detector.get_required_langs_from_rules(session)
+            logger.info(f"Inferred required languages from auto translation rules: {req_langs}")
 
         # Get libraries to scan
         if library_id:
@@ -1687,3 +2081,387 @@ def health_check_models() -> dict:
     except Exception as exc:
         logger.error(f"Model health check failed: {exc}", exc_info=True)
         raise
+
+
+# =============================================================================
+# Subtitle Sync Tasks
+# =============================================================================
+
+@celery_app.task(
+    bind=True,
+    base=BaseTask,
+    name="app.workers.tasks.sync_subtitle_task",
+    max_retries=3,
+    default_retry_delay=60,
+)
+def sync_subtitle_task(
+    self,
+    subtitle_id: str,
+    mode: str = "incremental",
+    paired_subtitle_id: str = None
+) -> dict:
+    """
+    Sync a single subtitle file to translation memory.
+
+    Args:
+        subtitle_id: Subtitle ID to sync
+        mode: Sync mode ('full', 'incremental', 'skip')
+        paired_subtitle_id: Optional paired subtitle ID
+
+    Returns:
+        dict: Sync results
+    """
+    logger.info(f"Starting subtitle sync task for {subtitle_id}")
+
+    try:
+        from app.services.subtitle_sync_service import SubtitleSyncService
+
+        with session_scope() as session:
+            sync_service = SubtitleSyncService(session)
+
+            sync_record = sync_service.sync_subtitle_to_memory(
+                subtitle_id=subtitle_id,
+                mode=mode,
+                paired_subtitle_id=paired_subtitle_id
+            )
+
+            return {
+                "status": "success",
+                "subtitle_id": subtitle_id,
+                "sync_record_id": str(sync_record.id),
+                "synced_lines": sync_record.synced_lines,
+                "skipped_lines": sync_record.skipped_lines,
+                "failed_lines": sync_record.failed_lines,
+            }
+
+    except Exception as exc:
+        logger.error(f"Subtitle sync task failed: {exc}", exc_info=True)
+
+        # Retry on transient failures
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc)
+
+        raise
+
+
+@celery_app.task(
+    bind=True,
+    base=BaseTask,
+    name="app.workers.tasks.sync_asset_subtitles_task",
+    max_retries=2,
+    default_retry_delay=120,
+)
+def sync_asset_subtitles_task(
+    self,
+    asset_id: str,
+    mode: str = "incremental",
+    auto_pair: bool = True
+) -> dict:
+    """
+    Sync all subtitles for a media asset.
+
+    Args:
+        asset_id: Media asset ID
+        mode: Sync mode
+        auto_pair: Auto-pair subtitles for translation memory
+
+    Returns:
+        dict: Sync results
+    """
+    logger.info(f"Starting asset subtitle sync task for {asset_id}")
+
+    try:
+        from app.services.subtitle_sync_service import SubtitleSyncService
+
+        with session_scope() as session:
+            sync_service = SubtitleSyncService(session)
+
+            results = sync_service.sync_asset_subtitles(
+                asset_id=asset_id,
+                mode=mode,
+                auto_pair=auto_pair
+            )
+
+            logger.info(
+                f"Asset subtitle sync completed: {results['synced_subtitles']} synced, "
+                f"{results['failed_subtitles']} failed"
+            )
+
+            return results
+
+    except Exception as exc:
+        logger.error(f"Asset subtitle sync task failed: {exc}", exc_info=True)
+
+        # Retry on transient failures
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc)
+
+        raise
+
+
+@celery_app.task(name="app.workers.tasks.sync_all_subtitles_task")
+def sync_all_subtitles_task(
+    mode: str = "incremental",
+    auto_pair: bool = True,
+    limit: int = None
+) -> dict:
+    """
+    Sync all subtitles in the system to translation memory.
+
+    This is typically run as a periodic task to ensure all subtitles
+    are synced to translation memory.
+
+    Args:
+        mode: Sync mode
+        auto_pair: Auto-pair subtitles
+        limit: Optional limit on number of assets to process
+
+    Returns:
+        dict: Overall sync results
+    """
+    logger.info("Starting global subtitle sync task")
+
+    try:
+        from app.models.media_asset import MediaAsset
+
+        results = {
+            "status": "success",
+            "total_assets": 0,
+            "synced_assets": 0,
+            "failed_assets": 0,
+            "total_subtitles_synced": 0,
+        }
+
+        with session_scope() as session:
+            # Get all assets with subtitles
+            query = session.query(MediaAsset).join(
+                MediaAsset.subtitles
+            ).distinct()
+
+            if limit:
+                query = query.limit(limit)
+
+            assets = query.all()
+            results["total_assets"] = len(assets)
+
+            logger.info(f"Found {len(assets)} assets with subtitles")
+
+            for asset in assets:
+                try:
+                    # Dispatch individual asset sync task
+                    task_result = sync_asset_subtitles_task.apply_async(
+                        args=[str(asset.id)],
+                        kwargs={"mode": mode, "auto_pair": auto_pair},
+                        queue="translate"
+                    )
+
+                    # Wait for result (optional, could be async)
+                    # result = task_result.get(timeout=300)
+                    # results["total_subtitles_synced"] += result.get("synced_subtitles", 0)
+
+                    results["synced_assets"] += 1
+
+                except Exception as e:
+                    logger.error(f"Failed to sync asset {asset.id}: {e}")
+                    results["failed_assets"] += 1
+
+        logger.info(
+            f"Global subtitle sync completed: {results['synced_assets']} assets processed"
+        )
+
+        return results
+
+    except Exception as exc:
+        logger.error(f"Global subtitle sync failed: {exc}", exc_info=True)
+        raise
+
+
+# =============================================================================
+# Quota & Task Recovery
+# =============================================================================
+
+@celery_app.task(name="app.workers.tasks.resume_paused_jobs_task")
+def resume_paused_jobs_task() -> dict:
+    """
+    Check and resume paused jobs that are ready to run.
+
+    This is typically run as a periodic task (every hour or so) to check if
+    any paused jobs can be resumed (quota has reset, etc).
+
+    Returns:
+        dict: Summary of resumed jobs
+    """
+    logger.info("Starting paused jobs resume check")
+
+    try:
+        from app.models.translation_job import TranslationJob
+        from datetime import datetime, timezone
+
+        results = {
+            "status": "success",
+            "paused_jobs_found": 0,
+            "jobs_resumed": 0,
+            "jobs_still_paused": 0,
+            "errors": [],
+        }
+
+        with session_scope() as session:
+            # Find all paused jobs ready to resume
+            now = datetime.now(timezone.utc)
+
+            paused_jobs = session.query(TranslationJob).filter(
+                TranslationJob.status == "paused",
+                TranslationJob.resume_at.isnot(None),
+                TranslationJob.resume_at <= now,  # Only get jobs ready to resume
+            ).all()
+
+            results["paused_jobs_found"] = len(paused_jobs)
+            logger.info(f"Found {len(paused_jobs)} paused jobs ready to resume")
+
+            for job in paused_jobs:
+                try:
+                    # Use row-level lock to prevent concurrent resume
+                    locked_job = (
+                        session.query(TranslationJob)
+                        .filter(TranslationJob.id == job.id)
+                        .with_for_update(skip_locked=True)  # Skip if locked by another process
+                        .first()
+                    )
+
+                    # Job might be already resumed by another process
+                    if not locked_job or locked_job.status != "paused":
+                        logger.debug(f"Job {job.id} already processed by another task")
+                        continue
+
+                    logger.info(
+                        f"Resuming paused job {job.id} "
+                        f"(paused reason: {job.pause_reason})"
+                    )
+
+                    # Reset job status to queued
+                    locked_job.status = "queued"
+                    locked_job.pause_reason = None
+                    locked_job.paused_at = None
+                    locked_job.resume_at = None
+                    locked_job.error = None
+                    locked_job.started_at = None
+
+                    session.commit()
+
+                    # Resubmit to Celery based on source type
+                    try:
+                        if locked_job.source_type == "subtitle":
+                            task = translate_subtitle_task.apply_async(
+                                args=[str(locked_job.id)],
+                                queue="translate",
+                                priority=locked_job.priority,
+                            )
+                        elif locked_job.source_type == "audio":
+                            task = asr_then_translate_task.apply_async(
+                                args=[str(locked_job.id)],
+                                queue="asr",
+                                priority=locked_job.priority,
+                            )
+                        else:
+                            raise ValueError(f"Unknown source type: {locked_job.source_type}")
+
+                        # Update job with Celery task ID
+                        locked_job.celery_task_id = task.id
+                        session.commit()
+
+                        logger.info(f"Resubmitted job {job.id} as Celery task {task.id}")
+                        results["jobs_resumed"] += 1
+
+                    except Exception as celery_error:
+                        logger.error(f"Failed to resubmit job {job.id}: {celery_error}")
+                        results["errors"].append(f"Job {job.id}: {str(celery_error)}")
+                        session.rollback()
+
+                except Exception as job_error:
+                    logger.error(f"Error processing job {job.id}: {job_error}", exc_info=True)
+                    results["errors"].append(f"Job {job.id}: {str(job_error)}")
+                    session.rollback()
+
+        logger.info(
+            f"Paused jobs check completed: "
+            f"{results['jobs_resumed']} resumed, "
+            f"{len(results['errors'])} errors"
+        )
+
+        return results
+
+    except Exception as exc:
+        logger.error(f"Failed to resume paused jobs: {exc}", exc_info=True)
+        return {
+            "status": "failed",
+            "error": str(exc),
+        }
+
+
+@celery_app.task(name="app.workers.tasks.check_and_pause_quota_limited_jobs")
+def check_and_pause_quota_limited_jobs() -> dict:
+    """
+    Check for jobs that failed due to quota issues and requeue them as paused.
+
+    This task helps recover jobs that might have failed due to temporary quota limits.
+
+    Returns:
+        dict: Summary of paused jobs
+    """
+    logger.info("Checking for quota-limited jobs to pause")
+
+    try:
+        from app.models.translation_job import TranslationJob
+        from datetime import datetime, timezone, timedelta
+
+        results = {
+            "status": "success",
+            "jobs_checked": 0,
+            "jobs_paused": 0,
+        }
+
+        with session_scope() as session:
+            # Look for failed jobs from last hour with quota-related errors
+            one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
+
+            failed_jobs = session.query(TranslationJob).filter(
+                TranslationJob.status == "failed",
+                TranslationJob.error.isnot(None),
+                TranslationJob.created_at >= one_hour_ago,
+            ).all()
+
+            results["jobs_checked"] = len(failed_jobs)
+
+            for job in failed_jobs:
+                # Check if error is quota-related
+                error_text = (job.error or "").lower()
+                if "quota" in error_text or "exceeded" in error_text:
+                    logger.info(f"Pausing quota-failed job {job.id}")
+
+                    # Pause the job instead of leaving it as failed
+                    job.status = "paused"
+                    job.pause_reason = "quota_exceeded"
+                    job.paused_at = datetime.now(timezone.utc)
+                    job.resume_at = datetime.now(timezone.utc) + timedelta(days=1)
+
+                    session.commit()
+
+                    results["jobs_paused"] += 1
+
+        logger.info(
+            f"Quota-limited jobs check completed: "
+            f"{results['jobs_paused']} jobs paused for recovery"
+        )
+
+        return results
+
+    except Exception as exc:
+        logger.error(
+            f"Failed to check quota-limited jobs: {exc}",
+            exc_info=True
+        )
+        return {
+            "status": "failed",
+            "error": str(exc),
+        }
+

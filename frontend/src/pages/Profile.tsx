@@ -11,7 +11,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useNavigate } from 'react-router-dom'
 
 export function Profile() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const { user, clearAuth, updateUser } = useAuthStore()
 
@@ -42,7 +42,7 @@ export function Profile() {
       setTimeout(() => setUsernameSuccess(false), 3000)
     },
     onError: (err: any) => {
-      setUsernameError(err.response?.data?.detail || err.message || '用户名修改失败')
+      setUsernameError(err.response?.data?.detail || err.message || t('profile.usernameUpdateFailed'))
       setUsernameSuccess(false)
     },
   })
@@ -74,12 +74,12 @@ export function Profile() {
 
     // Validation
     if (!newUsername.trim()) {
-      setUsernameError('用户名不能为空')
+      setUsernameError(t('profile.usernameEmpty'))
       return
     }
 
     if (newUsername.trim().length < 3) {
-      setUsernameError('用户名至少需要3个字符')
+      setUsernameError(t('profile.usernameTooShort'))
       return
     }
 
@@ -124,9 +124,9 @@ export function Profile() {
   return (
     <div className="max-w-4xl space-y-6">
       <div>
-        <h1 className="text-2xl sm:text-3xl font-bold">个人中心</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold">{t('profile.title')}</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          管理您的个人信息和账户设置
+          {t('profile.subtitle')}
         </p>
       </div>
 
@@ -135,15 +135,15 @@ export function Profile() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <UserIcon className="h-5 w-5" />
-            账户信息
+            {t('profile.accountInfo')}
           </CardTitle>
-          <CardDescription>您的基本账户信息</CardDescription>
+          <CardDescription>{t('profile.accountInfoDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {usernameSuccess && (
             <Alert className="text-sm bg-green-50 border-green-200 text-green-800">
               <Check className="h-4 w-4 text-green-600" />
-              用户名修改成功！
+              {t('profile.usernameUpdateSuccess')}
             </Alert>
           )}
 
@@ -156,7 +156,7 @@ export function Profile() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="text-sm font-medium text-muted-foreground">
-                用户名
+                {t('profile.username')}
               </label>
               {isEditingUsername ? (
                 <div className="mt-1 flex gap-2">
@@ -164,7 +164,7 @@ export function Profile() {
                     value={newUsername}
                     onChange={(e) => setNewUsername(e.target.value)}
                     disabled={updateUsernameMutation.isPending}
-                    placeholder="请输入新用户名"
+                    placeholder={t('profile.usernamePlaceholder')}
                     className="flex-1"
                   />
                   <Button
@@ -199,38 +199,38 @@ export function Profile() {
 
             <div>
               <label className="text-sm font-medium text-muted-foreground">
-                电子邮箱
+                {t('profile.email')}
               </label>
               <p className="text-base mt-1">
-                {user?.email || <span className="text-muted-foreground">未设置</span>}
+                {user?.email || <span className="text-muted-foreground">{t('profile.emailNotSet')}</span>}
               </p>
             </div>
 
             <div>
               <label className="text-sm font-medium text-muted-foreground">
-                账户状态
+                {t('profile.accountStatus')}
               </label>
               <div className="mt-1">
                 {user?.is_active ? (
                   <span className="inline-flex items-center gap-1 text-green-600">
                     <Shield className="h-4 w-4" />
-                    激活
+                    {t('profile.active')}
                   </span>
                 ) : (
-                  <span className="text-red-600">已禁用</span>
+                  <span className="text-red-600">{t('profile.disabled')}</span>
                 )}
               </div>
             </div>
 
             <div>
               <label className="text-sm font-medium text-muted-foreground">
-                账户角色
+                {t('profile.accountRole')}
               </label>
               <p className="text-base mt-1">
                 {user?.is_admin ? (
-                  <span className="text-blue-600 font-medium">管理员</span>
+                  <span className="text-blue-600 font-medium">{t('profile.admin')}</span>
                 ) : (
-                  '普通用户'
+                  t('profile.regularUser')
                 )}
               </p>
             </div>
@@ -238,11 +238,11 @@ export function Profile() {
             {user?.created_at && (
               <div>
                 <label className="text-sm font-medium text-muted-foreground">
-                  注册时间
+                  {t('profile.registrationTime')}
                 </label>
                 <p className="text-base mt-1 flex items-center gap-1">
                   <Clock className="h-4 w-4 text-muted-foreground" />
-                  {new Date(user.created_at).toLocaleString('zh-CN')}
+                  {new Date(user.created_at).toLocaleString(i18n.language)}
                 </p>
               </div>
             )}
@@ -250,11 +250,11 @@ export function Profile() {
             {user?.last_login_at && (
               <div>
                 <label className="text-sm font-medium text-muted-foreground">
-                  最后登录
+                  {t('profile.lastLogin')}
                 </label>
                 <p className="text-base mt-1 flex items-center gap-1">
                   <Clock className="h-4 w-4 text-muted-foreground" />
-                  {new Date(user.last_login_at).toLocaleString('zh-CN')}
+                  {new Date(user.last_login_at).toLocaleString(i18n.language)}
                 </p>
               </div>
             )}
@@ -267,9 +267,9 @@ export function Profile() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Key className="h-5 w-5" />
-            修改密码
+            {t('profile.changePassword')}
           </CardTitle>
-          <CardDescription>更改您的登录密码以保护账户安全</CardDescription>
+          <CardDescription>{t('profile.changePasswordDesc')}</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleChangePassword} className="space-y-4 max-w-md">
@@ -281,17 +281,17 @@ export function Profile() {
 
             {passwordSuccess && (
               <Alert className="text-sm bg-green-50 border-green-200 text-green-800">
-                密码修改成功！
+                {t('profile.passwordChangeSuccess')}
               </Alert>
             )}
 
             <div>
               <label className="text-sm font-medium mb-2 block">
-                当前密码 *
+                {t('profile.currentPassword')} *
               </label>
               <Input
                 type="password"
-                placeholder="请输入当前密码"
+                placeholder={t('profile.currentPasswordPlaceholder')}
                 value={oldPassword}
                 onChange={(e) => setOldPassword(e.target.value)}
                 disabled={changePasswordMutation.isPending}
@@ -301,11 +301,11 @@ export function Profile() {
 
             <div>
               <label className="text-sm font-medium mb-2 block">
-                新密码 *
+                {t('profile.newPassword')} *
               </label>
               <Input
                 type="password"
-                placeholder="请输入新密码（至少6个字符）"
+                placeholder={t('profile.newPasswordPlaceholder')}
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 disabled={changePasswordMutation.isPending}
@@ -316,11 +316,11 @@ export function Profile() {
 
             <div>
               <label className="text-sm font-medium mb-2 block">
-                确认新密码 *
+                {t('profile.confirmNewPassword')} *
               </label>
               <Input
                 type="password"
-                placeholder="请再次输入新密码"
+                placeholder={t('profile.confirmPasswordPlaceholder')}
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 disabled={changePasswordMutation.isPending}
@@ -338,7 +338,7 @@ export function Profile() {
               }
             >
               <Key className="mr-2 h-4 w-4" />
-              {changePasswordMutation.isPending ? '修改中...' : '修改密码'}
+              {changePasswordMutation.isPending ? t('profile.changing') : t('profile.changePasswordButton')}
             </Button>
           </form>
         </CardContent>
@@ -349,16 +349,16 @@ export function Profile() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <LogOut className="h-5 w-5" />
-            退出登录
+            {t('profile.logout')}
           </CardTitle>
           <CardDescription>
-            退出当前账户并返回登录页面
+            {t('profile.logoutDesc')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Button variant="destructive" onClick={handleLogout}>
             <LogOut className="mr-2 h-4 w-4" />
-            退出登录
+            {t('profile.logoutButton')}
           </Button>
         </CardContent>
       </Card>

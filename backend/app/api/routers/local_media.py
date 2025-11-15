@@ -111,8 +111,12 @@ async def scan_directory(
     返回媒体文件列表及其字幕语言信息和缺失的语言
     """
     try:
-        # 使用配置的必需语言或请求中的语言
-        required_langs = request.required_langs or settings.REQUIRED_LANGS
+        # 使用请求中的语言，或从自动翻译规则推断
+        if request.required_langs:
+            required_langs = request.required_langs
+        else:
+            from app.services.detector import get_required_langs_from_rules
+            required_langs = get_required_langs_from_rules(db)
 
         scanner = LocalMediaScanner()
         media_files = scanner.scan_directory(

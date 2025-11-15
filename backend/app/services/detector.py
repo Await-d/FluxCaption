@@ -17,26 +17,235 @@ logger = get_logger(__name__)
 # Language Code Normalization
 # =============================================================================
 
-# ISO 639-2 (3-letter) to BCP-47 mapping for common languages
+# ISO 639-2 (3-letter) to BCP-47 mapping
+# Comprehensive mapping to support more languages from Jellyfin
 ISO639_2_TO_BCP47 = {
+    # English
     "eng": "en",
+    
+    # Chinese variants
     "chi": "zh-CN",  # Simplified Chinese (default)
-    "zho": "zh-CN",
+    "zho": "zh-CN",  # Chinese
+    "cmn": "zh-CN",  # Mandarin Chinese
+    "yue": "zh-HK",  # Cantonese
+    
+    # Japanese
     "jpn": "ja",
+    
+    # Korean
     "kor": "ko",
+    
+    # French
     "fre": "fr",
     "fra": "fr",
+    
+    # German
     "ger": "de",
     "deu": "de",
+    
+    # Spanish
     "spa": "es",
+    
+    # Russian
     "rus": "ru",
+    
+    # Italian
     "ita": "it",
+    
+    # Portuguese
     "por": "pt",
+    
+    # Arabic
     "ara": "ar",
+    
+    # Hindi
     "hin": "hi",
+    
+    # Thai
     "tha": "th",
+    
+    # Vietnamese
     "vie": "vi",
+    
+    # Polish
+    "pol": "pl",
+    
+    # Dutch
+    "dut": "nl",
+    "nld": "nl",
+    
+    # Turkish
+    "tur": "tr",
+    
+    # Swedish
+    "swe": "sv",
+    
+    # Danish
+    "dan": "da",
+    
+    # Norwegian
+    "nor": "no",
+    "nob": "nb",  # Norwegian Bokmål
+    "nno": "nn",  # Norwegian Nynorsk
+    
+    # Finnish
+    "fin": "fi",
+    
+    # Greek
+    "gre": "el",
+    "ell": "el",
+    
+    # Hebrew
+    "heb": "he",
+    
+    # Czech
+    "cze": "cs",
+    "ces": "cs",
+    
+    # Romanian
+    "rum": "ro",
+    "ron": "ro",
+    
+    # Hungarian
+    "hun": "hu",
+    
+    # Indonesian
+    "ind": "id",
+    
+    # Malay
+    "may": "ms",
+    "msa": "ms",
+    
+    # Ukrainian
+    "ukr": "uk",
+    
+    # Bulgarian
+    "bul": "bg",
+    
+    # Croatian
+    "hrv": "hr",
+    
+    # Serbian
+    "srp": "sr",
+    
+    # Slovak
+    "slo": "sk",
+    "slk": "sk",
+    
+    # Slovenian
+    "slv": "sl",
+    
+    # Lithuanian
+    "lit": "lt",
+    
+    # Latvian
+    "lav": "lv",
+    
+    # Estonian
+    "est": "et",
+    
+    # Catalan
+    "cat": "ca",
+    
+    # Basque
+    "baq": "eu",
+    "eus": "eu",
+    
+    # Galician
+    "glg": "gl",
+    
+    # Icelandic
+    "ice": "is",
+    "isl": "is",
+    
+    # Persian/Farsi
+    "per": "fa",
+    "fas": "fa",
+    
+    # Bengali
+    "ben": "bn",
+    
+    # Urdu
+    "urd": "ur",
+    
+    # Tamil
+    "tam": "ta",
+    
+    # Telugu
+    "tel": "te",
+    
+    # Marathi
+    "mar": "mr",
+    
+    # Kannada
+    "kan": "kn",
+    
+    # Malayalam
+    "mal": "ml",
+    
+    # Punjabi
+    "pan": "pa",
+    
+    # Gujarati
+    "guj": "gu",
 }
+
+
+def get_required_langs_from_rules(db_session=None) -> list[str]:
+    """
+    从启用的自动翻译规则中推断需要检测的语言列表。
+    
+    如果有自动翻译规则，则从规则中提取所有目标语言作为检测目标。
+    如果没有规则，返回默认的常用语言列表。
+    
+    Args:
+        db_session: Optional database session
+        
+    Returns:
+        list[str]: 需要检测的语言代码列表（BCP-47格式）
+    """
+    if not db_session:
+        # 无数据库连接，返回默认语言
+        logger.warning("No database session provided, using default languages")
+        return ["zh-CN", "en", "ja"]
+    
+    try:
+        from app.models.auto_translation_rule import AutoTranslationRule
+        import json
+        
+        # 查询所有启用的自动翻译规则
+        rules = db_session.query(AutoTranslationRule).filter(
+            AutoTranslationRule.enabled == True
+        ).all()
+        
+        if not rules:
+            # 没有规则，返回默认语言
+            logger.info("No auto translation rules found, using default languages")
+            return ["zh-CN", "en", "ja"]
+        
+        # 从规则中提取所有目标语言
+        target_langs = set()
+        for rule in rules:
+            try:
+                langs = json.loads(rule.target_langs)
+                target_langs.update(langs)
+            except Exception as e:
+                logger.warning(f"Failed to parse target_langs from rule {rule.id}: {e}")
+                continue
+        
+        if not target_langs:
+            # 规则中没有目标语言，返回默认语言
+            logger.warning("No target languages found in rules, using default languages")
+            return ["zh-CN", "en", "ja"]
+        
+        result = sorted(list(target_langs))
+        logger.info(f"Inferred required languages from {len(rules)} rules: {result}")
+        return result
+        
+    except Exception as e:
+        logger.error(f"Failed to get required languages from rules: {e}", exc_info=True)
+        # 出错时返回默认语言
+        return ["zh-CN", "en", "ja"]
 
 
 def normalize_language_code(language: Optional[str], language_tag: Optional[str] = None) -> str:
@@ -116,6 +325,79 @@ class LanguageDetector:
                     languages.add(lang)
 
         return sorted(list(languages))
+
+    @staticmethod
+    def extract_subtitle_streams(item: JellyfinItem) -> list[dict]:
+        """
+        Extract all subtitle stream information from a Jellyfin item.
+
+        Unlike extract_subtitle_languages(), this method returns complete information
+        about each subtitle stream, including duplicate languages.
+
+        Args:
+            item: Jellyfin item with MediaSources
+
+        Returns:
+            List of subtitle stream dictionaries with keys:
+            - index: Stream index
+            - language: Normalized BCP-47 language code
+            - display_title: Human-readable title
+            - codec: Subtitle codec (srt, ass, etc.)
+            - is_default: Whether this is the default subtitle
+            - is_forced: Whether this is a forced subtitle
+            - is_external: Whether this is an external/sidecar subtitle
+
+        Example:
+            >>> item = JellyfinItem(...)
+            >>> streams = LanguageDetector.extract_subtitle_streams(item)
+            >>> streams
+            [
+                {
+                    'index': 2,
+                    'language': 'zh-CN',
+                    'display_title': 'Chi - 默认 - SUBRIP',
+                    'codec': 'subrip',
+                    'is_default': True,
+                    'is_forced': False,
+                    'is_external': False
+                },
+                {
+                    'index': 3,
+                    'language': 'zh-CN',
+                    'display_title': 'Chi - SUBRIP',
+                    'codec': 'subrip',
+                    'is_default': False,
+                    'is_forced': False,
+                    'is_external': False
+                }
+            ]
+        """
+        streams = []
+
+        for source in item.media_sources:
+            for stream in source.media_streams:
+                if stream.type.lower() != "subtitle":
+                    continue
+
+                # Normalize language code
+                lang = normalize_language_code(stream.language, stream.language_tag)
+
+                # Skip undefined languages
+                if lang == "und":
+                    continue
+
+                streams.append({
+                    "index": stream.index,
+                    "language": lang,
+                    "display_title": stream.display_title or f"{lang.upper()} subtitle",
+                    "codec": stream.codec or "unknown",
+                    "is_default": stream.is_default,
+                    "is_forced": stream.is_forced,
+                    "is_external": stream.is_external,
+                })
+
+        # Sort by index to maintain original order
+        return sorted(streams, key=lambda x: x["index"])
 
     @staticmethod
     def extract_audio_languages(item: JellyfinItem) -> list[str]:

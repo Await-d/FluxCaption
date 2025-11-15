@@ -117,22 +117,22 @@ export function LiveTranslationPreview({
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2">
             <Languages className="h-5 w-5" />
-            实时翻译预览
+            {t('components.liveTranslation.title')}
           </CardTitle>
           <Badge variant={
             status === 'completed' ? 'default' :
             status === 'error' ? 'destructive' :
             'outline'
           }>
-            {status === 'connecting' && '连接中...'}
-            {status === 'translating' && '翻译中...'}
-            {status === 'completed' && '完成'}
-            {status === 'error' && '错误'}
+            {status === 'connecting' && t('components.liveTranslation.connecting')}
+            {status === 'translating' && t('components.liveTranslation.translating')}
+            {status === 'completed' && t('components.liveTranslation.completed')}
+            {status === 'error' && t('components.liveTranslation.error')}
           </Badge>
         </div>
         <Progress value={progress} className="mt-2" />
         <p className="text-sm text-muted-foreground mt-1">
-          {progress.toFixed(1)}% - {currentLine} / {lines.length} 行
+          {progress.toFixed(1)}% - {currentLine} / {lines.length} {t('components.liveTranslation.lines')}
         </p>
       </CardHeader>
       <CardContent>
@@ -157,6 +157,7 @@ interface TranslationLineItemProps {
 }
 
 function TranslationLineItem({ line, isActive }: TranslationLineItemProps) {
+  const { t } = useTranslation()
   return (
     <div
       className={cn(
@@ -198,7 +199,7 @@ function TranslationLineItem({ line, isActive }: TranslationLineItemProps) {
               line.translated ? 'text-foreground' : 'text-muted-foreground italic'
             )}
           >
-            {line.translated || '等待翻译...'}
+            {line.translated || t('components.liveTranslation.waitingTranslation')}
           </div>
         </div>
       </div>

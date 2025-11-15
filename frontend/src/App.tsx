@@ -17,6 +17,10 @@ import { Corrections } from '@/pages/Corrections'
 import { Profile } from '@/pages/Profile'
 import { AutoTranslation } from '@/pages/AutoTranslation'
 import { TaskCenter } from '@/pages/TaskCenter'
+import { TranslationMemory } from '@/pages/TranslationMemory'
+import { SystemConfig } from '@/pages/SystemConfig'
+import AIProvidersPage from '@/pages/AIProviders'
+import AIModelsPage from '@/pages/AIModels'
 
 // Create QueryClient instance
 const queryClient = new QueryClient({
@@ -43,10 +47,14 @@ function App() {
               <Route path="jobs" element={<Jobs />} />
               <Route path="live-progress" element={<LiveProgress />} />
               <Route path="subtitles" element={<Subtitles />} />
+              <Route path="translation-memory" element={<TranslationMemory />} />
               <Route path="translate" element={<Translate />} />
               <Route path="models" element={<Models />} />
+              <Route path="ai-providers" element={<AIProvidersPage />} />
+              <Route path="ai-models" element={<AIModelsPage />} />
               <Route path="cache" element={<Cache />} />
               <Route path="settings" element={<Settings />} />
+              <Route path="system-config" element={<SystemConfig />} />
               <Route path="corrections" element={<Corrections />} />
               <Route path="auto-translation" element={<AutoTranslation />} />
               <Route path="task-center" element={<TaskCenter />} />

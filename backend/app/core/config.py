@@ -82,7 +82,7 @@ class Settings(BaseSettings):
     # Ollama Configuration
     # =============================================================================
     ollama_base_url: str = Field(
-        ...,  # Required field
+        default="http://localhost:11434",
         description="Ollama API base URL"
     )
     ollama_keep_alive: str = Field(default="30m")
@@ -90,6 +90,18 @@ class Settings(BaseSettings):
     default_mt_model: str = Field(default="qwen2.5:7b-instruct")
     ollama_pull_timeout: int = Field(default=3600)
     ollama_pull_retry_delay: int = Field(default=5)
+
+    # =============================================================================
+    # Cloud AI Provider API Keys (Optional - can be configured in database)
+    # =============================================================================
+    openai_api_key: str | None = Field(default=None, description="OpenAI API key")
+    deepseek_api_key: str | None = Field(default=None, description="DeepSeek API key")
+    claude_api_key: str | None = Field(default=None, description="Claude API key")
+    gemini_api_key: str | None = Field(default=None, description="Google Gemini API key")
+    zhipu_api_key: str | None = Field(default=None, description="Zhipu AI API key")
+    moonshot_api_key: str | None = Field(default=None, description="Moonshot AI (Kimi) API key")
+    custom_openai_api_key: str | None = Field(default=None, description="Custom OpenAI-compatible API key")
+    custom_openai_base_url: str | None = Field(default=None, description="Custom OpenAI-compatible base URL")
 
     # =============================================================================
     # ASR Configuration
@@ -110,6 +122,12 @@ class Settings(BaseSettings):
     asr_num_workers: int = Field(default=4, description="Number of CPU threads for ASR")
     asr_segment_duration: int = Field(default=600, description="Audio segment duration in seconds")
     asr_segment_overlap: int = Field(default=10, description="Overlap between segments in seconds")
+    asr_max_parallel_segments: int = Field(default=2, description="Maximum parallel ASR segments (consider GPU memory)")
+    asr_segment_max_retries: int = Field(default=3, description="Maximum retries for failed segments")
+    asr_auto_segment_threshold: int = Field(
+        default=1800,
+        description="Audio duration threshold (seconds) for automatic segmentation (default: 30 minutes)"
+    )
 
     # FunASR Configuration (alternative ASR engine)
     funasr_model: str = Field(
@@ -125,21 +143,18 @@ class Settings(BaseSettings):
     # =============================================================================
     # Subtitle & Translation Pipeline
     # =============================================================================
-    required_langs: str = Field(default="zh-CN,en,ja")
     writeback_mode: Literal["upload", "sidecar"] = Field(default="upload")
     default_subtitle_format: Literal["srt", "ass", "vtt"] = Field(default="srt")
     preserve_ass_styles: bool = Field(default=True)
     translation_batch_size: int = Field(default=10)
     translation_max_line_length: int = Field(default=42)
     translation_preserve_formatting: bool = Field(default=True)
+    enable_translation_proofreading: bool = Field(
+        default=True,
+        description="Enable AI proofreading to review and improve translations"
+    )
 
-    @field_validator("required_langs")
-    @classmethod
-    def parse_required_langs(cls, v: str) -> list[str]:
-        """Parse comma-separated required languages into a list."""
-        return [lang.strip() for lang in v.split(",") if lang.strip()]
-
-    # =============================================================================
+# =============================================================================
     # File Storage
     # =============================================================================
     storage_backend: Literal["local", "s3"] = Field(default="local")
@@ -165,6 +180,22 @@ class Settings(BaseSettings):
     log_format: Literal["json", "text"] = Field(default="json")
     log_output: Literal["stdout", "file", "both"] = Field(default="stdout")
     log_file: str = Field(default="/app/logs/fluxcaption.log")
+
+    # =============================================================================
+    # Scheduled Tasks Configuration
+    # =============================================================================
+    task_resume_paused_jobs_interval: int = Field(
+        default=3600,
+        description="Interval in seconds to check and resume paused jobs (default: 1 hour)"
+    )
+    task_check_quota_limits_interval: int = Field(
+        default=7200,
+        description="Interval in seconds to check quota limits (default: 2 hours)"
+    )
+    task_quota_check_cache_ttl: int = Field(
+        default=60,
+        description="Time-to-live for quota check cache in seconds (default: 1 minute)"
+    )
 
     # =============================================================================
     # Security (Optional)
@@ -269,3 +300,55 @@ def is_development() -> bool:
 def is_testing() -> bool:
     """Check if the application is running in testing mode."""
     return settings.environment == "testing"
+
+
+
+def load_jellyfin_settings_from_db() -> None:
+    """
+    Load Jellyfin configuration from database and update settings instance.
+    
+    This function should be called during application startup after database
+    initialization. It checks for Jellyfin settings in the database and
+    updates the global settings instance with database values if they exist.
+    
+    Database values take precedence over environment variables.
+    """
+    try:
+        from app.core.db import session_scope
+        from app.models.setting import Setting
+        from sqlalchemy import select
+        
+        jellyfin_keys = [
+            "jellyfin_base_url",
+            "jellyfin_api_key", 
+            "jellyfin_timeout",
+            "jellyfin_max_retries",
+            "jellyfin_rate_limit_per_second",
+        ]
+        
+        with session_scope() as session:
+            for key in jellyfin_keys:
+                stmt = select(Setting).where(Setting.key == key)
+                setting = session.execute(stmt).scalar_one_or_none()
+                
+                if setting is not None:
+                    # Convert value based on type
+                    if setting.value_type == "int":
+                        value = int(setting.value)
+                    elif setting.value_type == "float":
+                        value = float(setting.value)
+                    elif setting.value_type == "bool":
+                        value = setting.value.lower() in ("true", "1", "yes")
+                    else:
+                        value = setting.value
+                    
+                    # Update settings instance
+                    setattr(settings, key, value)
+                    logger.info(f"Loaded {key} from database")
+    
+    except Exception as e:
+        # Log but don't fail - fall back to environment variables
+        from app.core.logging import get_logger
+        logger = get_logger(__name__)
+        logger.warning(f"Failed to load Jellyfin settings from database: {e}")
+        logger.info("Using environment variable values for Jellyfin configuration")

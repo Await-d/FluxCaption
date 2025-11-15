@@ -103,7 +103,7 @@ export function TaskCenter() {
       alert(t('taskCenter.noPendingTasks'))
       return
     }
-    if (confirm(`确定要启动所有 ${systemStats.queued_jobs} 个排队中的任务吗？`)) {
+    if (confirm(t('taskCenter.confirmStartAll', { count: systemStats.queued_jobs }))) {
       setIsOperating(true)
       try {
         await startAllMutation.mutateAsync()
@@ -119,7 +119,7 @@ export function TaskCenter() {
       alert(t('taskCenter.noRunningTasks'))
       return
     }
-    if (confirm(`确定要取消所有 ${totalActive} 个运行中/排队中的任务吗？`)) {
+    if (confirm(t('taskCenter.confirmCancelAll', { count: totalActive }))) {
       setIsOperating(true)
       try {
         await cancelAllMutation.mutateAsync()
@@ -138,7 +138,7 @@ export function TaskCenter() {
       alert(t('taskCenter.noCompletedTasks'))
       return
     }
-    if (confirm(`确定要删除所有 ${totalCompleted} 个已完成/失败/取消的任务吗？此操作不可撤销！`)) {
+    if (confirm(t('taskCenter.confirmDeleteAll', { count: totalCompleted }))) {
       setIsOperating(true)
       try {
         await deleteCompletedMutation.mutateAsync()
@@ -150,8 +150,8 @@ export function TaskCenter() {
 
   const handleScanAll = async (forceRescan: boolean) => {
     const message = forceRescan
-      ? '确定要强制重新扫描所有媒体库吗？这会创建新的任务。'
-      : '确定要扫描所有媒体库吗？'
+      ? t('taskCenter.confirmForceScan')
+      : t('taskCenter.confirmNormalScan')
     if (confirm(message)) {
       setIsOperating(true)
       try {
@@ -166,9 +166,9 @@ export function TaskCenter() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold">任务中心</h1>
+        <h1 className="text-3xl font-bold">{t('taskCenter.title')}</h1>
         <p className="text-muted-foreground mt-2">
-          集中管理所有后台任务和系统操作
+          {t('taskCenter.subtitle')}
         </p>
       </div>
 
@@ -176,45 +176,45 @@ export function TaskCenter() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">总任务数</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('taskCenter.totalTasks')}</CardTitle>
             <Database className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{systemStats?.total_jobs || 0}</div>
-            <p className="text-xs text-muted-foreground">所有任务</p>
+            <p className="text-xs text-muted-foreground">{t('taskCenter.allTasks')}</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">排队中</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('taskCenter.queued')}</CardTitle>
             <Loader2 className="h-4 w-4 text-yellow-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{systemStats?.queued_jobs || 0}</div>
-            <p className="text-xs text-muted-foreground">待执行任务</p>
+            <p className="text-xs text-muted-foreground">{t('taskCenter.pendingTasksLabel')}</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">运行中</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('taskCenter.runningLabel')}</CardTitle>
             <Activity className="h-4 w-4 text-blue-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{systemStats?.running_jobs || 0}</div>
-            <p className="text-xs text-muted-foreground">正在执行</p>
+            <p className="text-xs text-muted-foreground">{t('taskCenter.executingLabel')}</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">已完成</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('taskCenter.completedLabel')}</CardTitle>
             <CheckCircle className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{systemStats?.completed_jobs || 0}</div>
-            <p className="text-xs text-muted-foreground">成功完成</p>
+            <p className="text-xs text-muted-foreground">{t('taskCenter.successfullyCompleted')}</p>
           </CardContent>
         </Card>
       </div>
@@ -222,14 +222,14 @@ export function TaskCenter() {
       {/* Queue Stats */}
       <Card>
         <CardHeader>
-          <CardTitle>队列状态</CardTitle>
-          <CardDescription>Celery 任务队列实时状态</CardDescription>
+          <CardTitle>{t('taskCenter.queueStatus')}</CardTitle>
+          <CardDescription>{t('taskCenter.queueStatusDesc')}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">翻译队列</span>
+                <span className="text-sm font-medium">{t('taskCenter.translateQueue')}</span>
                 <span className="text-2xl font-bold">{queueStats?.translate_queue || 0}</span>
               </div>
               <div className="h-2 bg-secondary rounded-full overflow-hidden">
@@ -247,7 +247,7 @@ export function TaskCenter() {
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">ASR 队列</span>
+                <span className="text-sm font-medium">{t('taskCenter.asrQueue')}</span>
                 <span className="text-2xl font-bold">{queueStats?.asr_queue || 0}</span>
               </div>
               <div className="h-2 bg-secondary rounded-full overflow-hidden">
@@ -265,7 +265,7 @@ export function TaskCenter() {
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">扫描队列</span>
+                <span className="text-sm font-medium">{t('taskCenter.scanQueue')}</span>
                 <span className="text-2xl font-bold">{queueStats?.scan_queue || 0}</span>
               </div>
               <div className="h-2 bg-secondary rounded-full overflow-hidden">
@@ -287,15 +287,15 @@ export function TaskCenter() {
       {/* Worker Stats */}
       <Card>
         <CardHeader>
-          <CardTitle>Worker 状态</CardTitle>
-          <CardDescription>Celery Worker 运行状态</CardDescription>
+          <CardTitle>{t('taskCenter.workerStatus')}</CardTitle>
+          <CardDescription>{t('taskCenter.workerStatusDesc2')}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex items-center gap-4">
             <Users className="h-8 w-8 text-muted-foreground" />
             <div>
               <div className="text-2xl font-bold">{workerStats?.active_workers || 0}</div>
-              <p className="text-sm text-muted-foreground">活跃 Workers</p>
+              <p className="text-sm text-muted-foreground">{t('taskCenter.activeWorkers')}</p>
             </div>
           </div>
         </CardContent>
@@ -304,8 +304,8 @@ export function TaskCenter() {
       {/* Batch Operations */}
       <Card>
         <CardHeader>
-          <CardTitle>批量操作</CardTitle>
-          <CardDescription>对所有任务进行批量管理操作</CardDescription>
+          <CardTitle>{t('taskCenter.batchOperations')}</CardTitle>
+          <CardDescription>{t('taskCenter.batchOperationsDesc2')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -320,7 +320,7 @@ export function TaskCenter() {
               ) : (
                 <Play className="h-5 w-5 mr-2" />
               )}
-              启动所有排队任务
+{t('taskCenter.startAllQueued')}
               {systemStats?.queued_jobs ? ` (${systemStats.queued_jobs})` : ''}
             </Button>
 
@@ -338,7 +338,7 @@ export function TaskCenter() {
               ) : (
                 <XCircle className="h-5 w-5 mr-2" />
               )}
-              取消所有运行任务
+              {t('taskCenter.cancelAllRunningTasks')}
               {systemStats &&
                 ` (${(systemStats.queued_jobs || 0) + (systemStats.running_jobs || 0)})`}
             </Button>
@@ -361,7 +361,7 @@ export function TaskCenter() {
               ) : (
                 <Trash2 className="h-5 w-5 mr-2" />
               )}
-              删除已完成任务
+              {t('taskCenter.deleteCompletedTasks')}
               {systemStats &&
                 ` (${
                   (systemStats.completed_jobs || 0) +
@@ -376,8 +376,8 @@ export function TaskCenter() {
       {/* Library Scanning */}
       <Card>
         <CardHeader>
-          <CardTitle>媒体库扫描</CardTitle>
-          <CardDescription>扫描 Jellyfin 媒体库并创建翻译任务</CardDescription>
+          <CardTitle>{t('taskCenter.libraryScanning')}</CardTitle>
+          <CardDescription>{t('taskCenter.libraryScanningDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
@@ -392,7 +392,7 @@ export function TaskCenter() {
               ) : (
                 <RefreshCw className="h-5 w-5 mr-2" />
               )}
-              扫描所有媒体库
+{t('taskCenter.scanAllLibraries')}
             </Button>
 
             <Button
@@ -407,16 +407,16 @@ export function TaskCenter() {
               ) : (
                 <Zap className="h-5 w-5 mr-2" />
               )}
-              强制重新扫描
+{t('taskCenter.forceRescan')}
             </Button>
           </div>
 
           <div className="rounded-lg bg-muted p-4 text-sm">
-            <p className="font-medium mb-2">扫描说明：</p>
+            <p className="font-medium mb-2">{t('taskCenter.scanningInstructions')}</p>
             <ul className="list-disc list-inside space-y-1 text-muted-foreground">
-              <li>普通扫描：只为新发现的缺失语言创建任务</li>
-              <li>强制扫描：重新检测所有媒体，可能创建重复任务</li>
-              <li>扫描完成后，根据自动翻译规则决定是否自动启动任务</li>
+              <li>{t('taskCenter.normalScan')}</li>
+              <li>{t('taskCenter.forceScanDesc')}</li>
+              <li>{t('taskCenter.afterScanDesc')}</li>
             </ul>
           </div>
         </CardContent>
@@ -428,15 +428,15 @@ export function TaskCenter() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-destructive">
               <AlertCircle className="h-5 w-5" />
-              失败任务
+{t('taskCenter.failedTasks')}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-destructive">
-              {systemStats?.failed_jobs} 个任务失败
+              {t('taskCenter.failedTasksCount', { count: systemStats?.failed_jobs })}
             </div>
             <p className="text-sm text-muted-foreground mt-2">
-              建议前往任务列表页面查看详细错误信息并处理失败任务
+              {t('taskCenter.failedTasksDesc')}
             </p>
           </CardContent>
         </Card>

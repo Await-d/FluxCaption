@@ -85,6 +85,26 @@ celery_app.conf.update(
 
     # Beat schedule (for periodic tasks)
     beat_schedule={
+        # Periodic subtitle sync (every 6 hours)
+        "sync-subtitles-periodic": {
+            "task": "app.workers.tasks.sync_all_subtitles_task",
+            "schedule": 21600.0,  # Every 6 hours
+            "kwargs": {
+                "mode": "incremental",
+                "auto_pair": True,
+                "limit": None  # No limit, sync all
+            }
+        },
+        # Resume paused jobs (configurable interval)
+        "resume-paused-jobs-periodic": {
+            "task": "app.workers.tasks.resume_paused_jobs_task",
+            "schedule": settings.task_resume_paused_jobs_interval,
+        },
+        # Check quota-limited jobs (configurable interval)
+        "check-quota-limited-jobs-periodic": {
+            "task": "app.workers.tasks.check_and_pause_quota_limited_jobs",
+            "schedule": settings.task_check_quota_limits_interval,
+        },
         # Example: periodic library scan
         # "scan-libraries": {
         #     "task": "app.workers.tasks.scan_library_task",

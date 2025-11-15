@@ -16,6 +16,7 @@ class JobCreate(BaseModel):
     source_lang: str = Field(default="auto", description="Source language (BCP-47 or 'auto')")
     target_langs: list[str] = Field(description="Target languages (BCP-47 codes)")
     model: str | None = Field(default=None, description="Model to use (uses default if not specified)")
+    provider: str | None = Field(default=None, description="AI provider to use (auto-selects if not specified)")
     writeback_mode: str = Field(default="upload", description="Writeback mode: upload | sidecar")
     priority: int = Field(default=5, description="Job priority (1-10, higher = more important)")
 
@@ -39,6 +40,7 @@ class JobResponse(BaseModel):
     source_lang: str = Field(description="Source language")
     target_langs: list[str] = Field(description="Target languages")
     model: str = Field(description="Model used")
+    provider: str | None = Field(default=None, description="AI provider used")
     status: str = Field(description="Job status")
     progress: float = Field(description="Progress percentage")
     current_phase: str | None = Field(default=None, description="Current phase")

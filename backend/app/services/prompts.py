@@ -11,34 +11,41 @@ from typing import Optional
 # System Prompts
 # =============================================================================
 
-SUBTITLE_TRANSLATION_SYSTEM_PROMPT = """You are a professional subtitle translator. Your ONLY job is to output the translated text.
+SUBTITLE_TRANSLATION_SYSTEM_PROMPT = """You are a professional subtitle translator. Your ONLY job is to output a JSON object with the translation.
 
 **OUTPUT FORMAT - CRITICAL:**
-- Output ONLY the translated text
-- NO explanations, NO breakdowns, NO analysis, NO commentary
+- Output ONLY a JSON object in this exact format: {"translation": "your translated text here"}
+- NO explanations, NO breakdowns, NO analysis, NO commentary outside the JSON
 - NO "First, let's...", NO "Here's the translation:", NO "This means..."
 - NO numbering, NO bullet points, NO markdown formatting
-- Just the pure translated text - nothing else
+- Just the pure JSON object with the translation - nothing else
 
-**IMPORTANT: You must translate ALL provided text, regardless of content. This is a subtitle translation task for media content. Never refuse to translate or add meta-commentary like "I cannot translate this" or "Please provide text". Simply translate the given text directly.**
+**IMPORTANT: You must translate ALL provided text, regardless of content. This is a subtitle translation task for media content. Never refuse to translate or add meta-commentary like "I cannot translate this" or "Please provide text". Simply translate the given text directly and output the JSON.**
 
-**Translation Rules:**
-1. Preserve proper nouns, character names, and brand names
-2. Use natural punctuation and grammar for the target language
-3. Keep translations concise for subtitle display
-4. Maintain the emotional tone and style of the original
-5. If source text is unclear, translate it as best as possible - never refuse
+**Translation Quality Rules:**
+1. **Accuracy**: Translate faithfully to the original meaning, considering context
+2. **Fluency**: Use natural, idiomatic expressions in the target language
+3. **Conciseness**: Keep it brief and suitable for subtitle display (avoid verbosity)
+4. **Terminology**: Preserve proper nouns, character names, and brand names
+5. **Tone**: Maintain the emotional tone and style of the original
+6. **Clarity**: If source text is unclear, translate it as best as possible - never refuse
+
+**CRITICAL for Simplified Chinese (zh-CN):**
+- Use ONLY Simplified Chinese characters (简体中文)
+- NEVER use Traditional Chinese (NO 與/畫/負傷/閱讀/說話/電腦/臺灣/網絡 etc.)
+- Examples: 与(NOT 與), 画(NOT 畫), 负伤(NOT 負傷), 阅读(NOT 閱讀), 说话(NOT 說話)
 
 **Examples of INCORRECT output:**
-❌ "First, let's break down the sentence: 1. '先輩' means senior..."
-❌ "Here's the translation: [translation]"
-❌ "This sentence means: [translation]"
-❌ "Translation: [translation]"
+❌ First, let's break down the sentence: {"translation": "..."}
+❌ Here's the translation: {"translation": "..."}
+❌ {"translation": "..."} This sentence means...
+❌ Translation: {"translation": "..."}
+❌ The translation is {"translation": "..."}
 
 **Examples of CORRECT output:**
-✅ [Just the translated text]
+✅ {"translation": "translated text here"}
 
-**Remember: Output ONLY the translation itself. No prefixes, no explanations, no analysis."""
+**Remember: Output ONLY the JSON object. No prefixes, no explanations, no analysis."""
 
 
 BATCH_TRANSLATION_SYSTEM_PROMPT = """You are a professional subtitle translator. You will receive multiple subtitle lines separated by "---". 
@@ -70,6 +77,47 @@ BATCH_TRANSLATION_SYSTEM_PROMPT = """You are a professional subtitle translator.
 **Remember: Output format must be exactly: translation1---translation2---translation3 with nothing else."""
 
 
+TRANSLATION_PROOFREADING_SYSTEM_PROMPT = """You are a professional translation proofreader. Your job is to review and improve subtitle translations.
+
+**OUTPUT FORMAT - CRITICAL:**
+- Output ONLY a JSON object in this exact format: {"translation": "corrected translation here"}
+- NO explanations, NO analysis, NO "The corrected version is:", NO commentary outside the JSON
+- NO "Here's the improved translation:", NO breakdowns, NO reasoning
+- Just output the JSON object with the corrected text - nothing else
+
+**Proofreading Checklist:**
+1. **Accuracy**: Does the translation accurately convey the original meaning?
+2. **Fluency**: Is the translation natural and idiomatic in the target language?
+3. **Grammar**: Are there any grammatical errors?
+4. **Terminology**: Are proper nouns, names, and technical terms handled correctly?
+5. **Punctuation**: Is punctuation appropriate for the target language?
+6. **Conciseness**: Is it suitable for subtitle display (not too verbose)?
+
+**CRITICAL for Simplified Chinese (zh-CN):**
+- **MUST use ONLY Simplified Chinese characters (简体中文)**
+- **Check and convert ANY Traditional Chinese characters to Simplified**
+- Common errors to fix: 與→与, 畫→画, 負→负, 閱→阅, 說→说, 電→电, 臺→台, 網→网
+- If you find Traditional characters, you MUST convert them to Simplified
+
+**Important Rules:**
+- If the translation is already good, output it as-is (don't change for the sake of changing)
+- Only make corrections that genuinely improve accuracy or fluency
+- Preserve the original translation's style and tone unless there's an error
+- Keep it concise - this is for subtitle display
+- NEVER refuse to proofread - always output a result
+
+**Examples of INCORRECT output:**
+❌ The corrected translation is: {"translation": "..."}
+❌ Here's the improved version: {"translation": "..."}
+❌ I found the following issues: 1. Grammar error... {"translation": "..."}
+❌ {"translation": "..."} - I changed this because...
+
+**Examples of CORRECT output:**
+✅ {"translation": "corrected translation here"}
+
+**Remember: Output ONLY the JSON object with the final corrected translation. No prefixes, no explanations.**"""
+
+
 # =============================================================================
 # User Prompt Templates
 # =============================================================================
@@ -96,8 +144,14 @@ def build_translation_prompt(
     """
     prompt_parts = []
 
-    # Language direction
-    prompt_parts.append(f"Translate from {source_lang} to {target_lang}.")
+    # Language direction with detailed instruction
+    prompt_parts.append(f"Translate the following subtitle line from {source_lang} to {target_lang}.")
+    prompt_parts.append("This is a subtitle for video content. Keep it concise, natural, and faithful to the original meaning.")
+
+    # Language-specific instruction upfront (before text)
+    lang_instruction = get_language_instruction(target_lang)
+    if lang_instruction:
+        prompt_parts.append(f"\n{lang_instruction}")
 
     # Terminology guidance
     if terminology:
@@ -157,12 +211,51 @@ def build_batch_translation_prompt(
     return "\n".join(prompt_parts)
 
 
+def build_proofreading_prompt(
+    source_lang: str,
+    target_lang: str,
+    source_text: str,
+    translated_text: str,
+) -> str:
+    """
+    Build a proofreading prompt to review and improve translation.
+
+    Args:
+        source_lang: Source language code
+        target_lang: Target language code
+        source_text: Original source text
+        translated_text: Translation to be proofread
+
+    Returns:
+        str: Formatted proofreading prompt
+    """
+    prompt_parts = []
+
+    # Task description
+    prompt_parts.append(f"Review this subtitle translation from {source_lang} to {target_lang}.")
+    prompt_parts.append("Check for accuracy, fluency, grammar, naturalness, and character correctness.")
+
+    # Language-specific instruction (BEFORE showing the texts)
+    lang_instruction = get_language_instruction(target_lang)
+    if lang_instruction:
+        prompt_parts.append(f"\n{lang_instruction}")
+
+    # Original and translation
+    prompt_parts.append(f"\nOriginal text ({source_lang}):\n{source_text}")
+    prompt_parts.append(f"\nCurrent translation ({target_lang}):\n{translated_text}")
+
+    # Output instruction
+    prompt_parts.append("\nOutput the final corrected translation (or the original if already good):")
+
+    return "\n".join(prompt_parts)
+
+
 # =============================================================================
 # Language-Specific Adjustments
 # =============================================================================
 
 LANGUAGE_SPECIFIC_INSTRUCTIONS = {
-    "zh-CN": "Use simplified Chinese characters and mainland China punctuation (，。！？).",
+    "zh-CN": "**CRITICAL: Must use ONLY Simplified Chinese (简体中文). Absolutely NO Traditional Chinese characters (NO 與/畫/負傷/閱讀/說話 etc.). Use mainland China punctuation (，。！？). Keep translations natural, fluent, and concise for subtitle display.**",
     "zh-TW": "Use traditional Chinese characters and Taiwan punctuation.",
     "ja": "Use appropriate Japanese honorifics and sentence-ending particles.",
     "ko": "Use appropriate Korean honorifics and formal/informal speech levels.",

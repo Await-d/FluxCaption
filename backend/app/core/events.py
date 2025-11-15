@@ -98,11 +98,17 @@ class EventPublisher:
             total: Total units
             error: Error message (if any)
         """
+        from datetime import datetime, timezone
+        
+        # Generate timestamp ONCE for both event and database
+        timestamp = datetime.now(timezone.utc)
+        
         event_data = {
             "job_id": job_id,
             "phase": phase,
             "status": status,
             "progress": progress,
+            "timestamp": timestamp.isoformat(),  # Include timestamp in event
         }
 
         if completed is not None:
@@ -120,12 +126,11 @@ class EventPublisher:
         try:
             from app.core.db import SessionLocal
             from app.models.task_log import TaskLog
-            from datetime import datetime, timezone
 
             with SessionLocal() as session:
                 log_entry = TaskLog(
                     job_id=job_id,
-                    timestamp=datetime.now(timezone.utc),
+                    timestamp=timestamp,  # Use the same timestamp as the event
                     phase=phase,
                     status=status,
                     progress=progress,
@@ -137,6 +142,41 @@ class EventPublisher:
                 session.commit()
         except Exception as e:
             logger.warning(f"Failed to save task log to database: {e}")
+
+    async def publish_config_change(
+        self,
+        setting_key: str,
+        old_value: str,
+        new_value: str,
+        changed_by: str,
+    ) -> None:
+        """
+        Publish configuration change event for worker reload.
+
+        Args:
+            setting_key: Setting key that was changed
+            old_value: Old value
+            new_value: New value
+            changed_by: Username who made the change
+        """
+        from datetime import datetime, timezone
+
+        event_data = {
+            "event_type": "config_change",
+            "setting_key": setting_key,
+            "old_value": old_value,
+            "new_value": new_value,
+            "changed_by": changed_by,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+        # Publish to config change channel
+        await self.publish_event("config:changes", event_data)
+
+        logger.info(
+            f"Configuration change published: {setting_key} = {new_value} "
+            f"(changed by {changed_by})"
+        )
 
 
 class EventSubscriber:

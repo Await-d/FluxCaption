@@ -509,5 +509,21 @@
     "items": "条",
     "previousPage": "上一页",
     "nextPage": "下一页"
+  },
+  "systemConfig": {
+    "title": "系统配置",
+    "description": "管理系统级配置参数,可在此调整任务调度、ASR和翻译相关设置",
+    "restartWarning": "配置变更需要重启服务",
+    "restartDescription": "修改定时任务间隔等配置后,需要重启 Backend 和 Celery Beat 服务才能生效",
+    "confirmReset": "确定要重置此配置项为默认值吗？",
+    "lastUpdatedBy": "最后更新: {user} 于 {time}",
+    "changeHistory": "变更历史",
+    "viewHistory": "查看历史",
+    "changeReasonPlaceholder": "可选: 填写本次变更的原因",
+    "oldValue": "旧值",
+    "newValue": "新值",
+    "reason": "原因",
+    "notSet": "未设置",
+    "noHistory": "暂无变更历史"
   }
 }

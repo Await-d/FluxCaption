@@ -5,15 +5,18 @@ Main application entry point with route registration and lifecycle management.
 """
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI
+from fastapi.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.core.db import init_db, close_db, get_db
 from app.core.logging import get_logger
 from app.core.init_db import init_database
-from app.api.routers import health, models, upload, jobs, jellyfin, cache, local_media, subtitles, translation_memory, auth, corrections, auto_translation_rules, system
+from app.api.routers import health, models, upload, jobs, jellyfin, cache, local_media, subtitles, translation_memory, auth, corrections, auto_translation_rules, system, subtitle_sync, ai_providers, ai_models, system_config
 from app.api.routers import settings as settings_router
 
 logger = get_logger(__name__)
@@ -32,6 +35,46 @@ async def lifespan(app: FastAPI):
     """
     # Startup
     logger.info("Starting FluxCaption application...")
+
+    # Run database migrations automatically before initializing
+    try:
+        logger.info("Checking database migration status...")
+        from alembic import command
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+        from alembic.runtime.migration import MigrationContext
+        from pathlib import Path
+        from sqlalchemy import create_engine
+
+        # Get alembic.ini path
+        backend_dir = Path(__file__).parent.parent
+        alembic_cfg = Config(str(backend_dir / "alembic.ini"))
+        alembic_cfg.set_main_option("script_location", str(backend_dir / "migrations"))
+
+        # Check if migration is needed
+        from app.core.config import settings
+        engine = create_engine(settings.database_url)
+
+        with engine.connect() as conn:
+            context = MigrationContext.configure(conn)
+            current = context.get_current_revision()
+
+            script = ScriptDirectory.from_config(alembic_cfg)
+            head = script.get_current_head()
+
+            if current != head:
+                logger.info(f"Upgrading database: {current} -> {head}")
+                command.upgrade(alembic_cfg, "head")
+                logger.info("✅ Database migrations completed successfully")
+            else:
+                logger.info(f"✅ Database already at latest version: {current}")
+
+        engine.dispose()
+
+    except Exception as e:
+        logger.warning(f"Database migration check/run failed: {e}", exc_info=True)
+        # Continue startup - migrations might have already been run by start.sh
+
     try:
         init_db()
         logger.info("Database connection established")
@@ -39,6 +82,53 @@ async def lifespan(app: FastAPI):
         # Initialize database with default data (admin user, etc.)
         with next(get_db()) as db:
             init_database(db)
+
+        # Initialize system settings with default values
+        try:
+            logger.info("Initializing system settings...")
+            with next(get_db()) as db:
+                from app.core.init_settings import init_system_settings
+                init_system_settings(db)
+
+                # Preload runtime configuration from database
+                from app.core.runtime_config import load_config_from_db
+                load_config_from_db(db)
+
+            logger.info("System settings initialized")
+        except Exception as e:
+            logger.warning(f"Failed to initialize system settings: {e}", exc_info=True)
+            # Don't fail startup if settings init fails
+
+        # Run database health check and auto-repair
+        try:
+            logger.info("Running database health check...")
+            with next(get_db()) as db:
+                from app.core.db_health import check_and_repair_database
+                results = check_and_repair_database(db)
+
+                if results['initial_status'] != 'healthy':
+                    logger.warning(f"Database health issues detected: {results['initial_status']}")
+                    if results['repairs']:
+                        logger.info(f"Database repairs made: {results['repairs']}")
+                    if results['errors']:
+                        logger.error(f"Database repair errors: {results['errors']}")
+                    logger.info(f"Final database status: {results['final_status']}")
+                else:
+                    logger.info("Database health check passed")
+        except Exception as e:
+            logger.warning(f"Database health check failed: {e}", exc_info=True)
+            # Don't fail startup if health check fails
+
+        # Initialize AI providers from environment variables
+        try:
+            logger.info("Initializing AI provider configurations...")
+            with next(get_db()) as db:
+                from app.core.init_ai_providers import init_ai_providers
+                init_ai_providers(db)
+            logger.info("AI provider initialization completed")
+        except Exception as e:
+            logger.warning(f"Failed to initialize AI providers: {e}", exc_info=True)
+            # Don't fail startup if provider init fails
 
         # Sync models from Ollama to database (must be outside db context)
         try:
@@ -69,7 +159,43 @@ async def lifespan(app: FastAPI):
                     logger.info(f"No default model in database, using config default: {settings.default_mt_model}")
         except Exception as e:
             logger.warning(f"Failed to sync default model from database: {e}", exc_info=True)
+
+        # Load Jellyfin settings from database
+        try:
+            logger.info("Loading Jellyfin configuration from database...")
+            from app.core.config import load_jellyfin_settings_from_db
+            load_jellyfin_settings_from_db()
+            logger.info("Jellyfin configuration loaded successfully")
+        except Exception as e:
+            logger.warning(f"Failed to load Jellyfin settings from database: {e}", exc_info=True)
             # Don't fail startup if setting sync fails
+
+        # Reset stuck running jobs after server restart
+        try:
+            logger.info("Checking for stuck running jobs...")
+            with next(get_db()) as db:
+                from app.models.translation_job import TranslationJob
+                from datetime import datetime, timezone
+                
+                stuck_jobs = db.query(TranslationJob).filter(
+                    TranslationJob.status == "running"
+                ).all()
+                
+                if stuck_jobs:
+                    logger.warning(f"Found {len(stuck_jobs)} stuck running jobs, marking as failed...")
+                    for job in stuck_jobs:
+                        job.status = "failed"
+                        job.error = "任务因服务重启而中断 (Task interrupted by server restart)"
+                        job.finished_at = datetime.now(timezone.utc)
+                        logger.info(f"Reset stuck job: {job.id}")
+                    
+                    db.commit()
+                    logger.info(f"Successfully reset {len(stuck_jobs)} stuck jobs")
+                else:
+                    logger.info("No stuck running jobs found")
+        except Exception as e:
+            logger.warning(f"Failed to reset stuck jobs: {e}", exc_info=True)
+            # Don't fail startup if job reset fails
 
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}", exc_info=True)
@@ -144,6 +270,12 @@ async def global_exception_handler(request, exc):
 # Authentication endpoints
 app.include_router(auth.router)
 
+# AI provider management endpoints
+app.include_router(ai_providers.router)
+
+# AI model configuration endpoints
+app.include_router(ai_models.router)
+
 # Correction rules endpoints
 app.include_router(corrections.router)
 
@@ -152,6 +284,9 @@ app.include_router(auto_translation_rules.router)
 
 # System management endpoints
 app.include_router(system.router)
+
+# System configuration endpoints
+app.include_router(system_config.router)
 
 # Health check endpoints
 app.include_router(health.router)
@@ -174,6 +309,9 @@ app.include_router(local_media.router)
 # Subtitle library endpoints
 app.include_router(subtitles.router)
 
+# Subtitle sync endpoints
+app.include_router(subtitle_sync.router)
+
 # Translation memory endpoints
 app.include_router(translation_memory.router)
 
@@ -185,22 +323,73 @@ app.include_router(cache.router)
 
 
 # =============================================================================
-# Root Endpoint
+# Static Files and Frontend Routes
 # =============================================================================
 
-@app.get("/", tags=["Root"])
-async def root():
-    """
-    Root endpoint.
+# Define frontend static files directory
+FRONTEND_DIST = Path(__file__).parent.parent / "frontend_dist"
 
-    Returns basic API information.
-    """
-    return {
-        "name": "FluxCaption API",
-        "version": "0.1.0",
-        "status": "running",
-        "docs": "/docs" if settings.enable_swagger_ui else None,
-    }
+# Mount static files if the directory exists
+if FRONTEND_DIST.exists():
+    app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
+    logger.info(f"Frontend static files mounted from {FRONTEND_DIST}")
+
+    # Add a root route for frontend
+    @app.get("/", tags=["Frontend"], include_in_schema=False)
+    async def serve_index():
+        """Serve frontend index page."""
+        index_path = FRONTEND_DIST / "index.html"
+        if index_path.exists():
+            return FileResponse(index_path)
+        return JSONResponse(status_code=404, content={"detail": "Frontend not found"})
+
+    # Custom 404 handler that serves frontend for non-API routes
+    @app.exception_handler(404)
+    async def custom_404_handler(request, exc):
+        """
+        Custom 404 handler.
+
+        For API routes (/api/*), returns JSON error.
+        For other routes, serves frontend SPA (index.html).
+        """
+        # Check if it's an API route
+        if request.url.path.startswith("/api/") or request.url.path.startswith("/docs") or request.url.path.startswith("/redoc"):
+            return JSONResponse(
+                status_code=404,
+                content={"detail": "Not found"}
+            )
+
+        # For non-API routes, serve frontend SPA
+        index_path = FRONTEND_DIST / "index.html"
+        if index_path.exists():
+            return FileResponse(index_path)
+
+        return JSONResponse(
+            status_code=404,
+            content={"detail": "Page not found"}
+        )
+else:
+    logger.warning(f"Frontend directory not found at {FRONTEND_DIST}")
+
+
+# =============================================================================
+# Root Endpoint (API Mode)
+# =============================================================================
+
+# This will only be reached if frontend is not mounted
+# @app.get("/", tags=["Root"])
+# async def root():
+#     """
+#     Root endpoint.
+#
+#     Returns basic API information.
+#     """
+#     return {
+#         "name": "FluxCaption API",
+#         "version": "0.1.0",
+#         "status": "running",
+#         "docs": "/docs" if settings.enable_swagger_ui else None,
+#     }
 
 
 # =============================================================================

@@ -131,9 +131,24 @@ async def pull_model_task(model_name: str, db: Session) -> None:
         # Pull the model
         await ollama_client.pull_model(model_name)
 
-        # Update status to available
+        # Get model info from Ollama to update size and details
+        ollama_models = await ollama_client.list_models()
+        ollama_model = next(
+            (m for m in ollama_models if m.get("name") == model_name),
+            None
+        )
+
+        # Update status to available and populate size info
         if model:
             model.status = "available"
+            if ollama_model:
+                model.size_bytes = ollama_model.get("size")
+                details = ollama_model.get("details", {})
+                if details:
+                    model.family = details.get("family")
+                    model.parameter_size = details.get("parameter_size")
+                    model.quantization = details.get("quantization_level")
+                model.digest = ollama_model.get("digest")
             db.commit()
 
         logger.info(f"Successfully pulled model: {model_name}")
@@ -503,3 +518,44 @@ async def get_recommended_models(
         "recommended_models": recommended,
         "total": len(recommended),
     }
+
+
+@router.post(
+    "/sync",
+    summary="Sync models from Ollama",
+)
+async def sync_models(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Sync models from Ollama server to local database.
+
+    This will fetch all models from Ollama and update the local registry.
+
+    Returns:
+        dict: Sync result with counts
+    """
+    try:
+        from app.core.model_sync import sync_models_from_ollama
+
+        logger.info("Starting manual model sync from Ollama")
+        await sync_models_from_ollama(db)
+
+        # Get updated model count
+        model_count = db.query(ModelRegistry).count()
+
+        logger.info(f"Model sync completed, total models: {model_count}")
+
+        return {
+            "success": True,
+            "message": "Models synced successfully",
+            "total_models": model_count,
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to sync models: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to sync models: {str(e)}",
+        )

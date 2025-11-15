@@ -35,8 +35,10 @@ import type {
   DirectoryStatsResponse,
   AppSettings,
 } from '@/types/api'
+import { useTranslation } from 'react-i18next'
 
 export function LocalMedia() {
+  const { t } = useTranslation()
   const [directoryPath, setDirectoryPath] = useState('')
   const [scannedDirectory, setScannedDirectory] = useState<string | null>(null)
   const [selectedFile, setSelectedFile] = useState<MediaFileResponse | null>(null)
@@ -53,10 +55,10 @@ export function LocalMedia() {
 
   // Available languages for translation
   const LANGUAGES = [
-    { code: 'zh-CN', name: '简体中文' },
-    { code: 'en', name: 'English' },
-    { code: 'ja', name: '日本語' },
-    { code: 'ko', name: '한국어' },
+    { code: 'zh-CN', name: t('languages.zh-CN') },
+    { code: 'en', name: t('languages.en') },
+    { code: 'ja', name: t('languages.ja') },
+    { code: 'ko', name: t('languages.ko') },
   ]
 
   // Scan directory mutation
@@ -66,7 +68,7 @@ export function LocalMedia() {
         directory: path,
         recursive,
         max_depth: 5,
-        required_langs: ['zh-CN', 'en', 'ja'],
+        // required_langs will be inferred from auto translation rules
       }),
     onSuccess: (data) => {
       setScannedDirectory(data.directory)
@@ -177,15 +179,14 @@ export function LocalMedia() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <FolderOpen className="h-5 w-5" />
-            扫描本地目录
+{t('localMedia.scanDirectory')}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <Alert>
             <Info className="h-4 w-4" />
             <AlertDescription>
-              输入媒体文件所在的目录路径，系统将扫描视频文件和现有字幕。支持常见视频格式（mp4,
-              mkv, avi 等）。
+{t('localMedia.scanDirectoryDesc')}
             </AlertDescription>
           </Alert>
 
@@ -193,7 +194,7 @@ export function LocalMedia() {
             {/* Input Row */}
             <div className="flex flex-col sm:flex-row gap-2">
               <Input
-                placeholder="/path/to/media/directory (例如: /media/movies)"
+                placeholder={t('localMedia.pathPlaceholder')}
                 value={directoryPath}
                 onChange={(e) => setDirectoryPath(e.target.value)}
                 onKeyPress={(e) => {
@@ -207,7 +208,7 @@ export function LocalMedia() {
                   onValueChange={(value) => setDirectoryPath(value)}
                 >
                   <SelectTrigger className="w-full sm:w-[180px]">
-                    <SelectValue placeholder="收藏路径" />
+                    <SelectValue placeholder={t('localMedia.favoritePaths')} />
                   </SelectTrigger>
                   <SelectContent>
                     {settings.favorite_media_paths.map((path, index) => (
@@ -232,7 +233,7 @@ export function LocalMedia() {
                   onChange={(e) => setRecursive(e.target.checked)}
                   className="rounded"
                 />
-                递归扫描
+{t('localMedia.recursiveScan')}
               </label>
               <Button
                 onClick={handleScan}
@@ -242,14 +243,14 @@ export function LocalMedia() {
                 {scanMutation.isPending ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    <span className="hidden sm:inline">扫描中...</span>
-                    <span className="sm:hidden">扫描</span>
+                    <span className="hidden sm:inline">{t('localMedia.scanning')}</span>
+                    <span className="sm:hidden">{t('localMedia.scan')}</span>
                   </>
                 ) : (
                   <>
                     <Scan className="mr-2 h-4 w-4" />
-                    <span className="hidden sm:inline">扫描目录</span>
-                    <span className="sm:hidden">扫描</span>
+                    <span className="hidden sm:inline">{t('localMedia.scanDirectory_btn')}</span>
+                    <span className="sm:hidden">{t('localMedia.scan')}</span>
                   </>
                 )}
               </Button>
@@ -260,7 +261,7 @@ export function LocalMedia() {
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
-                扫描失败: {(scanMutation.error as any)?.message || '未知错误'}
+{t('localMedia.scanFailed', { error: (scanMutation.error as any)?.message || t('components.taskLogs.unknownError') })}
               </AlertDescription>
             </Alert>
           )}
@@ -271,7 +272,7 @@ export function LocalMedia() {
       {stats && (
         <Card>
           <CardHeader>
-            <CardTitle>目录统计</CardTitle>
+            <CardTitle>{t('localMedia.directoryStats')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
@@ -281,7 +282,7 @@ export function LocalMedia() {
                 </div>
                 <div>
                   <p className="text-xl sm:text-2xl font-bold">{stats.total_media_files}</p>
-                  <p className="text-xs sm:text-sm text-muted-foreground">媒体文件</p>
+                  <p className="text-xs sm:text-sm text-muted-foreground">{t('localMedia.mediaFiles')}</p>
                 </div>
               </div>
 
@@ -291,7 +292,7 @@ export function LocalMedia() {
                 </div>
                 <div>
                   <p className="text-xl sm:text-2xl font-bold">{stats.total_subtitle_files}</p>
-                  <p className="text-xs sm:text-sm text-muted-foreground">字幕文件</p>
+                  <p className="text-xs sm:text-sm text-muted-foreground">{t('localMedia.subtitleFiles')}</p>
                 </div>
               </div>
 
@@ -301,7 +302,7 @@ export function LocalMedia() {
                 </div>
                 <div>
                   <p className="text-xl sm:text-2xl font-bold">{formatBytes(stats.total_size_bytes)}</p>
-                  <p className="text-xs sm:text-sm text-muted-foreground">总大小</p>
+                  <p className="text-xs sm:text-sm text-muted-foreground">{t('localMedia.totalSize')}</p>
                 </div>
               </div>
 
@@ -310,7 +311,7 @@ export function LocalMedia() {
                   <Info className="h-4 w-4 sm:h-5 sm:w-5 text-orange-500" />
                 </div>
                 <div>
-                  <p className="text-xs sm:text-sm font-medium">格式分布</p>
+                  <p className="text-xs sm:text-sm font-medium">{t('localMedia.formatDistribution')}</p>
                   <div className="flex gap-1 flex-wrap mt-1">
                     {Object.entries(stats.video_formats).map(([format, count]) => (
                       <Badge key={format} variant="outline" className="text-xs">
@@ -330,15 +331,15 @@ export function LocalMedia() {
         <Card>
           <CardHeader>
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <CardTitle>媒体文件列表</CardTitle>
+              <CardTitle>{t('localMedia.mediaFileList')}</CardTitle>
               <div className="flex items-center gap-2">
-                <Badge variant="outline">{scanResult.total_count} 个文件</Badge>
+                <Badge variant="outline">{t('localMedia.files_count', { count: scanResult.total_count })}</Badge>
                 {scanResult.media_files.filter((f) => f.missing_languages.length > 0).length >
                   0 && (
                   <Button size="sm" onClick={handleBatchTranslate}>
                     <Languages className="mr-1 sm:mr-2 h-4 w-4" />
-                    <span className="hidden sm:inline">批量翻译全部</span>
-                    <span className="sm:hidden">批量翻译</span>
+                    <span className="hidden sm:inline">{t('localMedia.batchTranslateAll')}</span>
+                    <span className="sm:hidden">{t('localMedia.batchTranslate')}</span>
                   </Button>
                 )}
               </div>
@@ -346,7 +347,7 @@ export function LocalMedia() {
           </CardHeader>
           <CardContent>
             {scanResult.media_files.length === 0 ? (
-              <p className="text-muted-foreground text-center py-8">未找到媒体文件</p>
+              <p className="text-muted-foreground text-center py-8">{t('localMedia.noMediaFiles')}</p>
             ) : (
               <div className="space-y-3">
                 {scanResult.media_files.map((file) => (
@@ -365,13 +366,13 @@ export function LocalMedia() {
                             {file.missing_languages.length === 0 ? (
                               <Badge variant="outline" className="flex-shrink-0 text-xs">
                                 <CheckCircle2 className="mr-1 h-3 w-3 text-green-600" />
-                                <span className="hidden sm:inline">字幕完整</span>
-                                <span className="sm:hidden">完整</span>
+                                <span className="hidden sm:inline">{t('localMedia.subtitlesComplete')}</span>
+                                <span className="sm:hidden">{t('localMedia.complete')}</span>
                               </Badge>
                             ) : (
                               <Badge variant="destructive" className="flex-shrink-0 text-xs">
-                                <span className="hidden sm:inline">缺失 {file.missing_languages.length} 种语言</span>
-                                <span className="sm:hidden">缺 {file.missing_languages.length}</span>
+                                <span className="hidden sm:inline">{t('localMedia.missingLanguages', { count: file.missing_languages.length })}</span>
+                                <span className="sm:hidden">{t('localMedia.missing', { count: file.missing_languages.length })}</span>
                               </Badge>
                             )}
                           </div>
@@ -396,7 +397,7 @@ export function LocalMedia() {
                             {/* Existing Subtitles */}
                             {file.existing_subtitle_langs.length > 0 && (
                               <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                                <span className="text-xs text-muted-foreground flex-shrink-0">现有字幕:</span>
+                                <span className="text-xs text-muted-foreground flex-shrink-0">{t('localMedia.existingSubtitles')}</span>
                                 <div className="flex gap-1 flex-wrap">
                                   {file.existing_subtitle_langs.map((lang) => (
                                     <Badge key={lang} variant="secondary" className="text-xs">
@@ -410,7 +411,7 @@ export function LocalMedia() {
                             {/* Missing Languages */}
                             {file.missing_languages.length > 0 && (
                               <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                                <span className="text-xs text-muted-foreground flex-shrink-0">缺失语言:</span>
+                                <span className="text-xs text-muted-foreground flex-shrink-0">{t('localMedia.missingLanguagesLabel')}</span>
                                 <div className="flex gap-1 flex-wrap">
                                   {file.missing_languages.map((lang) => (
                                     <Badge key={lang} variant="destructive" className="text-xs">
@@ -424,7 +425,7 @@ export function LocalMedia() {
                             {/* Subtitle Files */}
                             {file.subtitle_files.length > 0 && (
                               <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-2">
-                                <span className="text-xs text-muted-foreground flex-shrink-0">字幕文件:</span>
+                                <span className="text-xs text-muted-foreground flex-shrink-0">{t('localMedia.subtitleFilesList')}</span>
                                 <div className="flex-1 text-xs text-muted-foreground break-all">
                                   {file.subtitle_files.join(', ')}
                                 </div>
@@ -443,7 +444,7 @@ export function LocalMedia() {
                               className="w-full sm:w-auto"
                             >
                               <Languages className="mr-1 sm:mr-2 h-4 w-4" />
-                              翻译
+{t('localMedia.translate')}
                             </Button>
                           </div>
                         )}
@@ -461,9 +462,9 @@ export function LocalMedia() {
       <AlertDialog open={translateDialogOpen} onOpenChange={setTranslateDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>创建翻译任务</AlertDialogTitle>
+            <AlertDialogTitle>{t('localMedia.createTranslationTask')}</AlertDialogTitle>
             <AlertDialogDescription>
-              为 <strong>{selectedFile?.filename}</strong> 创建字幕翻译任务
+              {t('localMedia.createTaskFor', { filename: selectedFile?.filename })}
             </AlertDialogDescription>
           </AlertDialogHeader>
 
@@ -472,13 +473,13 @@ export function LocalMedia() {
             {selectedFile && (
               <div className="space-y-2 text-sm">
                 <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground">文件大小:</span>
+                  <span className="text-muted-foreground">{t('localMedia.fileSize')}</span>
                   <span>{formatBytes(selectedFile.size_bytes)}</span>
                 </div>
 
                 {selectedFile.existing_subtitle_langs.length > 0 && (
                   <div className="flex items-start gap-2">
-                    <span className="text-muted-foreground">现有字幕:</span>
+                    <span className="text-muted-foreground">{t('localMedia.existingSubtitles')}</span>
                     <div className="flex gap-1 flex-wrap">
                       {selectedFile.existing_subtitle_langs.map((lang) => (
                         <Badge key={lang} variant="secondary" className="text-xs">
@@ -491,7 +492,7 @@ export function LocalMedia() {
 
                 {selectedFile.missing_languages.length > 0 && (
                   <div className="flex items-start gap-2">
-                    <span className="text-muted-foreground">缺失语言:</span>
+                    <span className="text-muted-foreground">{t('localMedia.missingLanguagesLabel')}</span>
                     <div className="flex gap-1 flex-wrap">
                       {selectedFile.missing_languages.map((lang) => (
                         <Badge key={lang} variant="destructive" className="text-xs">
@@ -506,7 +507,7 @@ export function LocalMedia() {
 
             {/* Target Languages Selection */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">选择翻译目标语言:</label>
+              <label className="text-sm font-medium">{t('localMedia.selectTargetLangs')}</label>
               <div className="flex flex-wrap gap-2">
                 {LANGUAGES.map((lang) => (
                   <Badge
@@ -517,13 +518,13 @@ export function LocalMedia() {
                   >
                     {lang.name}
                     {selectedFile?.missing_languages.includes(lang.code) && (
-                      <span className="ml-1 text-xs">(缺失)</span>
+                      <span className="ml-1 text-xs">{t('localMedia.missingLang')}</span>
                     )}
                   </Badge>
                 ))}
               </div>
               {selectedTargetLangs.length === 0 && (
-                <p className="text-xs text-destructive">请至少选择一个目标语言</p>
+                <p className="text-xs text-destructive">{t('localMedia.selectAtLeastOne')}</p>
               )}
             </div>
 
@@ -532,16 +533,16 @@ export function LocalMedia() {
               <p>
                 •{' '}
                 {selectedFile?.existing_subtitle_langs.length
-                  ? '将使用现有字幕进行翻译'
-                  : '没有字幕时将先进行语音识别（ASR）生成字幕'}
+                  ? t('localMedia.taskInfoUseExisting')
+                  : t('localMedia.taskInfoASR')}
               </p>
-              <p>• 翻译任务将在后台队列中执行</p>
-              <p>• 可在"任务列表"页面查看进度</p>
+              <p>• {t('localMedia.taskInfoBackground')}</p>
+              <p>• {t('localMedia.taskInfoProgress')}</p>
             </div>
           </div>
 
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={createJobMutation.isPending}>取消</AlertDialogCancel>
+            <AlertDialogCancel disabled={createJobMutation.isPending}>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleTranslateConfirm}
               disabled={selectedTargetLangs.length === 0 || createJobMutation.isPending}
@@ -549,7 +550,7 @@ export function LocalMedia() {
               {createJobMutation.isPending && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
-              创建任务
+              {t('localMedia.createTask')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

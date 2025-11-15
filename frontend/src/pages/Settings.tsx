@@ -33,6 +33,115 @@ export function Settings() {
     <div className="max-w-4xl space-y-4 sm:space-y-6">
       <Card>
         <CardHeader>
+          <CardTitle>{t('settings.jellyfinIntegration')}</CardTitle>
+          <CardDescription>{t('settings.jellyfinDesc')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3 sm:space-y-4">
+          <div>
+            <label className="text-xs sm:text-sm font-medium mb-2 block">{t('settings.jellyfinBaseUrl')}</label>
+            <Input
+              defaultValue={settings?.jellyfin_base_url}
+              onBlur={(e) => updateMutation.mutate({ jellyfin_base_url: e.target.value })}
+              placeholder="http://jellyfin:8096"
+            />
+            <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">
+              {t('settings.jellyfinBaseUrlDesc')}
+            </p>
+          </div>
+
+          <div>
+            <label className="text-xs sm:text-sm font-medium mb-2 block">{t('settings.jellyfinApiKey')}</label>
+            <Input
+              type="password"
+              defaultValue={settings?.jellyfin_api_key}
+              onBlur={(e) => updateMutation.mutate({ jellyfin_api_key: e.target.value })}
+              placeholder="API Key"
+            />
+            <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">
+              {t('settings.jellyfinApiKeyDesc')}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label className="text-xs sm:text-sm font-medium mb-2 block">{t('settings.jellyfinTimeout')}</label>
+              <Input
+                type="number"
+                defaultValue={settings?.jellyfin_timeout}
+                onBlur={(e) => updateMutation.mutate({ jellyfin_timeout: parseInt(e.target.value) })}
+                placeholder="30"
+              />
+            </div>
+            <div>
+              <label className="text-xs sm:text-sm font-medium mb-2 block">{t('settings.jellyfinMaxRetries')}</label>
+              <Input
+                type="number"
+                defaultValue={settings?.jellyfin_max_retries}
+                onBlur={(e) => updateMutation.mutate({ jellyfin_max_retries: parseInt(e.target.value) })}
+                placeholder="3"
+              />
+            </div>
+            <div>
+              <label className="text-xs sm:text-sm font-medium mb-2 block">{t('settings.jellyfinRateLimit')}</label>
+              <Input
+                type="number"
+                defaultValue={settings?.jellyfin_rate_limit_per_second}
+                onBlur={(e) => updateMutation.mutate({ jellyfin_rate_limit_per_second: parseInt(e.target.value) })}
+                placeholder="10"
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('settings.ollamaConfig')}</CardTitle>
+          <CardDescription>{t('settings.ollamaConfigDesc')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3 sm:space-y-4">
+          <div>
+            <label className="text-xs sm:text-sm font-medium mb-2 block">{t('settings.ollamaBaseUrl')}</label>
+            <Input
+              defaultValue={settings?.ollama_base_url}
+              onBlur={(e) => updateMutation.mutate({ ollama_base_url: e.target.value })}
+              placeholder="http://ollama:11434"
+            />
+            <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">
+              {t('settings.ollamaBaseUrlDesc')}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs sm:text-sm font-medium mb-2 block">{t('settings.ollamaTimeout')}</label>
+              <Input
+                type="number"
+                defaultValue={settings?.ollama_timeout}
+                onBlur={(e) => updateMutation.mutate({ ollama_timeout: parseInt(e.target.value) })}
+                placeholder="300"
+              />
+              <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">
+                {t('settings.ollamaTimeoutDesc')}
+              </p>
+            </div>
+            <div>
+              <label className="text-xs sm:text-sm font-medium mb-2 block">{t('settings.ollamaKeepAlive')}</label>
+              <Input
+                defaultValue={settings?.ollama_keep_alive}
+                onBlur={(e) => updateMutation.mutate({ ollama_keep_alive: e.target.value })}
+                placeholder="30m"
+              />
+              <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">
+                {t('settings.ollamaKeepAliveDesc')}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>{t('settings.translationSettings')}</CardTitle>
           <CardDescription>{t('settings.translationDesc')}</CardDescription>
         </CardHeader>
@@ -42,17 +151,6 @@ export function Settings() {
             <Input
               defaultValue={settings?.default_mt_model}
               onBlur={(e) => updateMutation.mutate({ default_mt_model: e.target.value })}
-            />
-          </div>
-
-          <div>
-            <label className="text-xs sm:text-sm font-medium mb-2 block">{t('settings.requiredLangs')}</label>
-            <Input
-              defaultValue={settings?.required_langs.join(', ')}
-              onBlur={(e) =>
-                updateMutation.mutate({ required_langs: e.target.value.split(',').map((s) => s.trim()) })
-              }
-              placeholder="zh-CN, en, ja"
             />
           </div>
 
@@ -100,7 +198,7 @@ export function Settings() {
         </CardHeader>
         <CardContent className="space-y-3 sm:space-y-4">
           <div>
-            <label className="text-xs sm:text-sm font-medium mb-2 block">ASR 引擎</label>
+            <label className="text-xs sm:text-sm font-medium mb-2 block">{t('settings.asrEngine')}</label>
             <Select
               defaultValue={settings?.asr_engine}
               onValueChange={(value) => updateMutation.mutate({ asr_engine: value as 'faster-whisper' | 'funasr' })}
@@ -114,7 +212,7 @@ export function Settings() {
               </SelectContent>
             </Select>
             <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">
-              选择 ASR 引擎：Faster Whisper (高性能) 或 FunASR (多语言支持)
+{t('settings.asrEngineDesc')}
             </p>
           </div>
 
@@ -142,7 +240,7 @@ export function Settings() {
 
           {settings?.asr_engine === 'funasr' && (
             <div>
-              <label className="text-xs sm:text-sm font-medium mb-2 block">FunASR 模型</label>
+              <label className="text-xs sm:text-sm font-medium mb-2 block">{t('settings.funasrModel')}</label>
               <Select
                 defaultValue={settings?.funasr_model}
                 onValueChange={(value) => updateMutation.mutate({ funasr_model: value })}
@@ -151,13 +249,13 @@ export function Settings() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="paraformer-zh">Paraformer (中文)</SelectItem>
-                  <SelectItem value="paraformer-en">Paraformer (英文)</SelectItem>
-                  <SelectItem value="sensevoicesmall">SenseVoice Small (多语言)</SelectItem>
+                  <SelectItem value="paraformer-zh">{t('settings.paraformerZh')}</SelectItem>
+                  <SelectItem value="paraformer-en">{t('settings.paraformerEn')}</SelectItem>
+                  <SelectItem value="sensevoicesmall">{t('settings.sensevoicesmall')}</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">
-                FunASR 针对中文和多语言场景优化
+{t('settings.funasrDesc')}
               </p>
             </div>
           )}
@@ -213,17 +311,17 @@ export function Settings() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
             <FolderOpen className="h-4 w-4 sm:h-5 sm:w-5" />
-            收藏的媒体路径
+{t('settings.favoriteMediaPaths')}
           </CardTitle>
           <CardDescription className="text-[10px] sm:text-xs">
-            管理常用的本地媒体文件夹路径，方便快速访问
+            {t('settings.favoriteMediaPathsDesc')}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 sm:space-y-4">
           {/* Add new path */}
           <div className="flex gap-2">
             <Input
-              placeholder="/path/to/media/directory (例如: /media/movies)"
+              placeholder={t('settings.pathPlaceholder')}
               value={newPath}
               onChange={(e) => setNewPath(e.target.value)}
               onKeyPress={(e) => {
@@ -255,7 +353,7 @@ export function Settings() {
               className="shrink-0"
             >
               <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline ml-2">添加</span>
+              <span className="hidden sm:inline ml-2">{t('settings.addPath')}</span>
             </Button>
           </div>
 
@@ -289,7 +387,7 @@ export function Settings() {
               ))
             ) : (
               <p className="text-xs sm:text-sm text-muted-foreground text-center py-4">
-                暂无收藏路径，添加常用的媒体文件夹以便快速访问
+{t('settings.noFavoritePaths')}
               </p>
             )}
           </div>

@@ -22,6 +22,9 @@ import {
   Wrench,
   Zap,
   Terminal,
+  BookOpen,
+  Cloud,
+  Boxes,
 } from 'lucide-react'
 import { useUIStore } from '@/stores/useUIStore'
 import { cn } from '@/lib/utils'
@@ -70,6 +73,11 @@ const navigationGroups: NavigationGroup[] = [
         href: '/subtitles',
         icon: FileText,
       },
+      {
+        nameKey: 'nav.translationMemory',
+        href: '/translation-memory',
+        icon: BookOpen,
+      },
     ],
   },
   {
@@ -111,6 +119,16 @@ const navigationGroups: NavigationGroup[] = [
         nameKey: 'nav.models',
         href: '/models',
         icon: Cpu,
+      },
+      {
+        nameKey: 'nav.aiProviders',
+        href: '/ai-providers',
+        icon: Cloud,
+      },
+      {
+        nameKey: 'nav.aiModels',
+        href: '/ai-models',
+        icon: Boxes,
       },
       {
         nameKey: 'nav.cache',

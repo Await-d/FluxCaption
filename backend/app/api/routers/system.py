@@ -72,6 +72,7 @@ class SystemStatsResponse(BaseModel):
     total_jobs: int
     queued_jobs: int
     running_jobs: int
+    paused_jobs: int
     completed_jobs: int
     failed_jobs: int
     cancelled_jobs: int
@@ -238,7 +239,12 @@ async def scan_all_libraries(
     """
     try:
         # Get required languages
-        required_langs = request.required_langs or settings.required_langs.split(",")
+        # 如果请求中提供了语言列表则使用，否则从自动翻译规则推断
+        if request.required_langs:
+            required_langs = request.required_langs
+        else:
+            from app.services.detector import get_required_langs_from_rules
+            required_langs = get_required_langs_from_rules(db)
 
         # Submit scan task
         task = scan_library_task.apply_async(
@@ -281,6 +287,7 @@ async def get_system_stats(
             "total_jobs": db.query(TranslationJob).count(),
             "queued_jobs": db.query(TranslationJob).filter(TranslationJob.status == "queued").count(),
             "running_jobs": db.query(TranslationJob).filter(TranslationJob.status == "running").count(),
+            "paused_jobs": db.query(TranslationJob).filter(TranslationJob.status == "paused").count(),
             "completed_jobs": db.query(TranslationJob).filter(TranslationJob.status == "completed").count(),
             "failed_jobs": db.query(TranslationJob).filter(TranslationJob.status == "failed").count(),
             "cancelled_jobs": db.query(TranslationJob).filter(TranslationJob.status == "cancelled").count(),

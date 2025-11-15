@@ -70,16 +70,16 @@ services:
       - fluxcaption-network
 
   # =============================================================================
-  # FastAPI Application (Backend)
+  # FastAPI Application (Backend + Frontend)
   # =============================================================================
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: fluxcaption-backend
     command: /app/start.sh
     ports:
-      - "8000:8000"
+      - "80:8000"
     env_file:
       - .env
     environment:
@@ -121,8 +121,8 @@ services:
   # =============================================================================
   beat:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: fluxcaption-beat
     command: celery -A app.workers.celery_app beat -l INFO
     env_file:
@@ -138,29 +138,6 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    restart: unless-stopped
-    networks:
-      - fluxcaption-network
-
-# =============================================================================
-  # Frontend (Nginx + React)
-  # =============================================================================
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: fluxcaption-frontend
-    ports:
-      - "80:80"
-    depends_on:
-      backend:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1/"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
     restart: unless-stopped
     networks:
       - fluxcaption-network
