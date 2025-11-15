@@ -5,9 +5,9 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/Dialog'
-import { Badge } from '@/components/ui/Badge'
-import api from '@/lib/api'
+} from '../components/ui/Dialog'
+import { Badge } from '../components/ui/Badge'
+import api from '../lib/api'
 import { useTranslation } from 'react-i18next'
 
 interface TaskLogsDialogProps {

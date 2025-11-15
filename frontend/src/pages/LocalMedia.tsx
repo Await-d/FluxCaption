@@ -11,10 +11,10 @@ import {
   AlertCircle,
   Info,
 } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
-import { Button } from '@/components/ui/Button'
-import { Badge } from '@/components/ui/Badge'
-import { Input } from '@/components/ui/Input'
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
+import { Button } from '../components/ui/Button'
+import { Badge } from '../components/ui/Badge'
+import { Input } from '../components/ui/Input'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,17 +24,17 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/AlertDialog'
-import { Alert, AlertDescription } from '@/components/ui/Alert'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/Select'
-import api from '@/lib/api'
-import { formatBytes, getLanguageName } from '@/lib/utils'
+} from '../components/ui/AlertDialog'
+import { Alert, AlertDescription } from '../components/ui/Alert'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/Select'
+import api from '../lib/api'
+import { formatBytes, getLanguageName } from '../lib/utils'
 import type {
   MediaFileResponse,
   ScanDirectoryResponse,
   DirectoryStatsResponse,
   AppSettings,
-} from '@/types/api'
+} from '../types/api'
 import { useTranslation } from 'react-i18next'
 
 export function LocalMedia() {
