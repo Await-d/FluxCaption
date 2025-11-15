@@ -5,7 +5,7 @@ Defines the abstract interface that all AI providers must implement.
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional, AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 
 
@@ -18,9 +18,9 @@ class AIModelInfo:
     provider: str
     context_length: int
     supports_streaming: bool = True
-    cost_per_1k_input_tokens: Optional[float] = None
-    cost_per_1k_output_tokens: Optional[float] = None
-    description: Optional[str] = None
+    cost_per_1k_input_tokens: float | None = None
+    cost_per_1k_output_tokens: float | None = None
+    description: str | None = None
 
 
 @dataclass
@@ -30,9 +30,9 @@ class AIGenerateResponse:
     text: str
     model: str
     provider: str
-    input_tokens: Optional[int] = None
-    output_tokens: Optional[int] = None
-    finish_reason: Optional[str] = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    finish_reason: str | None = None
 
 
 class BaseAIProvider(ABC):
@@ -44,11 +44,7 @@ class BaseAIProvider(ABC):
     """
 
     def __init__(
-        self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        timeout: int = 300,
-        **kwargs
+        self, api_key: str | None = None, base_url: str | None = None, timeout: int = 300, **kwargs
     ):
         """
         Initialize AI provider.
@@ -107,10 +103,10 @@ class BaseAIProvider(ABC):
         self,
         model: str,
         prompt: str,
-        system: Optional[str] = None,
+        system: str | None = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
-        **kwargs
+        max_tokens: int | None = None,
+        **kwargs,
     ) -> AIGenerateResponse:
         """
         Generate text using a model.
@@ -135,10 +131,10 @@ class BaseAIProvider(ABC):
         self,
         model: str,
         prompt: str,
-        system: Optional[str] = None,
+        system: str | None = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
-        **kwargs
+        max_tokens: int | None = None,
+        **kwargs,
     ) -> AsyncIterator[str]:
         """
         Generate text using a model with streaming response.
@@ -164,14 +160,14 @@ class BaseAIProvider(ABC):
             system=system,
             temperature=temperature,
             max_tokens=max_tokens,
-            **kwargs
+            **kwargs,
         )
         yield response.text
 
     async def pull_model(
         self,
         model_name: str,
-        progress_callback: Optional[Callable[[dict], None]] = None,
+        progress_callback: Callable[[dict], None] | None = None,
     ) -> None:
         """
         Pull/download a model (only for providers that support it).
@@ -183,9 +179,7 @@ class BaseAIProvider(ABC):
         Raises:
             NotImplementedError: If provider doesn't support model pulling
         """
-        raise NotImplementedError(
-            f"{self.provider_name} does not support model pulling"
-        )
+        raise NotImplementedError(f"{self.provider_name} does not support model pulling")
 
     async def delete_model(self, model_name: str) -> None:
         """
@@ -197,9 +191,7 @@ class BaseAIProvider(ABC):
         Raises:
             NotImplementedError: If provider doesn't support model deletion
         """
-        raise NotImplementedError(
-            f"{self.provider_name} does not support model deletion"
-        )
+        raise NotImplementedError(f"{self.provider_name} does not support model deletion")
 
     async def health_check(self) -> bool:
         """

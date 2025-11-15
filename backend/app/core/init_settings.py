@@ -5,9 +5,10 @@ Initialize default system configuration values in the database.
 """
 
 import logging
-from typing import Dict, Any, Optional
-from sqlalchemy.orm import Session
+from typing import Any
+
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.models.setting import Setting
 
@@ -15,53 +16,53 @@ logger = logging.getLogger(__name__)
 
 
 # Configuration validation constraints
-CONFIG_CONSTRAINTS: Dict[str, Dict[str, Any]] = {
+CONFIG_CONSTRAINTS: dict[str, dict[str, Any]] = {
     "asr_auto_segment_threshold": {
-        "min": 60,           # At least 1 minute
-        "max": 7200,         # Max 2 hours
-        "step": 60,          # 1 minute steps
+        "min": 60,  # At least 1 minute
+        "max": 7200,  # Max 2 hours
+        "step": 60,  # 1 minute steps
         "unit": "seconds",
-        "description_suffix": "Must be between 60 and 7200 seconds"
+        "description_suffix": "Must be between 60 and 7200 seconds",
     },
     "task_resume_paused_jobs_interval": {
-        "min": 300,          # At least 5 minutes
-        "max": 86400,        # Max 24 hours
-        "step": 300,         # 5 minute steps
+        "min": 300,  # At least 5 minutes
+        "max": 86400,  # Max 24 hours
+        "step": 300,  # 5 minute steps
         "unit": "seconds",
-        "description_suffix": "Must be between 300 and 86400 seconds"
+        "description_suffix": "Must be between 300 and 86400 seconds",
     },
     "task_check_quota_limits_interval": {
-        "min": 300,          # At least 5 minutes
-        "max": 86400,        # Max 24 hours
-        "step": 300,         # 5 minute steps
+        "min": 300,  # At least 5 minutes
+        "max": 86400,  # Max 24 hours
+        "step": 300,  # 5 minute steps
         "unit": "seconds",
-        "description_suffix": "Must be between 300 and 86400 seconds"
+        "description_suffix": "Must be between 300 and 86400 seconds",
     },
     "task_quota_check_cache_ttl": {
-        "min": 10,           # At least 10 seconds
-        "max": 600,          # Max 10 minutes
-        "step": 10,          # 10 second steps
+        "min": 10,  # At least 10 seconds
+        "max": 600,  # Max 10 minutes
+        "step": 10,  # 10 second steps
         "unit": "seconds",
-        "description_suffix": "Must be between 10 and 600 seconds"
+        "description_suffix": "Must be between 10 and 600 seconds",
     },
     "translation_batch_size": {
         "min": 1,
         "max": 100,
         "step": 1,
         "unit": "lines",
-        "description_suffix": "Must be between 1 and 100 lines"
+        "description_suffix": "Must be between 1 and 100 lines",
     },
     "translation_max_line_length": {
         "min": 20,
         "max": 200,
         "step": 1,
         "unit": "characters",
-        "description_suffix": "Must be between 20 and 200 characters"
+        "description_suffix": "Must be between 20 and 200 characters",
     },
 }
 
 
-def validate_setting_value(key: str, value: str) -> tuple[bool, Optional[str]]:
+def validate_setting_value(key: str, value: str) -> tuple[bool, str | None]:
     """
     Validate setting value against constraints.
 
@@ -100,7 +101,7 @@ def validate_setting_value(key: str, value: str) -> tuple[bool, Optional[str]]:
         return True, None
 
     except (ValueError, TypeError):
-        return False, f"Value must be a valid integer"
+        return False, "Value must be a valid integer"
 
 
 def init_system_settings(db: Session) -> None:
@@ -126,9 +127,8 @@ def init_system_settings(db: Session) -> None:
             "description": "Audio duration threshold (seconds) for automatic segmentation. Videos longer than this will be split into segments for ASR processing.",
             "category": "asr",
             "is_editable": True,
-            "value_type": "int"
+            "value_type": "int",
         },
-
         # Task Scheduling Configuration
         {
             "key": "task_resume_paused_jobs_interval",
@@ -136,7 +136,7 @@ def init_system_settings(db: Session) -> None:
             "description": "Interval in seconds to check and resume paused jobs (default: 1 hour). Paused jobs will be automatically resumed when their quota resets.",
             "category": "tasks",
             "is_editable": True,
-            "value_type": "int"
+            "value_type": "int",
         },
         {
             "key": "task_check_quota_limits_interval",
@@ -144,7 +144,7 @@ def init_system_settings(db: Session) -> None:
             "description": "Interval in seconds to check quota limits (default: 2 hours). System will periodically verify quota status and pause jobs if needed.",
             "category": "tasks",
             "is_editable": True,
-            "value_type": "int"
+            "value_type": "int",
         },
         {
             "key": "task_quota_check_cache_ttl",
@@ -152,9 +152,8 @@ def init_system_settings(db: Session) -> None:
             "description": "Time-to-live for quota check cache in seconds (default: 1 minute). Caching reduces database queries during translation loops.",
             "category": "tasks",
             "is_editable": True,
-            "value_type": "int"
+            "value_type": "int",
         },
-
         # Translation Configuration
         {
             "key": "translation_batch_size",
@@ -162,7 +161,7 @@ def init_system_settings(db: Session) -> None:
             "description": "Number of subtitle lines to translate in a single batch. Larger batches improve efficiency but use more memory.",
             "category": "translation",
             "is_editable": True,
-            "value_type": "int"
+            "value_type": "int",
         },
         {
             "key": "translation_max_line_length",
@@ -170,7 +169,7 @@ def init_system_settings(db: Session) -> None:
             "description": "Maximum character length per subtitle line. Lines exceeding this will be split.",
             "category": "translation",
             "is_editable": True,
-            "value_type": "int"
+            "value_type": "int",
         },
     ]
 
@@ -198,9 +197,7 @@ def init_system_settings(db: Session) -> None:
 
     db.commit()
 
-    logger.info(
-        f"System settings initialized: {created_count} created, {updated_count} updated"
-    )
+    logger.info(f"System settings initialized: {created_count} created, {updated_count} updated")
 
 
 def get_setting_value(db: Session, key: str, default: str = None) -> str:

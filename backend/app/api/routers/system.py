@@ -4,22 +4,19 @@ System management and batch operations endpoints.
 Provides centralized control for all background tasks and system operations.
 """
 
-import json
-from typing import List
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-from sqlalchemy import func, or_
-from pydantic import BaseModel
 
-from app.core.db import get_db
-from app.models.user import User
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
 from app.api.routers.auth import get_current_user
-from app.core.config import settings
+from app.core.db import get_db
 from app.core.logging import get_logger
 from app.models.translation_job import TranslationJob
-from app.workers.tasks import scan_library_task, translate_subtitle_task, asr_then_translate_task
+from app.models.user import User
 from app.workers.celery_app import celery_app
+from app.workers.tasks import asr_then_translate_task, scan_library_task, translate_subtitle_task
 
 logger = get_logger(__name__)
 
@@ -28,14 +25,17 @@ router = APIRouter(prefix="/api/system", tags=["System Management"])
 
 # === Request/Response Schemas ===
 
+
 class BatchOperationRequest(BaseModel):
     """Request for batch operations on jobs."""
-    job_ids: List[UUID] = []
+
+    job_ids: list[UUID] = []
     status_filter: str | None = None  # Filter by status: queued, running, failed, completed
 
 
 class BatchOperationResponse(BaseModel):
     """Response for batch operations."""
+
     success: bool
     affected_count: int
     message: str
@@ -43,18 +43,21 @@ class BatchOperationResponse(BaseModel):
 
 class ScanAllLibrariesRequest(BaseModel):
     """Request to scan all Jellyfin libraries."""
+
     force_rescan: bool = False
-    required_langs: List[str] | None = None
+    required_langs: list[str] | None = None
 
 
 class ScanAllLibrariesResponse(BaseModel):
     """Response for scan all libraries operation."""
+
     task_id: str
     message: str
 
 
 class QueueStatsResponse(BaseModel):
     """Celery queue statistics."""
+
     translate_queue: int
     asr_queue: int
     scan_queue: int
@@ -63,12 +66,14 @@ class QueueStatsResponse(BaseModel):
 
 class WorkerStatsResponse(BaseModel):
     """Celery worker statistics."""
+
     active_workers: int
-    workers: List[dict]
+    workers: list[dict]
 
 
 class SystemStatsResponse(BaseModel):
     """System statistics."""
+
     total_jobs: int
     queued_jobs: int
     running_jobs: int
@@ -79,6 +84,7 @@ class SystemStatsResponse(BaseModel):
 
 
 # === Batch Operations ===
+
 
 @router.post("/batch/start-all-queued", response_model=BatchOperationResponse)
 async def batch_start_all_queued(
@@ -93,9 +99,7 @@ async def batch_start_all_queued(
     """
     try:
         # Get all queued jobs
-        queued_jobs = db.query(TranslationJob).filter(
-            TranslationJob.status == "queued"
-        ).all()
+        queued_jobs = db.query(TranslationJob).filter(TranslationJob.status == "queued").all()
 
         started_count = 0
         for job in queued_jobs:
@@ -130,7 +134,7 @@ async def batch_start_all_queued(
         return BatchOperationResponse(
             success=True,
             affected_count=started_count,
-            message=f"Successfully started {started_count} queued jobs"
+            message=f"Successfully started {started_count} queued jobs",
         )
 
     except Exception as e:
@@ -151,20 +155,16 @@ async def batch_cancel_all_running(
     """
     try:
         # Get all running and queued jobs
-        jobs = db.query(TranslationJob).filter(
-            TranslationJob.status.in_(["queued", "running"])
-        ).all()
+        jobs = (
+            db.query(TranslationJob).filter(TranslationJob.status.in_(["queued", "running"])).all()
+        )
 
         cancelled_count = 0
         for job in jobs:
             try:
                 # Revoke Celery task if exists
                 if job.celery_task_id:
-                    celery_app.control.revoke(
-                        job.celery_task_id,
-                        terminate=True,
-                        signal='SIGKILL'
-                    )
+                    celery_app.control.revoke(job.celery_task_id, terminate=True, signal="SIGKILL")
 
                 # Update job status
                 job.status = "cancelled"
@@ -180,7 +180,7 @@ async def batch_cancel_all_running(
         return BatchOperationResponse(
             success=True,
             affected_count=cancelled_count,
-            message=f"Successfully cancelled {cancelled_count} jobs"
+            message=f"Successfully cancelled {cancelled_count} jobs",
         )
 
     except Exception as e:
@@ -201,9 +201,11 @@ async def batch_delete_completed(
     """
     try:
         # Delete jobs with final status
-        deleted_count = db.query(TranslationJob).filter(
-            TranslationJob.status.in_(["completed", "failed", "cancelled"])
-        ).delete(synchronize_session=False)
+        deleted_count = (
+            db.query(TranslationJob)
+            .filter(TranslationJob.status.in_(["completed", "failed", "cancelled"]))
+            .delete(synchronize_session=False)
+        )
 
         db.commit()
 
@@ -211,7 +213,7 @@ async def batch_delete_completed(
         return BatchOperationResponse(
             success=True,
             affected_count=deleted_count,
-            message=f"Successfully deleted {deleted_count} completed jobs"
+            message=f"Successfully deleted {deleted_count} completed jobs",
         )
 
     except Exception as e:
@@ -221,6 +223,7 @@ async def batch_delete_completed(
 
 
 # === Library Scanning ===
+
 
 @router.post("/scan/all-libraries", response_model=ScanAllLibrariesResponse)
 async def scan_all_libraries(
@@ -244,6 +247,7 @@ async def scan_all_libraries(
             required_langs = request.required_langs
         else:
             from app.services.detector import get_required_langs_from_rules
+
             required_langs = get_required_langs_from_rules(db)
 
         # Submit scan task
@@ -261,7 +265,7 @@ async def scan_all_libraries(
 
         return ScanAllLibrariesResponse(
             task_id=str(task.id),
-            message=f"Scan task queued for all libraries with languages: {', '.join(required_langs)}"
+            message=f"Scan task queued for all libraries with languages: {', '.join(required_langs)}",
         )
 
     except Exception as e:
@@ -270,6 +274,7 @@ async def scan_all_libraries(
 
 
 # === System Statistics ===
+
 
 @router.get("/stats", response_model=SystemStatsResponse)
 async def get_system_stats(
@@ -285,12 +290,24 @@ async def get_system_stats(
     try:
         stats = {
             "total_jobs": db.query(TranslationJob).count(),
-            "queued_jobs": db.query(TranslationJob).filter(TranslationJob.status == "queued").count(),
-            "running_jobs": db.query(TranslationJob).filter(TranslationJob.status == "running").count(),
-            "paused_jobs": db.query(TranslationJob).filter(TranslationJob.status == "paused").count(),
-            "completed_jobs": db.query(TranslationJob).filter(TranslationJob.status == "completed").count(),
-            "failed_jobs": db.query(TranslationJob).filter(TranslationJob.status == "failed").count(),
-            "cancelled_jobs": db.query(TranslationJob).filter(TranslationJob.status == "cancelled").count(),
+            "queued_jobs": db.query(TranslationJob)
+            .filter(TranslationJob.status == "queued")
+            .count(),
+            "running_jobs": db.query(TranslationJob)
+            .filter(TranslationJob.status == "running")
+            .count(),
+            "paused_jobs": db.query(TranslationJob)
+            .filter(TranslationJob.status == "paused")
+            .count(),
+            "completed_jobs": db.query(TranslationJob)
+            .filter(TranslationJob.status == "completed")
+            .count(),
+            "failed_jobs": db.query(TranslationJob)
+            .filter(TranslationJob.status == "failed")
+            .count(),
+            "cancelled_jobs": db.query(TranslationJob)
+            .filter(TranslationJob.status == "cancelled")
+            .count(),
         }
 
         return SystemStatsResponse(**stats)
@@ -324,43 +341,38 @@ async def get_queue_stats(
         scan_count = 0
 
         if reserved:
-            for worker, tasks in reserved.items():
+            for _worker, tasks in reserved.items():
                 for task in tasks:
-                    queue = task.get('delivery_info', {}).get('routing_key', '')
-                    if 'translate' in queue:
+                    queue = task.get("delivery_info", {}).get("routing_key", "")
+                    if "translate" in queue:
                         translate_count += 1
-                    elif 'asr' in queue:
+                    elif "asr" in queue:
                         asr_count += 1
-                    elif 'scan' in queue:
+                    elif "scan" in queue:
                         scan_count += 1
 
         if active:
-            for worker, tasks in active.items():
+            for _worker, tasks in active.items():
                 for task in tasks:
-                    queue = task.get('delivery_info', {}).get('routing_key', '')
-                    if 'translate' in queue:
+                    queue = task.get("delivery_info", {}).get("routing_key", "")
+                    if "translate" in queue:
                         translate_count += 1
-                    elif 'asr' in queue:
+                    elif "asr" in queue:
                         asr_count += 1
-                    elif 'scan' in queue:
+                    elif "scan" in queue:
                         scan_count += 1
 
         return QueueStatsResponse(
             translate_queue=translate_count,
             asr_queue=asr_count,
             scan_queue=scan_count,
-            total=translate_count + asr_count + scan_count
+            total=translate_count + asr_count + scan_count,
         )
 
     except Exception as e:
         logger.error(f"Failed to get queue stats: {e}", exc_info=True)
         # Return zeros on error
-        return QueueStatsResponse(
-            translate_queue=0,
-            asr_queue=0,
-            scan_queue=0,
-            total=0
-        )
+        return QueueStatsResponse(translate_queue=0, asr_queue=0, scan_queue=0, total=0)
 
 
 @router.get("/worker-stats", response_model=WorkerStatsResponse)
@@ -381,20 +393,16 @@ async def get_worker_stats(
         workers = []
         if stats:
             for worker_name, worker_stats in stats.items():
-                workers.append({
-                    "name": worker_name,
-                    "total_tasks": worker_stats.get("total", {}),
-                    "pool": worker_stats.get("pool", {}),
-                })
+                workers.append(
+                    {
+                        "name": worker_name,
+                        "total_tasks": worker_stats.get("total", {}),
+                        "pool": worker_stats.get("pool", {}),
+                    }
+                )
 
-        return WorkerStatsResponse(
-            active_workers=len(workers),
-            workers=workers
-        )
+        return WorkerStatsResponse(active_workers=len(workers), workers=workers)
 
     except Exception as e:
         logger.error(f"Failed to get worker stats: {e}", exc_info=True)
-        return WorkerStatsResponse(
-            active_workers=0,
-            workers=[]
-        )
+        return WorkerStatsResponse(active_workers=0, workers=[])

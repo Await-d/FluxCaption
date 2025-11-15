@@ -5,21 +5,22 @@ Provides API for managing Ollama models.
 """
 
 from typing import Annotated
-from fastapi import APIRouter, HTTPException, status, BackgroundTasks, Depends
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.core.db import get_db
-from app.models.user import User
 from app.api.routers.auth import get_current_user
-from app.services.ollama_client import ollama_client
-from app.models.model_registry import ModelRegistry
-from app.schemas.models import (
-    ModelInfo,
-    ModelPullRequest,
-    ModelDeleteResponse,
-    ModelListResponse,
-)
+from app.core.db import get_db
 from app.core.logging import get_logger
+from app.models.model_registry import ModelRegistry
+from app.models.user import User
+from app.schemas.models import (
+    ModelDeleteResponse,
+    ModelInfo,
+    ModelListResponse,
+    ModelPullRequest,
+)
+from app.services.ollama_client import ollama_client
 
 logger = get_logger(__name__)
 
@@ -133,10 +134,7 @@ async def pull_model_task(model_name: str, db: Session) -> None:
 
         # Get model info from Ollama to update size and details
         ollama_models = await ollama_client.list_models()
-        ollama_model = next(
-            (m for m in ollama_models if m.get("name") == model_name),
-            None
-        )
+        ollama_model = next((m for m in ollama_models if m.get("name") == model_name), None)
 
         # Update status to available and populate size info
         if model:
@@ -191,9 +189,7 @@ async def pull_model(
     """
     try:
         # Check if model already exists
-        existing_model = db.query(ModelRegistry).filter(
-            ModelRegistry.name == request.name
-        ).first()
+        existing_model = db.query(ModelRegistry).filter(ModelRegistry.name == request.name).first()
 
         if existing_model and existing_model.status == "pulling":
             return {
@@ -274,7 +270,6 @@ async def delete_model(
         )
 
 
-
 @router.post(
     "/{model_name}/test",
     summary="Test a model",
@@ -298,7 +293,7 @@ async def test_model(
         HTTPException: If test fails
     """
     import time
-    
+
     try:
         # Check if model exists in Ollama
         models = await ollama_client.list_models()
@@ -311,7 +306,7 @@ async def test_model(
         # Run test generation
         test_prompt = "Translate to English: 你好"
         start_time = time.time()
-        
+
         response = await ollama_client.generate(
             model=model_name,
             prompt=test_prompt,
@@ -319,7 +314,7 @@ async def test_model(
             temperature=0.3,
             max_tokens=50,
         )
-        
+
         elapsed_time = time.time() - start_time
 
         # Update model registry
@@ -344,18 +339,17 @@ async def test_model(
         raise
     except Exception as e:
         logger.error(f"Failed to test model {model_name}: {e}", exc_info=True)
-        
+
         # Update model status to error
         model = db.query(ModelRegistry).filter(ModelRegistry.name == model_name).first()
         if model:
             model.status = "error"
             db.commit()
-        
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to test model: {str(e)}",
         )
-
 
 
 @router.post(
@@ -405,9 +399,8 @@ async def set_default_model(
 
         # Update database setting
         from app.models.setting import Setting
-        default_model_setting = db.query(Setting).filter(
-            Setting.key == "default_mt_model"
-        ).first()
+
+        default_model_setting = db.query(Setting).filter(Setting.key == "default_mt_model").first()
 
         if default_model_setting:
             default_model_setting.value = model_name
@@ -423,6 +416,7 @@ async def set_default_model(
 
         # Update runtime settings instance
         from app.core.config import settings
+
         settings.default_mt_model = model_name
 
         logger.info(f"Set default model to: {model_name} (updated both DB and runtime config)")

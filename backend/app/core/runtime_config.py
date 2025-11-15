@@ -4,13 +4,12 @@ Runtime configuration loader.
 Loads configuration from database settings, with fallback to environment variables.
 """
 
-from typing import Optional
-from sqlalchemy.orm import Session
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
+from app.core.config import settings as env_settings
 from app.core.logging import get_logger
 from app.models.setting import Setting
-from app.core.config import settings as env_settings
 
 logger = get_logger(__name__)
 
@@ -30,7 +29,7 @@ class RuntimeConfig:
         self.db = db
         self._cache = {}
 
-    def get_int(self, key: str, fallback: Optional[int] = None) -> int:
+    def get_int(self, key: str, fallback: int | None = None) -> int:
         """
         Get integer configuration value.
 
@@ -75,7 +74,7 @@ class RuntimeConfig:
 
         raise ValueError(f"Configuration key '{key}' not found and no fallback provided")
 
-    def get_str(self, key: str, fallback: Optional[str] = None) -> str:
+    def get_str(self, key: str, fallback: str | None = None) -> str:
         """
         Get string configuration value.
 
@@ -121,7 +120,7 @@ class RuntimeConfig:
 
 
 # Global runtime config instance (will be initialized with database session)
-_runtime_config: Optional[RuntimeConfig] = None
+_runtime_config: RuntimeConfig | None = None
 
 
 def get_runtime_config(db: Session = None) -> RuntimeConfig:

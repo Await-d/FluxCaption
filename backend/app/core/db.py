@@ -4,10 +4,11 @@ Database configuration and session management.
 Uses synchronous SQLAlchemy with session_scope pattern for transaction management.
 """
 
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Generator
+
 import sqlalchemy as sa
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
@@ -19,6 +20,7 @@ logger = get_logger(__name__)
 # =============================================================================
 # Database Engine Configuration
 # =============================================================================
+
 
 def get_engine_args() -> dict:
     """
@@ -46,10 +48,7 @@ def get_engine_args() -> dict:
 
 
 # Create the synchronous engine
-engine = sa.create_engine(
-    settings.database_url,
-    **get_engine_args()
-)
+engine = sa.create_engine(settings.database_url, **get_engine_args())
 
 # Create session factory
 SessionLocal = sessionmaker(
@@ -63,6 +62,7 @@ SessionLocal = sessionmaker(
 # =============================================================================
 # Session Management
 # =============================================================================
+
 
 @contextmanager
 def session_scope() -> Generator[Session, None, None]:
@@ -128,6 +128,7 @@ def get_db() -> Generator[Session, None, None]:
 # Database Initialization and Health Check
 # =============================================================================
 
+
 def init_db() -> None:
     """
     Initialize the database.
@@ -177,6 +178,7 @@ def close_db() -> None:
 # =============================================================================
 # Database Utilities
 # =============================================================================
+
 
 def get_db_info() -> dict:
     """

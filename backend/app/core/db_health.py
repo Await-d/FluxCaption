@@ -4,13 +4,14 @@ Database Health Check and Auto-Repair Service.
 Automatically detects and fixes database schema inconsistencies.
 """
 
+from typing import Any
+
 import sqlalchemy as sa
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
-from typing import List, Dict, Any
 
-from app.core.logging import get_logger
 from app.core.db import engine
+from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -22,7 +23,7 @@ class DatabaseHealthChecker:
         self.session = session
         self.inspector = inspect(engine)
 
-    def check_health(self) -> Dict[str, Any]:
+    def check_health(self) -> dict[str, Any]:
         """
         Run comprehensive database health check.
 
@@ -65,7 +66,7 @@ class DatabaseHealthChecker:
         logger.info(f"Database health check completed: {results['overall_status']}")
         return results
 
-    def auto_repair(self) -> Dict[str, Any]:
+    def auto_repair(self) -> dict[str, Any]:
         """
         Attempt to automatically repair database issues.
 
@@ -102,15 +103,15 @@ class DatabaseHealthChecker:
 
         return results
 
-    def _check_required_tables(self) -> Dict[str, Any]:
+    def _check_required_tables(self) -> dict[str, Any]:
         """Check if all required tables exist."""
         required_tables = [
-            'ai_provider_configs',
-            'ai_provider_quotas',
-            'ai_provider_usage_logs',
-            'model_registry',
-            'translation_jobs',
-            'users',
+            "ai_provider_configs",
+            "ai_provider_quotas",
+            "ai_provider_usage_logs",
+            "model_registry",
+            "translation_jobs",
+            "users",
         ]
 
         existing_tables = self.inspector.get_table_names()
@@ -119,22 +120,24 @@ class DatabaseHealthChecker:
         return {
             "name": "required_tables",
             "passed": len(missing_tables) == 0,
-            "message": f"Missing tables: {missing_tables}" if missing_tables else "All required tables exist",
+            "message": f"Missing tables: {missing_tables}"
+            if missing_tables
+            else "All required tables exist",
             "missing": missing_tables,
         }
 
-    def _check_required_columns(self) -> Dict[str, Any]:
+    def _check_required_columns(self) -> dict[str, Any]:
         """Check if required columns exist in tables."""
         required_columns = {
-            'model_registry': ['provider', 'name', 'context_length', 'cost_input_per_1k'],
-            'ai_provider_configs': ['provider_name', 'is_enabled', 'api_key'],
-            'ai_provider_quotas': ['provider_name', 'daily_limit', 'monthly_limit'],
+            "model_registry": ["provider", "name", "context_length", "cost_input_per_1k"],
+            "ai_provider_configs": ["provider_name", "is_enabled", "api_key"],
+            "ai_provider_quotas": ["provider_name", "daily_limit", "monthly_limit"],
         }
 
         missing = {}
         for table, columns in required_columns.items():
             if table in self.inspector.get_table_names():
-                existing_cols = {col['name'] for col in self.inspector.get_columns(table)}
+                existing_cols = {col["name"] for col in self.inspector.get_columns(table)}
                 missing_cols = [c for c in columns if c not in existing_cols]
                 if missing_cols:
                     missing[table] = missing_cols
@@ -146,18 +149,18 @@ class DatabaseHealthChecker:
             "missing": missing,
         }
 
-    def _check_required_indexes(self) -> Dict[str, Any]:
+    def _check_required_indexes(self) -> dict[str, Any]:
         """Check if required indexes exist."""
         required_indexes = {
-            'model_registry': ['idx_model_provider_status'],
-            'ai_provider_configs': ['idx_provider_enabled', 'idx_provider_priority'],
-            'ai_provider_usage_logs': ['idx_usage_date', 'idx_usage_cost'],
+            "model_registry": ["idx_model_provider_status"],
+            "ai_provider_configs": ["idx_provider_enabled", "idx_provider_priority"],
+            "ai_provider_usage_logs": ["idx_usage_date", "idx_usage_cost"],
         }
 
         missing = {}
         for table, indexes in required_indexes.items():
             if table in self.inspector.get_table_names():
-                existing_indexes = {idx['name'] for idx in self.inspector.get_indexes(table)}
+                existing_indexes = {idx["name"] for idx in self.inspector.get_indexes(table)}
                 missing_indexes = [idx for idx in indexes if idx not in existing_indexes]
                 if missing_indexes:
                     missing[table] = missing_indexes
@@ -169,14 +172,16 @@ class DatabaseHealthChecker:
             "missing": missing,
         }
 
-    def _check_data_integrity(self) -> Dict[str, Any]:
+    def _check_data_integrity(self) -> dict[str, Any]:
         """Check data integrity."""
         issues = []
 
         try:
             # Check for models without provider
             result = self.session.execute(
-                sa.text("SELECT COUNT(*) FROM model_registry WHERE provider IS NULL OR provider = ''")
+                sa.text(
+                    "SELECT COUNT(*) FROM model_registry WHERE provider IS NULL OR provider = ''"
+                )
             ).scalar()
 
             if result > 0:
@@ -209,7 +214,9 @@ class DatabaseHealthChecker:
         try:
             # Update models without provider to 'ollama'
             result = self.session.execute(
-                sa.text("UPDATE model_registry SET provider = 'ollama' WHERE provider IS NULL OR provider = ''")
+                sa.text(
+                    "UPDATE model_registry SET provider = 'ollama' WHERE provider IS NULL OR provider = ''"
+                )
             )
             self.session.commit()
 
@@ -262,7 +269,7 @@ class DatabaseHealthChecker:
         return False
 
 
-def check_and_repair_database(session: Session) -> Dict[str, Any]:
+def check_and_repair_database(session: Session) -> dict[str, Any]:
     """
     Convenience function to check and repair database.
 

@@ -5,21 +5,18 @@ Automatically sync subtitle files to translation memory for building a comprehen
 translation database.
 """
 
-import hashlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional, List, Dict, Tuple
 from uuid import UUID
 
 import pysubs2
-import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
+from app.models.media_asset import MediaAsset
 from app.models.subtitle import Subtitle
 from app.models.subtitle_sync_record import SubtitleSyncRecord
 from app.models.translation_memory import TranslationMemory
-from app.models.media_asset import MediaAsset
 
 logger = get_logger(__name__)
 
@@ -27,6 +24,7 @@ logger = get_logger(__name__)
 # =============================================================================
 # Subtitle Matching Algorithm
 # =============================================================================
+
 
 class SubtitleMatcher:
     """
@@ -43,10 +41,8 @@ class SubtitleMatcher:
         self.time_tolerance_ms = time_tolerance_ms
 
     def match_by_timestamp(
-        self,
-        source_events: List[pysubs2.SSAEvent],
-        target_events: List[pysubs2.SSAEvent]
-    ) -> List[Tuple[pysubs2.SSAEvent, pysubs2.SSAEvent, float]]:
+        self, source_events: list[pysubs2.SSAEvent], target_events: list[pysubs2.SSAEvent]
+    ) -> list[tuple[pysubs2.SSAEvent, pysubs2.SSAEvent, float]]:
         """
         Match subtitle events by timestamp.
 
@@ -64,9 +60,7 @@ class SubtitleMatcher:
             best_confidence = 0.0
 
             for target_event in target_events:
-                confidence = self._calculate_timestamp_confidence(
-                    source_event, target_event
-                )
+                confidence = self._calculate_timestamp_confidence(source_event, target_event)
 
                 if confidence > best_confidence:
                     best_match = target_event
@@ -79,9 +73,7 @@ class SubtitleMatcher:
         return matches
 
     def _calculate_timestamp_confidence(
-        self,
-        event1: pysubs2.SSAEvent,
-        event2: pysubs2.SSAEvent
+        self, event1: pysubs2.SSAEvent, event2: pysubs2.SSAEvent
     ) -> float:
         """
         Calculate timestamp matching confidence.
@@ -119,11 +111,7 @@ class SubtitleMatcher:
 
         return 0.0
 
-    def _calculate_overlap(
-        self,
-        event1: pysubs2.SSAEvent,
-        event2: pysubs2.SSAEvent
-    ) -> float:
+    def _calculate_overlap(self, event1: pysubs2.SSAEvent, event2: pysubs2.SSAEvent) -> float:
         """
         Calculate overlap duration between two events.
 
@@ -142,6 +130,7 @@ class SubtitleMatcher:
 # =============================================================================
 # Subtitle Sync Service
 # =============================================================================
+
 
 class SubtitleSyncService:
     """
@@ -162,8 +151,8 @@ class SubtitleSyncService:
         self,
         subtitle_id: str,
         mode: str = "incremental",
-        paired_subtitle_id: Optional[str] = None,
-        progress_callback: Optional[callable] = None
+        paired_subtitle_id: str | None = None,
+        progress_callback: callable | None = None,
     ) -> SubtitleSyncRecord:
         """
         Sync a subtitle file to translation memory.
@@ -196,7 +185,7 @@ class SubtitleSyncService:
             status="running",
             sync_mode=mode,
             paired_subtitle_id=UUID(paired_subtitle_id) if paired_subtitle_id else None,
-            started_at=datetime.now(timezone.utc)
+            started_at=datetime.now(UTC),
         )
         self.session.add(sync_record)
         self.session.flush()
@@ -214,8 +203,7 @@ class SubtitleSyncService:
                 if paired_subtitle and Path(paired_subtitle.storage_path).exists():
                     paired_subs = pysubs2.load(paired_subtitle.storage_path)
                     logger.info(
-                        f"Loaded paired subtitle: {paired_subtitle.lang} "
-                        f"({len(paired_subs)} lines)"
+                        f"Loaded paired subtitle: {paired_subtitle.lang} ({len(paired_subs)} lines)"
                     )
 
             # Process based on mode
@@ -226,7 +214,7 @@ class SubtitleSyncService:
                     logger.info(f"Subtitle {subtitle_id} unchanged since last sync, skipping")
                     sync_record.status = "success"
                     sync_record.skipped_lines = sync_record.total_lines
-                    sync_record.finished_at = datetime.now(timezone.utc)
+                    sync_record.finished_at = datetime.now(UTC)
                     self.session.commit()
                     return sync_record
 
@@ -266,7 +254,7 @@ class SubtitleSyncService:
                     target_lang = None
                     if paired_subs and matches:
                         # Find matching target event
-                        for source_ev, target_ev, confidence in matches:
+                        for source_ev, target_ev, _confidence in matches:
                             if source_ev == event:
                                 target_text = target_ev.plaintext.strip()
                                 target_lang = paired_subtitle.lang
@@ -297,7 +285,7 @@ class SubtitleSyncService:
                             end_time=end_time,
                             word_count_source=len(source_text.split()),
                             word_count_target=len(target_text.split()),
-                            translation_model="subtitle_sync"  # Mark as synced from subtitle
+                            translation_model="subtitle_sync",  # Mark as synced from subtitle
                         )
                         self.session.add(tm_record)
                         synced += 1
@@ -324,12 +312,10 @@ class SubtitleSyncService:
             sync_record.skipped_lines = skipped
             sync_record.failed_lines = failed
             sync_record.status = "success"
-            sync_record.finished_at = datetime.now(timezone.utc)
+            sync_record.finished_at = datetime.now(UTC)
             self.session.commit()
 
-            logger.info(
-                f"Sync completed: {synced} synced, {skipped} skipped, {failed} failed"
-            )
+            logger.info(f"Sync completed: {synced} synced, {skipped} skipped, {failed} failed")
 
             return sync_record
 
@@ -337,14 +323,11 @@ class SubtitleSyncService:
             logger.error(f"Sync failed: {e}", exc_info=True)
             sync_record.status = "failed"
             sync_record.error_message = str(e)
-            sync_record.finished_at = datetime.now(timezone.utc)
+            sync_record.finished_at = datetime.now(UTC)
             self.session.commit()
             raise
 
-    def discover_subtitle_pairs(
-        self,
-        asset_id: str
-    ) -> List[Tuple[Subtitle, Subtitle]]:
+    def discover_subtitle_pairs(self, asset_id: str) -> list[tuple[Subtitle, Subtitle]]:
         """
         Discover all possible subtitle pairs for an asset.
 
@@ -355,16 +338,14 @@ class SubtitleSyncService:
             List of (source_subtitle, target_subtitle) tuples
         """
         # Get all subtitles for this asset
-        subtitles = self.session.query(Subtitle).filter(
-            Subtitle.asset_id == UUID(asset_id)
-        ).all()
+        subtitles = self.session.query(Subtitle).filter(Subtitle.asset_id == UUID(asset_id)).all()
 
         logger.info(f"Found {len(subtitles)} subtitles for asset {asset_id}")
 
         # Create pairs (avoid duplicates)
         pairs = []
         for i, source_sub in enumerate(subtitles):
-            for target_sub in subtitles[i+1:]:
+            for target_sub in subtitles[i + 1 :]:
                 if source_sub.lang != target_sub.lang:
                     pairs.append((source_sub, target_sub))
 
@@ -376,8 +357,8 @@ class SubtitleSyncService:
         asset_id: str,
         mode: str = "incremental",
         auto_pair: bool = True,
-        progress_callback: Optional[callable] = None
-    ) -> Dict[str, any]:
+        progress_callback: callable | None = None,
+    ) -> dict[str, any]:
         """
         Sync all subtitles for a media asset.
 
@@ -403,7 +384,7 @@ class SubtitleSyncService:
             "total_subtitles": 0,
             "synced_subtitles": 0,
             "failed_subtitles": 0,
-            "sync_records": []
+            "sync_records": [],
         }
 
         # Discover subtitle pairs
@@ -413,9 +394,7 @@ class SubtitleSyncService:
             logger.info(f"Auto-pairing enabled: found {len(pairs)} pairs")
 
         # Get all subtitles
-        subtitles = self.session.query(Subtitle).filter(
-            Subtitle.asset_id == UUID(asset_id)
-        ).all()
+        subtitles = self.session.query(Subtitle).filter(Subtitle.asset_id == UUID(asset_id)).all()
 
         results["total_subtitles"] = len(subtitles)
 
@@ -429,8 +408,7 @@ class SubtitleSyncService:
         for idx, (source_sub, target_sub) in enumerate(pairs, start=1):
             try:
                 logger.info(
-                    f"Syncing pair {idx}/{len(pairs)}: "
-                    f"{source_sub.lang} ↔ {target_sub.lang}"
+                    f"Syncing pair {idx}/{len(pairs)}: {source_sub.lang} ↔ {target_sub.lang}"
                 )
 
                 # Sync source → target
@@ -438,15 +416,17 @@ class SubtitleSyncService:
                     subtitle_id=str(source_sub.id),
                     mode=mode,
                     paired_subtitle_id=str(target_sub.id),
-                    progress_callback=progress_callback
+                    progress_callback=progress_callback,
                 )
-                results["sync_records"].append({
-                    "subtitle_id": str(source_sub.id),
-                    "lang": source_sub.lang,
-                    "paired_lang": target_sub.lang,
-                    "status": sync_record.status,
-                    "synced_lines": sync_record.synced_lines
-                })
+                results["sync_records"].append(
+                    {
+                        "subtitle_id": str(source_sub.id),
+                        "lang": source_sub.lang,
+                        "paired_lang": target_sub.lang,
+                        "status": sync_record.status,
+                        "synced_lines": sync_record.synced_lines,
+                    }
+                )
 
                 if sync_record.status == "success":
                     results["synced_subtitles"] += 1
@@ -464,10 +444,7 @@ class SubtitleSyncService:
 
         return results
 
-    def _get_last_successful_sync(
-        self,
-        subtitle_id: str
-    ) -> Optional[SubtitleSyncRecord]:
+    def _get_last_successful_sync(self, subtitle_id: str) -> SubtitleSyncRecord | None:
         """
         Get the last successful sync record for a subtitle.
 
@@ -477,17 +454,18 @@ class SubtitleSyncService:
         Returns:
             Last successful sync record or None
         """
-        return self.session.query(SubtitleSyncRecord).filter(
-            SubtitleSyncRecord.subtitle_id == UUID(subtitle_id),
-            SubtitleSyncRecord.status == "success"
-        ).order_by(SubtitleSyncRecord.created_at.desc()).first()
+        return (
+            self.session.query(SubtitleSyncRecord)
+            .filter(
+                SubtitleSyncRecord.subtitle_id == UUID(subtitle_id),
+                SubtitleSyncRecord.status == "success",
+            )
+            .order_by(SubtitleSyncRecord.created_at.desc())
+            .first()
+        )
 
     def _translation_exists(
-        self,
-        source_text: str,
-        source_lang: str,
-        target_text: str,
-        target_lang: str
+        self, source_text: str, source_lang: str, target_text: str, target_lang: str
     ) -> bool:
         """
         Check if a translation pair already exists.
@@ -501,19 +479,20 @@ class SubtitleSyncService:
         Returns:
             True if exists, False otherwise
         """
-        exists = self.session.query(TranslationMemory).filter(
-            TranslationMemory.source_text == source_text,
-            TranslationMemory.source_lang == source_lang,
-            TranslationMemory.target_text == target_text,
-            TranslationMemory.target_lang == target_lang
-        ).first()
+        exists = (
+            self.session.query(TranslationMemory)
+            .filter(
+                TranslationMemory.source_text == source_text,
+                TranslationMemory.source_lang == source_lang,
+                TranslationMemory.target_text == target_text,
+                TranslationMemory.target_lang == target_lang,
+            )
+            .first()
+        )
 
         return exists is not None
 
-    def get_sync_status(
-        self,
-        subtitle_id: str
-    ) -> Optional[SubtitleSyncRecord]:
+    def get_sync_status(self, subtitle_id: str) -> SubtitleSyncRecord | None:
         """
         Get the latest sync status for a subtitle.
 
@@ -523,7 +502,9 @@ class SubtitleSyncService:
         Returns:
             Latest sync record or None
         """
-        return self.session.query(SubtitleSyncRecord).filter(
-            SubtitleSyncRecord.subtitle_id == UUID(subtitle_id)
-        ).order_by(SubtitleSyncRecord.created_at.desc()).first()
-
+        return (
+            self.session.query(SubtitleSyncRecord)
+            .filter(SubtitleSyncRecord.subtitle_id == UUID(subtitle_id))
+            .order_by(SubtitleSyncRecord.created_at.desc())
+            .first()
+        )

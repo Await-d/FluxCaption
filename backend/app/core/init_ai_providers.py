@@ -4,10 +4,10 @@ AI Provider Initialization Service.
 Automatically initializes AI provider configurations from environment variables.
 """
 
-import json
-from typing import Optional
-from sqlalchemy.orm import Session
+from datetime import UTC
+
 import sqlalchemy as sa
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -137,9 +137,7 @@ def init_ai_providers(session: Session) -> None:
         provider_name = provider_data["provider_name"]
 
         # Check if exists
-        stmt = sa.select(AIProviderConfig).where(
-            AIProviderConfig.provider_name == provider_name
-        )
+        stmt = sa.select(AIProviderConfig).where(AIProviderConfig.provider_name == provider_name)
         existing = session.execute(stmt).scalar_one_or_none()
 
         if existing:
@@ -211,12 +209,10 @@ def _init_provider_quota(
         provider_name: Provider name
         quota_config: Quota configuration dict
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     # Check if quota exists
-    stmt = sa.select(AIProviderQuota).where(
-        AIProviderQuota.provider_name == provider_name
-    )
+    stmt = sa.select(AIProviderQuota).where(AIProviderQuota.provider_name == provider_name)
     existing_quota = session.execute(stmt).scalar_one_or_none()
 
     if not existing_quota:
@@ -229,8 +225,8 @@ def _init_provider_quota(
             monthly_token_limit=quota_config.get("monthly_token_limit"),
             alert_threshold_percent=80,
             auto_disable_on_limit=True,
-            daily_reset_at=datetime.now(timezone.utc),
-            monthly_reset_at=datetime.now(timezone.utc),
+            daily_reset_at=datetime.now(UTC),
+            monthly_reset_at=datetime.now(UTC),
         )
         session.add(quota)
         logger.info(

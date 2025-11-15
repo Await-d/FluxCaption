@@ -8,37 +8,34 @@ Provides REST API for:
 - Manual writeback operations
 """
 
-from uuid import UUID
-from typing import Optional, Annotated
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from starlette.concurrency import run_in_threadpool
 
-from app.core.db import get_db
-from app.models.user import User
 from app.api.routers.auth import get_current_user
+from app.core.config import settings
+from app.core.db import get_db
 from app.core.logging import get_logger
+from app.models.user import User
 from app.schemas.jellyfin import (
-    LibraryListResponse,
-    ItemListResponse,
     ItemDetailResponse,
-    ScanLibraryRequest,
+    ItemListResponse,
+    JellyfinItem,
+    LibraryListResponse,
     ScanJobResponse,
+    ScanLibraryRequest,
     WritebackRequest,
     WritebackResponse,
-    JellyfinLibrary,
-    JellyfinItem,
-)
-from app.services.jellyfin_client import (
-    get_jellyfin_client,
-    JellyfinError,
-    JellyfinNotFoundError,
 )
 from app.services.detector import LanguageDetector
-from app.services.writeback import WritebackService, WritebackError
+from app.services.jellyfin_client import (
+    JellyfinError,
+    JellyfinNotFoundError,
+    get_jellyfin_client,
+)
+from app.services.writeback import WritebackError, WritebackService
 from app.workers.tasks import scan_library_task
-from app.core.config import settings
 
 logger = get_logger(__name__)
 
@@ -48,6 +45,7 @@ router = APIRouter(prefix="/api/jellyfin", tags=["Jellyfin"])
 # =============================================================================
 # Library Endpoints
 # =============================================================================
+
 
 @router.get("/libraries", response_model=LibraryListResponse)
 async def list_libraries(
@@ -66,7 +64,7 @@ async def list_libraries(
         # Add image URLs for libraries that have Primary images
         for library in libraries:
             # Only generate image URL if library has a Primary image tag
-            if library.image_tags and 'Primary' in library.image_tags and library.image_item_id:
+            if library.image_tags and "Primary" in library.image_tags and library.image_item_id:
                 api_key = settings.jellyfin_api_key
                 # Use image_item_id which could be library ID or first item ID
                 library.image_url = f"{jellyfin_client.base_url}Items/{library.image_item_id}/Images/Primary?api_key={api_key}"
@@ -92,7 +90,7 @@ async def list_library_items(
     current_user: Annotated[User, Depends(get_current_user)],
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
-    has_subtitle: Optional[bool] = Query(default=None, description="Filter by subtitle presence"),
+    has_subtitle: bool | None = Query(default=None, description="Filter by subtitle presence"),
     db: Session = Depends(get_db),
 ):
     """
@@ -114,7 +112,7 @@ async def list_library_items(
         # Get library info to determine collection type
         libraries = await jellyfin_client.list_libraries()
         library = next((lib for lib in libraries if lib.id == library_id), None)
-        
+
         if not library:
             raise HTTPException(status_code=404, detail="Library not found")
 
@@ -129,10 +127,8 @@ async def list_library_items(
             include_item_types = ["Series", "Movie"]
 
         # Build filters
-        filters = {
-            "IncludeItemTypes": ",".join(include_item_types)
-        }
-        
+        filters = {"IncludeItemTypes": ",".join(include_item_types)}
+
         if has_subtitle is not None:
             filters["HasSubtitles"] = str(has_subtitle).lower()
 
@@ -143,8 +139,8 @@ async def list_library_items(
             start_index=offset,
             recursive=True,
             fields=[
-                "MediaStreams", 
-                "Path", 
+                "MediaStreams",
+                "Path",
                 "Overview",
                 "Genres",
                 "ProductionYear",
@@ -163,6 +159,7 @@ async def list_library_items(
         detector = LanguageDetector()
         # 从自动翻译规则推断需要检测的语言
         from app.services.detector import get_required_langs_from_rules
+
         required_langs = get_required_langs_from_rules(db)
 
         # Process items with full media information
@@ -185,7 +182,7 @@ async def list_library_items(
             media_sources = item.media_sources
             duration_seconds = None
             file_size_bytes = None
-            
+
             if media_sources:
                 first_source = media_sources[0]
                 # Duration is in ticks (1 tick = 100 nanoseconds)
@@ -198,44 +195,46 @@ async def list_library_items(
             image_url = None
             backdrop_url = None
             api_key = settings.jellyfin_api_key
-            if hasattr(item, 'image_tags') and item.image_tags:
+            if hasattr(item, "image_tags") and item.image_tags:
                 # Primary image (poster)
-                if 'Primary' in item.image_tags:
+                if "Primary" in item.image_tags:
                     image_url = f"{jellyfin_client.base_url}Items/{item.id}/Images/Primary?api_key={api_key}"
                 # Backdrop image
-                if 'Backdrop' in item.image_tags:
+                if "Backdrop" in item.image_tags:
                     backdrop_url = f"{jellyfin_client.base_url}Items/{item.id}/Images/Backdrop?api_key={api_key}"
 
             # Extract additional metadata from raw item data
-            production_year = item_data.get('ProductionYear')
-            community_rating = item_data.get('CommunityRating')
-            official_rating = item_data.get('OfficialRating')
-            overview = item_data.get('Overview')
-            genres = item_data.get('Genres', [])
-            child_count = item_data.get('ChildCount', 0)  # Number of episodes/seasons
+            production_year = item_data.get("ProductionYear")
+            community_rating = item_data.get("CommunityRating")
+            official_rating = item_data.get("OfficialRating")
+            overview = item_data.get("Overview")
+            genres = item_data.get("Genres", [])
+            child_count = item_data.get("ChildCount", 0)  # Number of episodes/seasons
 
-            processed_items.append({
-                "id": item.id,
-                "name": item.name,
-                "type": item.type,
-                "path": item.path,
-                "audio_languages": audio_langs,
-                "subtitle_languages": subtitle_langs,
-                "subtitle_streams": subtitle_streams,  # Add full subtitle stream info
-                "missing_languages": missing_langs,
-                "duration_seconds": duration_seconds,
-                "file_size_bytes": file_size_bytes,
-                # New metadata fields
-                "image_url": image_url,
-                "backdrop_url": backdrop_url,
-                "production_year": production_year,
-                "community_rating": community_rating,
-                "official_rating": official_rating,
-                "overview": overview,
-                "genres": genres,
-                "series_name": item.name if item.type == "Series" else None,
-                "child_count": child_count,
-            })
+            processed_items.append(
+                {
+                    "id": item.id,
+                    "name": item.name,
+                    "type": item.type,
+                    "path": item.path,
+                    "audio_languages": audio_langs,
+                    "subtitle_languages": subtitle_langs,
+                    "subtitle_streams": subtitle_streams,  # Add full subtitle stream info
+                    "missing_languages": missing_langs,
+                    "duration_seconds": duration_seconds,
+                    "file_size_bytes": file_size_bytes,
+                    # New metadata fields
+                    "image_url": image_url,
+                    "backdrop_url": backdrop_url,
+                    "production_year": production_year,
+                    "community_rating": community_rating,
+                    "official_rating": official_rating,
+                    "overview": overview,
+                    "genres": genres,
+                    "series_name": item.name if item.type == "Series" else None,
+                    "child_count": child_count,
+                }
+            )
 
         return ItemListResponse(
             items=processed_items,
@@ -285,6 +284,7 @@ async def get_item_detail(
 
         # 从自动翻译规则推断需要检测的语言
         from app.services.detector import get_required_langs_from_rules
+
         required_langs = get_required_langs_from_rules(db)
         missing_subtitles = detector.detect_missing_languages(item, required_langs, db_session=db)
 
@@ -359,6 +359,7 @@ async def list_series_episodes(
         detector = LanguageDetector()
         # 从自动翻译规则推断需要检测的语言
         from app.services.detector import get_required_langs_from_rules
+
         required_langs = get_required_langs_from_rules(db)
 
         # Process episodes
@@ -380,7 +381,7 @@ async def list_series_episodes(
             media_sources = item.media_sources
             duration_seconds = None
             file_size_bytes = None
-            
+
             if media_sources:
                 first_source = media_sources[0]
                 run_time_ticks = first_source.run_time_ticks
@@ -391,36 +392,40 @@ async def list_series_episodes(
             # Generate image URLs
             image_url = None
             api_key = settings.jellyfin_api_key
-            if hasattr(item, 'image_tags') and item.image_tags and 'Primary' in item.image_tags:
-                image_url = f"{jellyfin_client.base_url}Items/{item.id}/Images/Primary?api_key={api_key}"
+            if hasattr(item, "image_tags") and item.image_tags and "Primary" in item.image_tags:
+                image_url = (
+                    f"{jellyfin_client.base_url}Items/{item.id}/Images/Primary?api_key={api_key}"
+                )
 
             # Extract episode metadata
-            series_name = item_data.get('SeriesName')
-            season_name = item_data.get('SeasonName')
-            episode_number = item_data.get('IndexNumber')
-            season_number = item_data.get('ParentIndexNumber')
-            production_year = item_data.get('ProductionYear')
-            overview = item_data.get('Overview')
+            series_name = item_data.get("SeriesName")
+            season_name = item_data.get("SeasonName")
+            episode_number = item_data.get("IndexNumber")
+            season_number = item_data.get("ParentIndexNumber")
+            production_year = item_data.get("ProductionYear")
+            overview = item_data.get("Overview")
 
-            processed_items.append({
-                "id": item.id,
-                "name": item.name,
-                "type": item.type,
-                "path": item.path,
-                "audio_languages": audio_langs,
-                "subtitle_languages": subtitle_langs,
-                "subtitle_streams": subtitle_streams,  # Add full subtitle stream info
-                "missing_languages": missing_langs,
-                "duration_seconds": duration_seconds,
-                "file_size_bytes": file_size_bytes,
-                "image_url": image_url,
-                "production_year": production_year,
-                "overview": overview,
-                "series_name": series_name,
-                "season_name": season_name,
-                "episode_number": episode_number,
-                "season_number": season_number,
-            })
+            processed_items.append(
+                {
+                    "id": item.id,
+                    "name": item.name,
+                    "type": item.type,
+                    "path": item.path,
+                    "audio_languages": audio_langs,
+                    "subtitle_languages": subtitle_langs,
+                    "subtitle_streams": subtitle_streams,  # Add full subtitle stream info
+                    "missing_languages": missing_langs,
+                    "duration_seconds": duration_seconds,
+                    "file_size_bytes": file_size_bytes,
+                    "image_url": image_url,
+                    "production_year": production_year,
+                    "overview": overview,
+                    "series_name": series_name,
+                    "season_name": season_name,
+                    "episode_number": episode_number,
+                    "season_number": season_number,
+                }
+            )
 
         return ItemListResponse(
             items=processed_items,
@@ -440,6 +445,7 @@ async def list_series_episodes(
 # =============================================================================
 # Scan Endpoints
 # =============================================================================
+
 
 @router.post("/scan", response_model=ScanJobResponse)
 async def trigger_scan(
@@ -468,6 +474,7 @@ async def trigger_scan(
             required_langs = request.required_langs
         else:
             from app.services.detector import get_required_langs_from_rules
+
             required_langs = get_required_langs_from_rules(db)
 
         # Submit scan task to Celery
@@ -500,6 +507,7 @@ async def trigger_scan(
 # =============================================================================
 # Writeback Endpoints
 # =============================================================================
+
 
 @router.post("/writeback", response_model=WritebackResponse)
 async def manual_writeback(
@@ -546,6 +554,7 @@ async def manual_writeback(
 # =============================================================================
 # Health Check
 # =============================================================================
+
 
 @router.get("/health")
 async def jellyfin_health(

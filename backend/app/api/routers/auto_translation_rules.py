@@ -7,19 +7,19 @@ import logging
 from typing import Annotated
 from uuid import UUID
 
+import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-import sqlalchemy as sa
 
+from app.api.routers.auth import get_current_user
 from app.core.db import get_db
 from app.models.auto_translation_rule import AutoTranslationRule
 from app.models.user import User
-from app.api.routers.auth import get_current_user
 from app.schemas.auto_translation_rule import (
     AutoTranslationRuleCreate,
-    AutoTranslationRuleUpdate,
-    AutoTranslationRuleResponse,
     AutoTranslationRuleListResponse,
+    AutoTranslationRuleResponse,
+    AutoTranslationRuleUpdate,
 )
 
 logger = logging.getLogger(__name__)
@@ -27,7 +27,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auto-translation-rules", tags=["Auto Translation Rules"])
 
 
-@router.get("", response_model=AutoTranslationRuleListResponse, summary="List auto translation rules")
+@router.get(
+    "", response_model=AutoTranslationRuleListResponse, summary="List auto translation rules"
+)
 async def list_rules(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -255,7 +257,11 @@ async def delete_rule(
     logger.info(f"Deleted auto translation rule {rule_id}")
 
 
-@router.patch("/{rule_id}/toggle", response_model=AutoTranslationRuleResponse, summary="Toggle rule enabled status")
+@router.patch(
+    "/{rule_id}/toggle",
+    response_model=AutoTranslationRuleResponse,
+    summary="Toggle rule enabled status",
+)
 async def toggle_rule(
     rule_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],

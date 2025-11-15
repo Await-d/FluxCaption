@@ -4,9 +4,8 @@ Moonshot AI (Kimi) Provider Implementation.
 Supports Moonshot's Kimi models.
 """
 
-from typing import Optional
-from app.services.ai_providers.openai_provider import OpenAIProvider
 from app.services.ai_providers.base import AIModelInfo
+from app.services.ai_providers.openai_provider import OpenAIProvider
 
 
 class MoonshotProvider(OpenAIProvider):
@@ -19,17 +18,10 @@ class MoonshotProvider(OpenAIProvider):
     DEFAULT_BASE_URL = "https://api.moonshot.cn/v1"
 
     def __init__(
-        self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        timeout: int = 300,
-        **kwargs
+        self, api_key: str | None = None, base_url: str | None = None, timeout: int = 300, **kwargs
     ):
         super().__init__(
-            api_key=api_key,
-            base_url=base_url or self.DEFAULT_BASE_URL,
-            timeout=timeout,
-            **kwargs
+            api_key=api_key, base_url=base_url or self.DEFAULT_BASE_URL, timeout=timeout, **kwargs
         )
 
     @property

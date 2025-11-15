@@ -5,15 +5,15 @@ Handles quota checking, usage tracking, and cost calculation.
 """
 
 import time
-from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, Tuple
 from collections import OrderedDict
+from datetime import UTC, datetime, timedelta
+
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
-from app.models.ai_provider_usage import AIProviderUsageLog, AIProviderQuota
 from app.models.ai_provider_config import AIProviderConfig
+from app.models.ai_provider_usage import AIProviderQuota, AIProviderUsageLog
 from app.services.ai_providers.base import AIGenerateResponse
 
 logger = get_logger(__name__)
@@ -21,6 +21,7 @@ logger = get_logger(__name__)
 # Constants for token pricing calculations
 TOKENS_PER_MILLION = 1_000_000
 TOKENS_PER_THOUSAND = 1_000
+
 
 # Quota check cache with automatic cleanup
 # Cache stores (can_proceed: bool, exception: Optional[Exception], timestamp: float)
@@ -35,7 +36,7 @@ class QuotaCache:
             max_size: Maximum number of cache entries
             cleanup_interval: Time interval in seconds for automatic cleanup
         """
-        self._cache: OrderedDict[str, Tuple[bool, Optional[Exception], float]] = OrderedDict()
+        self._cache: OrderedDict[str, tuple[bool, Exception | None, float]] = OrderedDict()
         self._max_size = max_size
         self._cleanup_interval = cleanup_interval
         self._last_cleanup = time.time()
@@ -46,7 +47,7 @@ class QuotaCache:
         self._evictions = 0
         self._expirations = 0
 
-    def get(self, key: str, ttl: int) -> Optional[Tuple[bool, Optional[Exception]]]:
+    def get(self, key: str, ttl: int) -> tuple[bool, Exception | None] | None:
         """
         Get cached value if still valid.
 
@@ -78,7 +79,7 @@ class QuotaCache:
         self._misses += 1
         return None
 
-    def set(self, key: str, can_proceed: bool, exception: Optional[Exception]) -> None:
+    def set(self, key: str, can_proceed: bool, exception: Exception | None) -> None:
         """
         Set cache value.
 
@@ -94,7 +95,7 @@ class QuotaCache:
             # Remove oldest (first) item
             self._cache.popitem(last=False)
             self._evictions += 1
-            logger.debug(f"Quota cache full, removed oldest entry")
+            logger.debug("Quota cache full, removed oldest entry")
 
         # Add/update entry
         self._cache[key] = (can_proceed, exception, current_time)
@@ -108,6 +109,7 @@ class QuotaCache:
 
         # Perform cleanup
         from app.core.config import settings
+
         default_ttl = settings.task_quota_check_cache_ttl
 
         # Find and remove expired entries
@@ -130,7 +132,7 @@ class QuotaCache:
         self._cache.clear()
         logger.info("Quota cache cleared")
 
-    def get_stats(self) -> Dict[str, any]:
+    def get_stats(self) -> dict[str, any]:
         """
         Get cache statistics for monitoring.
 
@@ -150,6 +152,7 @@ class QuotaCache:
             "expirations": self._expirations,
             "total_requests": total_requests,
         }
+
 
 # Global quota cache instance
 _quota_cache = QuotaCache(max_size=100, cleanup_interval=300)
@@ -177,9 +180,7 @@ class QuotaExceededException(Exception):
         self.limit_type = limit_type
         self.current = current
         self.limit = limit
-        super().__init__(
-            f"{provider} {limit_type} quota exceeded: ${current:.4f} / ${limit:.2f}"
-        )
+        super().__init__(f"{provider} {limit_type} quota exceeded: ${current:.4f} / ${limit:.2f}")
 
 
 class AIQuotaService:
@@ -251,7 +252,7 @@ class AIQuotaService:
         if quota.should_send_alert():
             self._send_quota_alert(quota)
 
-    def check_quota_with_pause(self, provider_name: str, cache_ttl: Optional[int] = None) -> None:
+    def check_quota_with_pause(self, provider_name: str, cache_ttl: int | None = None) -> None:
         """
         Check if provider has available quota, pause task instead of raising exception.
 
@@ -272,6 +273,7 @@ class AIQuotaService:
         # Get cache TTL from config if not provided
         if cache_ttl is None:
             from app.core.config import settings
+
             cache_ttl = settings.task_quota_check_cache_ttl
 
         # Check cache
@@ -301,7 +303,7 @@ class AIQuotaService:
                 )
 
                 # Calculate resume time (next day at same time)
-                resume_at = datetime.now(timezone.utc) + timedelta(days=1)
+                resume_at = datetime.now(UTC) + timedelta(days=1)
 
                 exception_to_cache = QuotaPauseException(
                     provider=provider_name,
@@ -319,7 +321,7 @@ class AIQuotaService:
                 )
 
                 # Calculate resume time (next month on same day)
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 if now.month == 12:
                     resume_at = now.replace(year=now.year + 1, month=1)
                 else:
@@ -359,13 +361,13 @@ class AIQuotaService:
         model_name: str,
         response: AIGenerateResponse,
         request_type: str = "generate",
-        job_id: Optional[str] = None,
-        user_id: Optional[str] = None,
-        prompt_preview: Optional[str] = None,
-        response_preview: Optional[str] = None,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
-        response_time_ms: Optional[int] = None,
+        job_id: str | None = None,
+        user_id: str | None = None,
+        prompt_preview: str | None = None,
+        response_preview: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        response_time_ms: int | None = None,
     ) -> AIProviderUsageLog:
         """
         Log API usage and update quota counters.
@@ -435,8 +437,8 @@ class AIQuotaService:
         model_name: str,
         error_message: str,
         request_type: str = "generate",
-        job_id: Optional[str] = None,
-        user_id: Optional[str] = None,
+        job_id: str | None = None,
+        user_id: str | None = None,
     ) -> AIProviderUsageLog:
         """
         Log API error.
@@ -470,9 +472,9 @@ class AIQuotaService:
 
     def get_usage_stats(
         self,
-        provider_name: Optional[str] = None,
-        start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None,
+        provider_name: str | None = None,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
     ) -> dict:
         """
         Get usage statistics.
@@ -492,7 +494,7 @@ class AIQuotaService:
             sa.func.sum(AIProviderUsageLog.total_tokens).label("total_tokens"),
             sa.func.sum(AIProviderUsageLog.total_cost).label("total_cost"),
             sa.func.avg(AIProviderUsageLog.response_time_ms).label("avg_response_time"),
-            sa.func.sum(sa.case((AIProviderUsageLog.is_error == True, 1), else_=0)).label("error_count"),
+            sa.func.sum(sa.case((AIProviderUsageLog.is_error, 1), else_=0)).label("error_count"),
         ).group_by(AIProviderUsageLog.provider_name)
 
         if provider_name:
@@ -508,18 +510,21 @@ class AIQuotaService:
 
         stats = []
         for row in results:
-            stats.append({
-                "provider": row.provider_name,
-                "request_count": row.request_count,
-                "total_tokens": int(row.total_tokens or 0),
-                "total_cost": float(row.total_cost or 0.0),
-                "avg_response_time_ms": float(row.avg_response_time or 0.0),
-                "error_count": row.error_count,
-                "success_rate": (
-                    (row.request_count - row.error_count) / row.request_count * 100
-                    if row.request_count > 0 else 0.0
-                ),
-            })
+            stats.append(
+                {
+                    "provider": row.provider_name,
+                    "request_count": row.request_count,
+                    "total_tokens": int(row.total_tokens or 0),
+                    "total_cost": float(row.total_cost or 0.0),
+                    "avg_response_time_ms": float(row.avg_response_time or 0.0),
+                    "error_count": row.error_count,
+                    "success_rate": (
+                        (row.request_count - row.error_count) / row.request_count * 100
+                        if row.request_count > 0
+                        else 0.0
+                    ),
+                }
+            )
 
         return {
             "stats": stats,
@@ -529,16 +534,14 @@ class AIQuotaService:
 
     def _get_or_create_quota(self, provider_name: str) -> AIProviderQuota:
         """Get or create quota record for provider."""
-        stmt = sa.select(AIProviderQuota).where(
-            AIProviderQuota.provider_name == provider_name
-        )
+        stmt = sa.select(AIProviderQuota).where(AIProviderQuota.provider_name == provider_name)
         quota = self.session.execute(stmt).scalar_one_or_none()
 
         if not quota:
             quota = AIProviderQuota(
                 provider_name=provider_name,
-                daily_reset_at=datetime.now(timezone.utc),
-                monthly_reset_at=datetime.now(timezone.utc),
+                daily_reset_at=datetime.now(UTC),
+                monthly_reset_at=datetime.now(UTC),
             )
             self.session.add(quota)
             self.session.flush()
@@ -547,7 +550,7 @@ class AIQuotaService:
 
     def _reset_quota_if_needed(self, quota: AIProviderQuota) -> None:
         """Reset quota counters if period has elapsed."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         modified = False
 
         # Check daily reset
@@ -563,8 +566,9 @@ class AIQuotaService:
         # Check monthly reset
         if quota.monthly_reset_at:
             # Check if month has changed
-            if (now.year > quota.monthly_reset_at.year or
-                (now.year == quota.monthly_reset_at.year and now.month > quota.monthly_reset_at.month)):
+            if now.year > quota.monthly_reset_at.year or (
+                now.year == quota.monthly_reset_at.year and now.month > quota.monthly_reset_at.month
+            ):
                 logger.info(f"Resetting monthly quota for {quota.provider_name}")
                 quota.current_monthly_cost = 0.0
                 quota.current_monthly_tokens = 0
@@ -594,9 +598,9 @@ class AIQuotaService:
         self,
         provider_name: str,
         model_name: str,
-        input_tokens: Optional[int],
-        output_tokens: Optional[int],
-    ) -> tuple[Optional[float], Optional[float], float]:
+        input_tokens: int | None,
+        output_tokens: int | None,
+    ) -> tuple[float | None, float | None, float]:
         """
         Calculate cost based on token usage and model pricing.
 
@@ -607,8 +611,7 @@ class AIQuotaService:
         from app.models.ai_model_config import AIModelConfig
 
         stmt = sa.select(AIModelConfig).where(
-            AIModelConfig.provider_name == provider_name,
-            AIModelConfig.model_name == model_name
+            AIModelConfig.provider_name == provider_name, AIModelConfig.model_name == model_name
         )
         model_config = self.session.execute(stmt).scalar_one_or_none()
 
@@ -617,23 +620,24 @@ class AIQuotaService:
             from app.models.model_registry import ModelRegistry
 
             stmt = sa.select(ModelRegistry).where(
-                ModelRegistry.provider == provider_name,
-                ModelRegistry.name == model_name
+                ModelRegistry.provider == provider_name, ModelRegistry.name == model_name
             )
             model_record = self.session.execute(stmt).scalar_one_or_none()
 
             if model_record:
-                logger.debug(
-                    f"Using legacy ModelRegistry pricing for {provider_name}:{model_name}"
-                )
+                logger.debug(f"Using legacy ModelRegistry pricing for {provider_name}:{model_name}")
                 input_cost = None
                 output_cost = None
 
                 if input_tokens and model_record.cost_input_per_1k:
-                    input_cost = (input_tokens / TOKENS_PER_THOUSAND) * model_record.cost_input_per_1k
+                    input_cost = (
+                        input_tokens / TOKENS_PER_THOUSAND
+                    ) * model_record.cost_input_per_1k
 
                 if output_tokens and model_record.cost_output_per_1k:
-                    output_cost = (output_tokens / TOKENS_PER_THOUSAND) * model_record.cost_output_per_1k
+                    output_cost = (
+                        output_tokens / TOKENS_PER_THOUSAND
+                    ) * model_record.cost_output_per_1k
 
                 total_cost = (input_cost or 0.0) + (output_cost or 0.0)
                 return input_cost, output_cost, total_cost
@@ -660,17 +664,15 @@ class AIQuotaService:
         # Update model usage statistics
         if total_cost > 0:
             model_config.usage_count += 1
-            model_config.total_input_tokens += (input_tokens or 0)
-            model_config.total_output_tokens += (output_tokens or 0)
+            model_config.total_input_tokens += input_tokens or 0
+            model_config.total_output_tokens += output_tokens or 0
             self.session.flush()
 
         return input_cost, output_cost, total_cost
 
     def _disable_provider(self, provider_name: str) -> None:
         """Disable provider when quota exceeded."""
-        stmt = sa.select(AIProviderConfig).where(
-            AIProviderConfig.provider_name == provider_name
-        )
+        stmt = sa.select(AIProviderConfig).where(AIProviderConfig.provider_name == provider_name)
         config = self.session.execute(stmt).scalar_one_or_none()
 
         if config:
@@ -680,7 +682,7 @@ class AIQuotaService:
 
     def _send_quota_alert(self, quota: AIProviderQuota) -> None:
         """Send alert when quota threshold reached."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Don't send alert if one was sent recently (within 1 hour)
         if quota.last_alert_sent_at:

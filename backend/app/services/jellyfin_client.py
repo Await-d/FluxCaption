@@ -10,25 +10,22 @@ Provides complete integration with Jellyfin server including:
 
 import base64
 from pathlib import Path
-from typing import Optional, Callable
 from urllib.parse import urljoin
 
-import httpx
 import aiohttp
+import httpx
 from tenacity import (
     retry,
+    retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
-    retry_if_exception_type,
 )
 
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.schemas.jellyfin import (
-    JellyfinLibrary,
     JellyfinItem,
-    MediaSource,
-    MediaStream,
+    JellyfinLibrary,
 )
 
 logger = get_logger(__name__)
@@ -38,29 +35,35 @@ logger = get_logger(__name__)
 # Exceptions
 # =============================================================================
 
+
 class JellyfinError(Exception):
     """Base exception for Jellyfin client errors."""
+
     pass
 
 
 class JellyfinAuthError(JellyfinError):
     """Authentication/authorization error."""
+
     pass
 
 
 class JellyfinNotFoundError(JellyfinError):
     """Resource not found."""
+
     pass
 
 
 class JellyfinConnectionError(JellyfinError):
     """Connection error."""
+
     pass
 
 
 # =============================================================================
 # Jellyfin Client
 # =============================================================================
+
 
 class JellyfinClient:
     """
@@ -72,10 +75,10 @@ class JellyfinClient:
 
     def __init__(
         self,
-        base_url: Optional[str] = None,
-        api_key: Optional[str] = None,
-        timeout: Optional[int] = None,
-        max_retries: Optional[int] = None,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        timeout: int | None = None,
+        max_retries: int | None = None,
     ):
         """
         Initialize Jellyfin client.
@@ -121,10 +124,10 @@ class JellyfinClient:
         self,
         method: str,
         path: str,
-        params: Optional[dict] = None,
-        data: Optional[dict] = None,
-        json: Optional[dict] = None,
-        files: Optional[dict] = None,
+        params: dict | None = None,
+        data: dict | None = None,
+        json: dict | None = None,
+        files: dict | None = None,
     ) -> dict:
         """
         Make HTTP request to Jellyfin API with retries.
@@ -167,15 +170,13 @@ class JellyfinClient:
 
                 # Handle errors
                 if response.status_code == 401:
-                    raise JellyfinAuthError(f"Unauthorized: invalid API key")
+                    raise JellyfinAuthError("Unauthorized: invalid API key")
                 elif response.status_code == 403:
-                    raise JellyfinAuthError(f"Forbidden: insufficient permissions")
+                    raise JellyfinAuthError("Forbidden: insufficient permissions")
                 elif response.status_code == 404:
                     raise JellyfinNotFoundError(f"Not found: {path}")
                 elif response.status_code >= 400:
-                    raise JellyfinError(
-                        f"HTTP {response.status_code}: {response.text}"
-                    )
+                    raise JellyfinError(f"HTTP {response.status_code}: {response.text}")
 
                 # Return JSON response (empty dict if no content)
                 if response.status_code == 204 or not response.content:
@@ -209,7 +210,7 @@ class JellyfinClient:
     async def list_libraries(self) -> list[JellyfinLibrary]:
         """
         List all libraries/collections in Jellyfin with item counts and image tags.
-        
+
         For libraries without a primary image, uses the first item's image as fallback.
 
         Returns:
@@ -223,14 +224,12 @@ class JellyfinClient:
         # Get basic library info from VirtualFolders
         response = await self._request_with_retry("GET", "/Library/VirtualFolders")
 
-        libraries = [
-            JellyfinLibrary.model_validate(lib) for lib in response
-        ]
+        libraries = [JellyfinLibrary.model_validate(lib) for lib in response]
 
         # Get user ID for Items API
         try:
             user_id = await self._get_user_id()
-            
+
             # Get detailed info for each library including ImageTags
             for library in libraries:
                 try:
@@ -239,12 +238,12 @@ class JellyfinClient:
                         "GET",
                         f"/Users/{user_id}/Items/{library.id}",
                     )
-                    
+
                     # Extract ImageTags from the library item
                     if "ImageTags" in library_item and library_item["ImageTags"]:
                         library.image_tags = library_item.get("ImageTags")
                         library.image_item_id = library.id  # Use library's own ID
-                    
+
                     # Query Items API with Limit=1 to get TotalRecordCount efficiently
                     items_response = await self._request_with_retry(
                         "GET",
@@ -253,12 +252,12 @@ class JellyfinClient:
                             "ParentId": library.id,
                             "Limit": 1,
                             "Recursive": "true",
-                        }
+                        },
                     )
                     library.item_count = items_response.get("TotalRecordCount", 0)
-                    
+
                     # If library doesn't have a Primary image, try to get first item's image
-                    if not library.image_tags or 'Primary' not in library.image_tags:
+                    if not library.image_tags or "Primary" not in library.image_tags:
                         items = items_response.get("Items", [])
                         if items and len(items) > 0:
                             first_item = items[0]
@@ -267,14 +266,16 @@ class JellyfinClient:
                                 library.image_tags = first_item.get("ImageTags")
                                 library.image_item_id = first_item.get("Id")  # Use first item's ID
                                 logger.info(f"Using first item's image for library {library.name}")
-                                
+
                 except Exception as e:
                     logger.warning(f"Failed to get details for library {library.name}: {e}")
                     library.item_count = 0
                     library.image_tags = None
                     library.image_item_id = None
         except Exception as e:
-            logger.warning(f"Failed to get user ID, item counts and images will be unavailable: {e}")
+            logger.warning(
+                f"Failed to get user ID, item counts and images will be unavailable: {e}"
+            )
             # Keep item_count as None or 0
 
         logger.info(f"Found {len(libraries)} libraries")
@@ -282,12 +283,12 @@ class JellyfinClient:
 
     async def get_library_items(
         self,
-        library_id: Optional[str] = None,
+        library_id: str | None = None,
         limit: int = 100,
         start_index: int = 0,
         recursive: bool = True,
-        fields: Optional[list[str]] = None,
-        filters: Optional[dict] = None,
+        fields: list[str] | None = None,
+        filters: dict | None = None,
     ) -> dict:
         """
         Get items from a library with pagination.
@@ -333,7 +334,7 @@ class JellyfinClient:
         logger.info(f"Retrieved {len(items)} items (total: {total})")
         return response
 
-    async def get_item(self, item_id: str, fields: Optional[list[str]] = None) -> JellyfinItem:
+    async def get_item(self, item_id: str, fields: list[str] | None = None) -> JellyfinItem:
         """
         Get detailed information about a specific item.
 
@@ -383,7 +384,9 @@ class JellyfinClient:
 
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=3600)) as response:
+                async with session.get(
+                    url, headers=headers, timeout=aiohttp.ClientTimeout(total=3600)
+                ) as response:
                     if response.status == 404:
                         raise JellyfinNotFoundError(f"Item {item_id} not found")
                     elif response.status != 200:
@@ -394,14 +397,16 @@ class JellyfinClient:
                     output_path.parent.mkdir(parents=True, exist_ok=True)
 
                     # Download file in chunks
-                    total_size = int(response.headers.get('content-length', 0))
+                    total_size = int(response.headers.get("content-length", 0))
                     downloaded = 0
-                    
-                    with open(output_path, 'wb') as f:
+
+                    with open(output_path, "wb") as f:
                         async for chunk in response.content.iter_chunked(8192):
                             f.write(chunk)
                             downloaded += len(chunk)
-                            if total_size > 0 and downloaded % (10 * 1024 * 1024) == 0:  # Log every 10MB
+                            if (
+                                total_size > 0 and downloaded % (10 * 1024 * 1024) == 0
+                            ):  # Log every 10MB
                                 progress = (downloaded / total_size) * 100
                                 logger.info(f"Download progress: {progress:.1f}%")
 
@@ -438,9 +443,13 @@ class JellyfinClient:
 
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=300)) as response:
+                async with session.get(
+                    url, headers=headers, timeout=aiohttp.ClientTimeout(total=300)
+                ) as response:
                     if response.status == 404:
-                        raise JellyfinNotFoundError(f"Subtitle {subtitle_index} not found for item {item_id}")
+                        raise JellyfinNotFoundError(
+                            f"Subtitle {subtitle_index} not found for item {item_id}"
+                        )
                     elif response.status != 200:
                         error_text = await response.text()
                         raise JellyfinError(f"Failed to download subtitle: {error_text}")
@@ -450,8 +459,8 @@ class JellyfinClient:
 
                     # Download subtitle content
                     content = await response.read()
-                    
-                    with open(output_path, 'wb') as f:
+
+                    with open(output_path, "wb") as f:
                         f.write(content)
 
                     logger.info(f"Downloaded subtitle to {output_path} ({len(content)} bytes)")
@@ -491,9 +500,7 @@ class JellyfinClient:
             FileNotFoundError: Subtitle file not found
             JellyfinError: Upload failed
         """
-        logger.info(
-            f"Uploading subtitle to item {item_id}: {language} ({format})"
-        )
+        logger.info(f"Uploading subtitle to item {item_id}: {language} ({format})")
 
         # Read subtitle file
         subtitle_file = Path(subtitle_path)
@@ -503,9 +510,8 @@ class JellyfinClient:
         subtitle_content = subtitle_file.read_bytes()
 
         # Jellyfin expects JSON payload with Base64-encoded subtitle data
-        import base64
-        encoded_data = base64.b64encode(subtitle_content).decode('utf-8')
-        
+        encoded_data = base64.b64encode(subtitle_content).decode("utf-8")
+
         payload = {
             "Language": language,
             "Format": format,
@@ -587,6 +593,7 @@ class JellyfinClient:
 
         # Add query parameters
         from urllib.parse import urlencode
+
         query_string = urlencode(params)
         stream_url = f"{base_stream_url}?{query_string}"
 
@@ -637,7 +644,7 @@ class JellyfinClient:
         # For API key auth, we can use any valid user ID
         # Try to get current user from /System/Info
         try:
-            response = await self._request("GET", "/System/Info")
+            await self._request("GET", "/System/Info")
             # API key doesn't have a specific user, use admin user
             # We'll query users and pick first admin
             users_response = await self._request("GET", "/Users")
@@ -662,8 +669,7 @@ class JellyfinClient:
         try:
             response = await self._request("GET", "/System/Info")
             logger.info(
-                f"Connected to Jellyfin: {response.get('ServerName')} "
-                f"v{response.get('Version')}"
+                f"Connected to Jellyfin: {response.get('ServerName')} v{response.get('Version')}"
             )
             return True
         except Exception as e:
@@ -676,7 +682,7 @@ class JellyfinClient:
 # =============================================================================
 
 # Global client instance (lazy initialization)
-_jellyfin_client: Optional[JellyfinClient] = None
+_jellyfin_client: JellyfinClient | None = None
 
 
 def get_jellyfin_client() -> JellyfinClient:

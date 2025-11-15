@@ -3,19 +3,19 @@ Pydantic schemas for API request/response validation.
 """
 
 from app.schemas.health import HealthResponse, ReadyResponse
-from app.schemas.models import (
-    ModelInfo,
-    ModelPullRequest,
-    ModelPullProgress,
-    ModelDeleteResponse,
-    ModelListResponse,
-)
 from app.schemas.jobs import (
     JobCreate,
+    JobEventData,
+    JobListResponse,
     JobResponse,
     JobStatus,
-    JobListResponse,
-    JobEventData,
+)
+from app.schemas.models import (
+    ModelDeleteResponse,
+    ModelInfo,
+    ModelListResponse,
+    ModelPullProgress,
+    ModelPullRequest,
 )
 from app.schemas.settings import (
     SettingsResponse,

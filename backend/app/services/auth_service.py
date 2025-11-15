@@ -2,19 +2,17 @@
 Authentication service for user management and JWT token handling.
 """
 
-from datetime import datetime, timedelta
-from typing import Optional
 import secrets
 import string
+from datetime import datetime, timedelta
 
+import sqlalchemy as sa
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
-from app.models.user import User
 from app.core.config import settings
-
+from app.models.user import User
 
 # Password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -51,7 +49,7 @@ class AuthService:
         return pwd_context.hash(password)
 
     @staticmethod
-    def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
         """
         Create a JWT access token.
 
@@ -69,15 +67,11 @@ class AuthService:
             expire = datetime.utcnow() + timedelta(hours=24)
 
         to_encode.update({"exp": expire})
-        encoded_jwt = jwt.encode(
-            to_encode,
-            settings.SECRET_KEY,
-            algorithm=settings.JWT_ALGORITHM
-        )
+        encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
         return encoded_jwt
 
     @staticmethod
-    def decode_token(token: str) -> Optional[dict]:
+    def decode_token(token: str) -> dict | None:
         """
         Decode and verify a JWT token.
 
@@ -88,17 +82,13 @@ class AuthService:
             Optional[dict]: Decoded token payload or None if invalid
         """
         try:
-            payload = jwt.decode(
-                token,
-                settings.SECRET_KEY,
-                algorithms=[settings.JWT_ALGORITHM]
-            )
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
             return payload
         except JWTError:
             return None
 
     @staticmethod
-    def authenticate_user(db: Session, username: str, password: str) -> Optional[User]:
+    def authenticate_user(db: Session, username: str, password: str) -> User | None:
         """
         Authenticate a user by username and password.
 
@@ -126,11 +116,7 @@ class AuthService:
 
     @staticmethod
     def create_user(
-        db: Session,
-        username: str,
-        password: str,
-        email: Optional[str] = None,
-        is_admin: bool = False
+        db: Session, username: str, password: str, email: str | None = None, is_admin: bool = False
     ) -> User:
         """
         Create a new user.
@@ -152,7 +138,7 @@ class AuthService:
             password_hash=password_hash,
             email=email,
             is_admin=is_admin,
-            is_active=True
+            is_active=True,
         )
 
         db.add(user)
@@ -200,4 +186,4 @@ class AuthService:
         # Limit length to 72 bytes for bcrypt compatibility
         length = min(length, 72)
         alphabet = string.ascii_letters + string.digits
-        return ''.join(secrets.choice(alphabet) for _ in range(length))
+        return "".join(secrets.choice(alphabet) for _ in range(length))

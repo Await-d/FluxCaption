@@ -4,14 +4,15 @@ Google Gemini AI Provider Implementation.
 Supports Google's Gemini models.
 """
 
-from typing import Optional, AsyncIterator
+from collections.abc import AsyncIterator
+
 import httpx
 
 from app.core.logging import get_logger
 from app.services.ai_providers.base import (
-    BaseAIProvider,
-    AIModelInfo,
     AIGenerateResponse,
+    AIModelInfo,
+    BaseAIProvider,
 )
 
 logger = get_logger(__name__)
@@ -27,17 +28,10 @@ class GeminiProvider(BaseAIProvider):
     DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
     def __init__(
-        self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        timeout: int = 300,
-        **kwargs
+        self, api_key: str | None = None, base_url: str | None = None, timeout: int = 300, **kwargs
     ):
         super().__init__(
-            api_key=api_key,
-            base_url=base_url or self.DEFAULT_BASE_URL,
-            timeout=timeout,
-            **kwargs
+            api_key=api_key, base_url=base_url or self.DEFAULT_BASE_URL, timeout=timeout, **kwargs
         )
         if not self.api_key:
             raise ValueError("Gemini provider requires an API key")
@@ -104,9 +98,9 @@ class GeminiProvider(BaseAIProvider):
         self,
         model: str,
         prompt: str,
-        system: Optional[str] = None,
+        system: str | None = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
         **kwargs,
     ) -> AIGenerateResponse:
         """Generate text using Gemini."""
@@ -116,16 +110,10 @@ class GeminiProvider(BaseAIProvider):
             full_prompt = f"{system}\n\n{prompt}"
 
         payload = {
-            "contents": [
-                {
-                    "parts": [
-                        {"text": full_prompt}
-                    ]
-                }
-            ],
+            "contents": [{"parts": [{"text": full_prompt}]}],
             "generationConfig": {
                 "temperature": temperature,
-            }
+            },
         }
 
         if max_tokens:
@@ -158,7 +146,9 @@ class GeminiProvider(BaseAIProvider):
                     provider=self.provider_name,
                     input_tokens=usage.get("promptTokenCount"),
                     output_tokens=usage.get("candidatesTokenCount"),
-                    finish_reason=data["candidates"][0].get("finishReason") if "candidates" in data else None,
+                    finish_reason=data["candidates"][0].get("finishReason")
+                    if "candidates" in data
+                    else None,
                 )
 
             except httpx.HTTPError as e:
@@ -171,9 +161,9 @@ class GeminiProvider(BaseAIProvider):
         self,
         model: str,
         prompt: str,
-        system: Optional[str] = None,
+        system: str | None = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
         **kwargs,
     ) -> AsyncIterator[str]:
         """Generate text using Gemini with streaming."""
@@ -182,16 +172,10 @@ class GeminiProvider(BaseAIProvider):
             full_prompt = f"{system}\n\n{prompt}"
 
         payload = {
-            "contents": [
-                {
-                    "parts": [
-                        {"text": full_prompt}
-                    ]
-                }
-            ],
+            "contents": [{"parts": [{"text": full_prompt}]}],
             "generationConfig": {
                 "temperature": temperature,
-            }
+            },
         }
 
         if max_tokens:
@@ -212,6 +196,7 @@ class GeminiProvider(BaseAIProvider):
 
                         try:
                             import json
+
                             data = json.loads(line)
 
                             if "candidates" in data and len(data["candidates"]) > 0:

@@ -4,20 +4,20 @@ Translation Memory API Router.
 Provides endpoints for querying translation memory (sentence-level translation pairs).
 """
 
-from typing import Optional, Annotated
-from fastapi import APIRouter, Depends, Query, HTTPException
-from sqlalchemy.orm import Session
-from sqlalchemy import or_, func, desc
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Annotated
 
-from app.core.db import get_db
-from app.models.user import User
-from app.api.routers.auth import get_current_user
-from app.models.translation_memory import TranslationMemory
-from app.models.media_asset import MediaAsset
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import desc, func, or_
+from sqlalchemy.orm import Session
 
+from app.api.routers.auth import get_current_user
+from app.core.db import get_db
+from app.models.media_asset import MediaAsset
+from app.models.translation_memory import TranslationMemory
+from app.models.user import User
 
 router = APIRouter(prefix="/api/translation-memory", tags=["translation-memory"])
 
@@ -26,20 +26,21 @@ router = APIRouter(prefix="/api/translation-memory", tags=["translation-memory"]
 # Schemas
 # =============================================================================
 
+
 class TranslationPairResponse(BaseModel):
     id: str
     source_text: str
     target_text: str
     source_lang: str
     target_lang: str
-    context: Optional[str] = None
-    media_name: Optional[str] = None
-    line_number: Optional[int] = None
-    start_time: Optional[float] = None
-    end_time: Optional[float] = None
-    word_count_source: Optional[int] = None
-    word_count_target: Optional[int] = None
-    translation_model: Optional[str] = None
+    context: str | None = None
+    media_name: str | None = None
+    line_number: int | None = None
+    start_time: float | None = None
+    end_time: float | None = None
+    word_count_source: int | None = None
+    word_count_target: int | None = None
+    translation_model: str | None = None
     created_at: str
 
     class Config:
@@ -90,25 +91,24 @@ class ReProofreadResponse(BaseModel):
 # Endpoints
 # =============================================================================
 
+
 @router.get("/", response_model=TranslationMemoryListResponse)
 async def list_translation_pairs(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-    source_lang: Optional[str] = Query(default=None, description="Filter by source language"),
-    target_lang: Optional[str] = Query(default=None, description="Filter by target language"),
-    search: Optional[str] = Query(default=None, description="Search in source or target text"),
+    source_lang: str | None = Query(default=None, description="Filter by source language"),
+    target_lang: str | None = Query(default=None, description="Filter by target language"),
+    search: str | None = Query(default=None, description="Search in source or target text"),
 ):
     """List translation memory pairs with pagination and filters."""
 
     # Build query with joins
     query = db.query(
         TranslationMemory,
-        MediaAsset.name.label('media_name'),
-    ).outerjoin(
-        MediaAsset, TranslationMemory.asset_id == MediaAsset.id
-    )
+        MediaAsset.name.label("media_name"),
+    ).outerjoin(MediaAsset, TranslationMemory.asset_id == MediaAsset.id)
 
     # Apply filters
     if source_lang:
@@ -174,24 +174,30 @@ async def get_translation_memory_stats(
     total = db.query(func.count(TranslationMemory.id)).scalar() or 0
 
     # By language pair
-    lang_pair_counts = db.query(
-        func.concat(TranslationMemory.source_lang, ' → ', TranslationMemory.target_lang).label('pair'),
-        func.count(TranslationMemory.id).label('count')
-    ).group_by('pair').all()
+    lang_pair_counts = (
+        db.query(
+            func.concat(TranslationMemory.source_lang, " → ", TranslationMemory.target_lang).label(
+                "pair"
+            ),
+            func.count(TranslationMemory.id).label("count"),
+        )
+        .group_by("pair")
+        .all()
+    )
 
-    by_language_pair = {pair: count for pair, count in lang_pair_counts}
+    by_language_pair = dict(lang_pair_counts)
 
     # By model
-    model_counts = db.query(
-        TranslationMemory.translation_model,
-        func.count(TranslationMemory.id).label('count')
-    ).filter(
-        TranslationMemory.translation_model.isnot(None)
-    ).group_by(
-        TranslationMemory.translation_model
-    ).all()
+    model_counts = (
+        db.query(
+            TranslationMemory.translation_model, func.count(TranslationMemory.id).label("count")
+        )
+        .filter(TranslationMemory.translation_model.isnot(None))
+        .group_by(TranslationMemory.translation_model)
+        .all()
+    )
 
-    by_model = {model or 'Unknown': count for model, count in model_counts}
+    by_model = {model or "Unknown": count for model, count in model_counts}
 
     return TranslationMemoryStatsResponse(
         total=total,
@@ -208,14 +214,15 @@ async def get_translation_pair(
 ):
     """Get a specific translation pair by ID."""
 
-    result = db.query(
-        TranslationMemory,
-        MediaAsset.name.label('media_name'),
-    ).outerjoin(
-        MediaAsset, TranslationMemory.asset_id == MediaAsset.id
-    ).filter(
-        TranslationMemory.id == pair_id
-    ).first()
+    result = (
+        db.query(
+            TranslationMemory,
+            MediaAsset.name.label("media_name"),
+        )
+        .outerjoin(MediaAsset, TranslationMemory.asset_id == MediaAsset.id)
+        .filter(TranslationMemory.id == pair_id)
+        .first()
+    )
 
     if not result:
         raise HTTPException(status_code=404, detail="Translation pair not found")
@@ -256,7 +263,7 @@ async def update_translation_pair(
 
     # Update target text and timestamp
     tm.target_text = request.target_text
-    tm.updated_at = datetime.now(timezone.utc)
+    tm.updated_at = datetime.now(UTC)
     tm.word_count_target = len(request.target_text.split())
 
     db.commit()
@@ -316,22 +323,21 @@ async def batch_delete_translation_pairs(
 
     # Limit batch size for safety
     if len(request.ids) > 100:
-        raise HTTPException(
-            status_code=400,
-            detail="Batch delete limited to 100 items at a time"
-        )
+        raise HTTPException(status_code=400, detail="Batch delete limited to 100 items at a time")
 
     # Delete in transaction
-    deleted_count = db.query(TranslationMemory).filter(
-        TranslationMemory.id.in_(request.ids)
-    ).delete(synchronize_session=False)
+    deleted_count = (
+        db.query(TranslationMemory)
+        .filter(TranslationMemory.id.in_(request.ids))
+        .delete(synchronize_session=False)
+    )
 
     db.commit()
 
     return {
         "message": f"Deleted {deleted_count} translation pairs",
         "deleted": deleted_count,
-        "requested": len(request.ids)
+        "requested": len(request.ids),
     }
 
 
@@ -345,25 +351,17 @@ async def batch_replace_translation_text(
 
     # Limit batch size for safety
     if len(request.ids) > 100:
-        raise HTTPException(
-            status_code=400,
-            detail="Batch replace limited to 100 items at a time"
-        )
+        raise HTTPException(status_code=400, detail="Batch replace limited to 100 items at a time")
 
     # Validate regex if use_regex is True
     if request.use_regex:
         try:
             re.compile(request.find)
         except re.error as e:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid regular expression: {str(e)}"
-            )
+            raise HTTPException(status_code=400, detail=f"Invalid regular expression: {str(e)}")
 
     # Get translation pairs
-    pairs = db.query(TranslationMemory).filter(
-        TranslationMemory.id.in_(request.ids)
-    ).all()
+    pairs = db.query(TranslationMemory).filter(TranslationMemory.id.in_(request.ids)).all()
 
     updated_count = 0
 
@@ -389,16 +387,13 @@ async def batch_replace_translation_text(
         # Only update if text changed
         if new_text != original_text:
             pair.target_text = new_text
-            pair.updated_at = datetime.now(timezone.utc)
+            pair.updated_at = datetime.now(UTC)
             pair.word_count_target = len(new_text.split())
             updated_count += 1
 
     db.commit()
 
-    return BatchReplaceResponse(
-        updated=updated_count,
-        total=len(request.ids)
-    )
+    return BatchReplaceResponse(updated=updated_count, total=len(request.ids))
 
 
 @router.post("/{pair_id}/re-proofread", response_model=ReProofreadResponse)
@@ -415,13 +410,13 @@ async def re_proofread_translation(
         raise HTTPException(status_code=404, detail="Translation pair not found")
 
     # Import AI services
+    from app.core.config import settings
     from app.services.ollama_client import ollama_client
     from app.services.prompts import (
         TRANSLATION_PROOFREADING_SYSTEM_PROMPT,
         build_proofreading_prompt,
     )
     from app.services.subtitle_service import extract_translation_from_response
-    from app.core.config import settings
 
     # Build proofreading prompt
     prompt = build_proofreading_prompt(

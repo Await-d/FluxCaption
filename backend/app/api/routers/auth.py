@@ -2,26 +2,26 @@
 Authentication API endpoints.
 """
 
+import logging
 from datetime import timedelta
 from typing import Annotated
-import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Header
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.orm import Session
 import sqlalchemy as sa
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.orm import Session
 
-from app.core.db import get_db
 from app.core.config import settings
+from app.core.db import get_db
 from app.models.user import User
-from app.services.auth_service import AuthService
 from app.schemas.auth import (
+    ChangePasswordRequest,
     LoginRequest,
     TokenResponse,
+    UpdateProfileRequest,
     UserResponse,
-    ChangePasswordRequest,
-    UpdateProfileRequest
 )
+from app.services.auth_service import AuthService
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ security = HTTPBearer(auto_error=False)
 
 async def get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
-    db: Annotated[Session, Depends(get_db)]
+    db: Annotated[Session, Depends(get_db)],
 ) -> User:
     """
     Dependency to get the current authenticated user from JWT token.
@@ -67,7 +67,7 @@ async def get_current_user(
 async def get_current_user_sse(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
     token: str | None = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ) -> User:
     """
     Dependency to get current user for SSE endpoints.
@@ -90,7 +90,7 @@ async def get_current_user_sse(
         auth_token = credentials.credentials
     elif token:
         auth_token = token
-    
+
     if not auth_token:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
@@ -116,10 +116,7 @@ async def get_current_user_sse(
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(
-    request: LoginRequest,
-    db: Annotated[Session, Depends(get_db)]
-):
+def login(request: LoginRequest, db: Annotated[Session, Depends(get_db)]):
     """
     Authenticate user and return JWT token.
 
@@ -136,10 +133,7 @@ def login(
     user = AuthService.authenticate_user(db, request.username, request.password)
 
     if not user:
-        raise HTTPException(
-            status_code=401,
-            detail="Incorrect username or password"
-        )
+        raise HTTPException(status_code=401, detail="Incorrect username or password")
 
     # Update last login time
     AuthService.update_last_login(db, user)
@@ -147,8 +141,7 @@ def login(
     # Create access token
     access_token_expires = timedelta(minutes=settings.jwt_access_token_expire_minutes)
     access_token = AuthService.create_access_token(
-        data={"sub": user.username},
-        expires_delta=access_token_expires
+        data={"sub": user.username}, expires_delta=access_token_expires
     )
 
     logger.info(f"User {user.username} logged in successfully")
@@ -157,14 +150,12 @@ def login(
         access_token=access_token,
         token_type="bearer",
         expires_in=settings.jwt_access_token_expire_minutes * 60,
-        user=UserResponse.model_validate(user)
+        user=UserResponse.model_validate(user),
     )
 
 
 @router.get("/me", response_model=UserResponse)
-def get_profile(
-    current_user: Annotated[User, Depends(get_current_user)]
-):
+def get_profile(current_user: Annotated[User, Depends(get_current_user)]):
     """
     Get current user profile.
 
@@ -181,7 +172,7 @@ def get_profile(
 def update_profile(
     request: UpdateProfileRequest,
     current_user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[Session, Depends(get_db)]
+    db: Annotated[Session, Depends(get_db)],
 ):
     """
     Update current user profile.
@@ -209,7 +200,7 @@ def update_profile(
 def change_password(
     request: ChangePasswordRequest,
     current_user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[Session, Depends(get_db)]
+    db: Annotated[Session, Depends(get_db)],
 ):
     """
     Change current user's password.
@@ -235,9 +226,7 @@ def change_password(
 
 
 @router.post("/logout")
-def logout(
-    current_user: Annotated[User, Depends(get_current_user)]
-):
+def logout(current_user: Annotated[User, Depends(get_current_user)]):
     """
     Logout current user.
 

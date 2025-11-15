@@ -5,7 +5,8 @@ Handles communication with Ollama server for model pulling and text generation.
 """
 
 import json
-from typing import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable
+
 import httpx
 
 from app.core.config import settings

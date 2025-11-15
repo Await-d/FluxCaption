@@ -4,8 +4,8 @@ Translation Cache Service
 Manages translation memory to avoid redundant AI translation calls.
 """
 
-from typing import Optional
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -18,7 +18,7 @@ logger = get_logger(__name__)
 class TranslationCacheService:
     """
     Service for managing translation cache.
-    
+
     Provides methods to:
     - Check if a translation exists in cache
     - Save new translations to cache
@@ -34,16 +34,16 @@ class TranslationCacheService:
         source_lang: str,
         target_lang: str,
         model: str,
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Get cached translation if it exists.
-        
+
         Args:
             source_text: Source text to translate
             source_lang: Source language code (BCP-47)
             target_lang: Target language code (BCP-47)
             model: Translation model name
-            
+
         Returns:
             Cached translated text if found, None otherwise
         """
@@ -56,15 +56,13 @@ class TranslationCacheService:
         )
 
         # Query cache
-        stmt = select(TranslationCache).where(
-            TranslationCache.content_hash == content_hash
-        )
+        stmt = select(TranslationCache).where(TranslationCache.content_hash == content_hash)
         cache_entry = self.db.execute(stmt).scalar_one_or_none()
 
         if cache_entry:
             # Update hit statistics
             cache_entry.hit_count += 1
-            cache_entry.last_used_at = datetime.now(timezone.utc)
+            cache_entry.last_used_at = datetime.now(UTC)
             self.db.commit()
 
             logger.info(
@@ -73,9 +71,7 @@ class TranslationCacheService:
             )
             return cache_entry.translated_text
         else:
-            logger.info(
-                f"Cache MISS for {source_lang}->{target_lang} (model={model})"
-            )
+            logger.info(f"Cache MISS for {source_lang}->{target_lang} (model={model})")
             return None
 
     def save_translation(
@@ -88,7 +84,7 @@ class TranslationCacheService:
     ) -> None:
         """
         Save a new translation to cache.
-        
+
         Args:
             source_text: Source text that was translated
             translated_text: Result of translation
@@ -105,15 +101,12 @@ class TranslationCacheService:
         )
 
         # Check if already exists (race condition protection)
-        stmt = select(TranslationCache).where(
-            TranslationCache.content_hash == content_hash
-        )
+        stmt = select(TranslationCache).where(TranslationCache.content_hash == content_hash)
         existing = self.db.execute(stmt).scalar_one_or_none()
 
         if existing:
             logger.debug(
-                f"Translation already cached: {source_lang}->{target_lang} "
-                f"(model={model})"
+                f"Translation already cached: {source_lang}->{target_lang} (model={model})"
             )
             return
 
@@ -126,8 +119,8 @@ class TranslationCacheService:
             target_lang=target_lang,
             model=model,
             hit_count=0,
-            created_at=datetime.now(timezone.utc),
-            last_used_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
+            last_used_at=datetime.now(UTC),
         )
 
         self.db.add(cache_entry)
@@ -141,7 +134,7 @@ class TranslationCacheService:
     def get_cache_stats(self) -> dict:
         """
         Get cache statistics.
-        
+
         Returns:
             Dictionary with cache statistics:
                 - total_entries: Total number of cached translations
@@ -158,39 +151,31 @@ class TranslationCacheService:
         total_hits = self.db.query(func.sum(TranslationCache.hit_count)).scalar() or 0
 
         # Unique language pairs
-        unique_pairs = (
-            self.db.query(
-                func.count(
-                    func.distinct(
-                        TranslationCache.source_lang + "->" + TranslationCache.target_lang
-                    )
-                )
-            ).scalar()
-        )
+        unique_pairs = self.db.query(
+            func.count(
+                func.distinct(TranslationCache.source_lang + "->" + TranslationCache.target_lang)
+            )
+        ).scalar()
 
         # Unique models
-        unique_models = (
-            self.db.query(func.count(func.distinct(TranslationCache.model))).scalar()
-        )
+        unique_models = self.db.query(func.count(func.distinct(TranslationCache.model))).scalar()
 
         return {
             "total_entries": total_entries,
             "total_hits": total_hits,
             "unique_language_pairs": unique_pairs,
             "unique_models": unique_models,
-            "hit_rate": (
-                round(total_hits / total_entries * 100, 2) if total_entries > 0 else 0
-            ),
+            "hit_rate": (round(total_hits / total_entries * 100, 2) if total_entries > 0 else 0),
         }
 
     def get_entries(
         self,
         limit: int = 50,
         offset: int = 0,
-        source_lang: Optional[str] = None,
-        target_lang: Optional[str] = None,
-        model: Optional[str] = None,
-        search: Optional[str] = None,
+        source_lang: str | None = None,
+        target_lang: str | None = None,
+        model: str | None = None,
+        search: str | None = None,
         sort_by: str = "last_used_at",
         sort_order: str = "desc",
     ) -> dict:
@@ -280,15 +265,12 @@ class TranslationCacheService:
         """
         from datetime import timedelta
 
-        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+        cutoff_date = datetime.now(UTC) - timedelta(days=days)
 
         # Delete entries with 0 hits older than cutoff date
-        stmt = (
-            self.db.query(TranslationCache)
-            .filter(
-                TranslationCache.hit_count == 0,
-                TranslationCache.created_at < cutoff_date,
-            )
+        stmt = self.db.query(TranslationCache).filter(
+            TranslationCache.hit_count == 0,
+            TranslationCache.created_at < cutoff_date,
         )
 
         count = stmt.count()

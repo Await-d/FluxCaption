@@ -36,40 +36,32 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
-
     # Task tracking
     task_track_started=settings.celery_task_track_started,
     task_send_sent_event=True,
-
     # Task time limits
     task_time_limit=settings.celery_task_time_limit,
     task_soft_time_limit=settings.celery_task_time_limit - 60,
-
     # Task retry behavior
     task_acks_late=True,
     task_reject_on_worker_lost=True,
-
     # Worker configuration
     worker_max_tasks_per_child=settings.celery_worker_max_tasks_per_child,
     worker_prefetch_multiplier=settings.celery_worker_prefetch_multiplier,
     worker_disable_rate_limits=False,
-
     # Result backend
     result_expires=86400,  # 24 hours
     result_persistent=True,
-
     # Broker connection
     broker_connection_retry_on_startup=True,
     broker_connection_retry=True,
     broker_connection_max_retries=10,
-
     # Task routes
     task_routes={
         "app.workers.tasks.scan_library_task": {"queue": "scan"},
         "app.workers.tasks.translate_subtitle_task": {"queue": "translate"},
         "app.workers.tasks.asr_then_translate_task": {"queue": "asr"},
     },
-
     # Task rate limits (tasks per second)
     task_annotations={
         "app.workers.tasks.scan_library_task": {
@@ -82,7 +74,6 @@ celery_app.conf.update(
             "rate_limit": f"{settings.max_concurrent_asr_tasks}/s"
         },
     },
-
     # Beat schedule (for periodic tasks)
     beat_schedule={
         # Periodic subtitle sync (every 6 hours)
@@ -92,8 +83,8 @@ celery_app.conf.update(
             "kwargs": {
                 "mode": "incremental",
                 "auto_pair": True,
-                "limit": None  # No limit, sync all
-            }
+                "limit": None,  # No limit, sync all
+            },
         },
         # Resume paused jobs (configurable interval)
         "resume-paused-jobs-periodic": {
@@ -117,6 +108,7 @@ celery_app.conf.update(
 # =============================================================================
 # Logging Configuration
 # =============================================================================
+
 
 @setup_logging.connect
 def setup_celery_logging(**kwargs):

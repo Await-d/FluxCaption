@@ -5,12 +5,11 @@ FunASR is an open-source speech recognition toolkit from ModelScope.
 Provides transcription with support for multiple models and languages.
 """
 
-import os
+from collections.abc import Callable
 from pathlib import Path
-from typing import Optional, Callable, Iterator
 
-from app.core.logging import get_logger
 from app.core.config import settings
+from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -18,24 +17,29 @@ logger = get_logger(__name__)
 # Exceptions
 # =============================================================================
 
+
 class ASRError(Exception):
     """Base exception for ASR errors."""
+
     pass
 
 
 class ModelLoadError(ASRError):
     """Model loading failed."""
+
     pass
 
 
 class TranscriptionError(ASRError):
     """Transcription failed."""
+
     pass
 
 
 # =============================================================================
 # FunASR Service
 # =============================================================================
+
 
 class FunASRService:
     """
@@ -47,9 +51,9 @@ class FunASRService:
 
     def __init__(
         self,
-        model_name: Optional[str] = None,
-        device: Optional[str] = None,
-        download_root: Optional[str] = None,
+        model_name: str | None = None,
+        device: str | None = None,
+        download_root: str | None = None,
     ):
         """
         Initialize FunASR service.
@@ -60,14 +64,14 @@ class FunASRService:
             download_root: Directory to store models
         """
         # Default to paraformer-zh for Chinese/multilingual support
-        self.model_name = model_name or getattr(settings, 'funasr_model', 'paraformer-zh')
-        self.device = device or getattr(settings, 'funasr_device', 'cpu')
-        self.download_root = download_root or getattr(settings, 'funasr_model_cache_dir', './models/funasr')
+        self.model_name = model_name or getattr(settings, "funasr_model", "paraformer-zh")
+        self.device = device or getattr(settings, "funasr_device", "cpu")
+        self.download_root = download_root or getattr(
+            settings, "funasr_model_cache_dir", "./models/funasr"
+        )
 
         self.model = None
-        logger.info(
-            f"FunASR service initialized (model={self.model_name}, device={self.device})"
-        )
+        logger.info(f"FunASR service initialized (model={self.model_name}, device={self.device})")
 
     def load_model(self):
         """
@@ -100,23 +104,21 @@ class FunASRService:
             logger.info(f"FunASR model loaded successfully: {self.model_name}")
 
         except ImportError:
-            raise ModelLoadError(
-                "FunASR not installed. Install: pip install funasr"
-            )
+            raise ModelLoadError("FunASR not installed. Install: pip install funasr")
         except Exception as e:
             raise ModelLoadError(f"Failed to load FunASR model {self.model_name}: {e}")
 
     def transcribe(
         self,
         audio_path: str,
-        language: Optional[str] = None,
+        language: str | None = None,
         task: str = "transcribe",
         vad_filter: bool = True,
         vad_threshold: float = 0.5,
         beam_size: int = 5,
         best_of: int = 5,
         temperature: float = 0.0,
-        progress_callback: Optional[Callable[[int, int], None]] = None,
+        progress_callback: Callable[[int, int], None] | None = None,
     ) -> tuple[list[dict], dict]:
         """
         Transcribe audio file to text with timestamps.
@@ -148,10 +150,7 @@ class FunASRService:
         if self.model is None:
             self.load_model()
 
-        logger.info(
-            f"Transcribing with FunASR: {audio_path} "
-            f"(language={language or 'auto'})"
-        )
+        logger.info(f"Transcribing with FunASR: {audio_path} (language={language or 'auto'})")
 
         try:
             # Prepare generation parameters
@@ -159,77 +158,83 @@ class FunASRService:
             if language:
                 # Map common language codes to FunASR format
                 lang_map = {
-                    'zh': 'zh',
-                    'zh-CN': 'zh',
-                    'en': 'en',
-                    'ja': 'ja',
-                    'ko': 'ko',
+                    "zh": "zh",
+                    "zh-CN": "zh",
+                    "en": "en",
+                    "ja": "ja",
+                    "ko": "ko",
                 }
                 funasr_lang = lang_map.get(language, language)
-                generate_kwargs['language'] = funasr_lang
+                generate_kwargs["language"] = funasr_lang
 
             # Run inference
             result = self.model.generate(
                 input=str(audio_file),
                 batch_size_s=300,  # Process in chunks of 300 seconds
-                **generate_kwargs
+                **generate_kwargs,
             )
 
             # Parse FunASR result
             segments = []
-            detected_language = language or 'zh'  # Default to Chinese if not specified
+            detected_language = language or "zh"  # Default to Chinese if not specified
 
             if isinstance(result, list) and len(result) > 0:
                 # FunASR returns list of results
                 for res in result:
-                    if 'text' in res:
+                    if "text" in res:
                         # Extract timestamps if available
-                        if 'timestamp' in res and res['timestamp']:
+                        if "timestamp" in res and res["timestamp"]:
                             # Format: [[start_ms, end_ms], ...]
-                            for idx, (start_ms, end_ms) in enumerate(res['timestamp']):
+                            for idx, (start_ms, end_ms) in enumerate(res["timestamp"]):
                                 # Extract corresponding text segment
                                 # This is approximate - FunASR timestamp format varies
-                                segment_text = res['text'] if idx == 0 else ''
+                                segment_text = res["text"] if idx == 0 else ""
 
-                                segments.append({
-                                    "id": idx,
-                                    "start": start_ms / 1000.0,  # Convert ms to seconds
-                                    "end": end_ms / 1000.0,
-                                    "text": segment_text.strip(),
+                                segments.append(
+                                    {
+                                        "id": idx,
+                                        "start": start_ms / 1000.0,  # Convert ms to seconds
+                                        "end": end_ms / 1000.0,
+                                        "text": segment_text.strip(),
+                                        "words": None,
+                                        "avg_logprob": 0.0,
+                                        "no_speech_prob": 0.0,
+                                    }
+                                )
+                        else:
+                            # No timestamps, create single segment
+                            segments.append(
+                                {
+                                    "id": 0,
+                                    "start": 0.0,
+                                    "end": 0.0,
+                                    "text": res["text"].strip(),
                                     "words": None,
                                     "avg_logprob": 0.0,
                                     "no_speech_prob": 0.0,
-                                })
-                        else:
-                            # No timestamps, create single segment
-                            segments.append({
-                                "id": 0,
-                                "start": 0.0,
-                                "end": 0.0,
-                                "text": res['text'].strip(),
-                                "words": None,
-                                "avg_logprob": 0.0,
-                                "no_speech_prob": 0.0,
-                            })
+                                }
+                            )
 
                         # Update detected language if available
-                        if 'lang' in res:
-                            detected_language = res['lang']
+                        if "lang" in res:
+                            detected_language = res["lang"]
 
             # If no segments were created, create a fallback
             if not segments and result:
                 # Try to extract text directly
-                text = str(result[0].get('text', '')) if isinstance(result, list) else str(result)
+                text = str(result[0].get("text", "")) if isinstance(result, list) else str(result)
                 if text:
-                    segments.append({
-                        "id": 0,
-                        "start": 0.0,
-                        "end": 0.0,
-                        "text": text.strip(),
-                        "words": None,
-                        "avg_logprob": 0.0,
-                        "no_speech_prob": 0.0,
-                    })
+                    segments.append(
+                        {
+                            "id": 0,
+                            "start": 0.0,
+                            "end": 0.0,
+                            "text": text.strip(),
+                            "words": None,
+                            "avg_logprob": 0.0,
+                            "no_speech_prob": 0.0,
+                        }
+                    )
 
             # Progress callback
             if progress_callback:
@@ -262,7 +267,7 @@ class FunASRService:
         self,
         audio_path: str,
         output_path: str,
-        language: Optional[str] = None,
+        language: str | None = None,
         **kwargs,
     ) -> dict:
         """
@@ -306,7 +311,7 @@ class FunASRService:
         self,
         audio_path: str,
         output_path: str,
-        language: Optional[str] = None,
+        language: str | None = None,
         **kwargs,
     ) -> dict:
         """
@@ -427,7 +432,7 @@ class FunASRService:
 # Singleton Instance
 # =============================================================================
 
-_funasr_service: Optional[FunASRService] = None
+_funasr_service: FunASRService | None = None
 
 
 def get_funasr_service() -> FunASRService:

@@ -4,16 +4,17 @@ Settings management API endpoints.
 Provides endpoints for retrieving and updating application configuration.
 """
 
-from typing import Any, Annotated
-from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException, status, Depends
+from datetime import UTC, datetime
+from typing import Annotated, Any
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 
+from app.api.routers.auth import get_current_user
 from app.core.config import settings
 from app.core.db import session_scope
-from app.models.user import User
 from app.models.setting import Setting
-from app.api.routers.auth import get_current_user
+from app.models.user import User
 from app.schemas.settings import SettingsResponse, SettingsUpdateRequest
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -22,21 +23,21 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 def _get_db_setting(key: str, default: Any = None) -> Any:
     """
     Get a setting value from database, return default if not found.
-    
+
     Args:
         key: Setting key
         default: Default value if setting not found in database
-        
+
     Returns:
         Setting value from database or default
     """
     with session_scope() as session:
         stmt = select(Setting).where(Setting.key == key)
         setting = session.execute(stmt).scalar_one_or_none()
-        
+
         if setting is None:
             return default
-            
+
         # Convert value based on value_type
         if setting.value_type == "int":
             return int(setting.value)
@@ -48,10 +49,17 @@ def _get_db_setting(key: str, default: Any = None) -> Any:
             return setting.value
 
 
-def _set_db_setting(key: str, value: Any, value_type: str, category: str = "jellyfin", description: str = "", username: str = "system") -> None:
+def _set_db_setting(
+    key: str,
+    value: Any,
+    value_type: str,
+    category: str = "jellyfin",
+    description: str = "",
+    username: str = "system",
+) -> None:
     """
     Set a setting value in database.
-    
+
     Args:
         key: Setting key
         value: Setting value
@@ -63,7 +71,7 @@ def _set_db_setting(key: str, value: Any, value_type: str, category: str = "jell
     with session_scope() as session:
         stmt = select(Setting).where(Setting.key == key)
         setting = session.execute(stmt).scalar_one_or_none()
-        
+
         if setting is None:
             # Create new setting
             setting = Setting(
@@ -73,16 +81,16 @@ def _set_db_setting(key: str, value: Any, value_type: str, category: str = "jell
                 category=category,
                 description=description,
                 is_editable=True,
-                updated_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(UTC),
                 updated_by=username,
             )
             session.add(setting)
         else:
             # Update existing setting
             setting.value = str(value)
-            setting.updated_at = datetime.now(timezone.utc)
+            setting.updated_at = datetime.now(UTC)
             setting.updated_by = username
-        
+
         session.commit()
 
 
@@ -103,7 +111,9 @@ async def get_settings(
     jellyfin_api_key = _get_db_setting("jellyfin_api_key", settings.jellyfin_api_key)
     jellyfin_timeout = _get_db_setting("jellyfin_timeout", settings.jellyfin_timeout)
     jellyfin_max_retries = _get_db_setting("jellyfin_max_retries", settings.jellyfin_max_retries)
-    jellyfin_rate_limit_per_second = _get_db_setting("jellyfin_rate_limit_per_second", settings.jellyfin_rate_limit_per_second)
+    jellyfin_rate_limit_per_second = _get_db_setting(
+        "jellyfin_rate_limit_per_second", settings.jellyfin_rate_limit_per_second
+    )
 
     # Get Ollama settings from database with fallback to env vars
     ollama_base_url = _get_db_setting("ollama_base_url", settings.ollama_base_url)
@@ -154,7 +164,9 @@ async def get_settings(
         translate_task_timeout=settings.translate_task_timeout,
         asr_task_timeout=settings.asr_task_timeout,
         # Local Media Configuration
-        favorite_media_paths=settings.favorite_media_paths if isinstance(settings.favorite_media_paths, list) else [],
+        favorite_media_paths=settings.favorite_media_paths
+        if isinstance(settings.favorite_media_paths, list)
+        else [],
         # System Info (read-only)
         environment=settings.environment,
         db_vendor=settings.db_vendor,
@@ -311,7 +323,7 @@ async def validate_settings(
         "checks": {},
     }
 
-# Check task limits are reasonable
+    # Check task limits are reasonable
     if settings.max_concurrent_translate_tasks < 1:
         validation_results["errors"].append("max_concurrent_translate_tasks must be at least 1")
         validation_results["valid"] = False
@@ -326,10 +338,14 @@ async def validate_settings(
 
     # Check timeouts are reasonable
     if settings.translate_task_timeout < 60:
-        validation_results["warnings"].append("translate_task_timeout is very low, may cause premature failures")
+        validation_results["warnings"].append(
+            "translate_task_timeout is very low, may cause premature failures"
+        )
 
     if settings.asr_task_timeout < 300:
-        validation_results["warnings"].append("asr_task_timeout is very low, may cause premature failures")
+        validation_results["warnings"].append(
+            "asr_task_timeout is very low, may cause premature failures"
+        )
 
     # Check batch size is reasonable
     if settings.translation_batch_size < 1:
@@ -337,22 +353,32 @@ async def validate_settings(
         validation_results["valid"] = False
 
     if settings.translation_batch_size > 100:
-        validation_results["warnings"].append("translation_batch_size is very high, may cause memory issues")
+        validation_results["warnings"].append(
+            "translation_batch_size is very high, may cause memory issues"
+        )
 
     # Check max line length is reasonable
     if settings.translation_max_line_length < 20:
-        validation_results["warnings"].append("translation_max_line_length is very low, may cause excessive line breaks")
+        validation_results["warnings"].append(
+            "translation_max_line_length is very low, may cause excessive line breaks"
+        )
 
     if settings.translation_max_line_length > 200:
-        validation_results["warnings"].append("translation_max_line_length is very high, may cause display issues")
+        validation_results["warnings"].append(
+            "translation_max_line_length is very high, may cause display issues"
+        )
 
     # Check upload size limit
     if settings.max_upload_size_mb > 2000:
-        validation_results["warnings"].append("max_upload_size_mb is very high, may cause memory issues")
+        validation_results["warnings"].append(
+            "max_upload_size_mb is very high, may cause memory issues"
+        )
 
     # Check audio duration limit
     if settings.max_audio_duration_seconds > 14400:  # 4 hours
-        validation_results["warnings"].append("max_audio_duration_seconds is very high, ASR tasks may take very long")
+        validation_results["warnings"].append(
+            "max_audio_duration_seconds is very high, ASR tasks may take very long"
+        )
 
     validation_results["checks"]["basic_validation"] = "passed"
 

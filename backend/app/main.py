@@ -5,19 +5,38 @@ Main application entry point with route registration and lifecycle management.
 """
 
 from contextlib import asynccontextmanager
+from datetime import UTC
 from pathlib import Path
+
 from fastapi import FastAPI
-from fastapi.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.core.config import settings
-from app.core.db import init_db, close_db, get_db
-from app.core.logging import get_logger
-from app.core.init_db import init_database
-from app.api.routers import health, models, upload, jobs, jellyfin, cache, local_media, subtitles, translation_memory, auth, corrections, auto_translation_rules, system, subtitle_sync, ai_providers, ai_models, system_config
+from app.api.routers import (
+    ai_models,
+    ai_providers,
+    auth,
+    auto_translation_rules,
+    cache,
+    corrections,
+    health,
+    jellyfin,
+    jobs,
+    local_media,
+    models,
+    subtitle_sync,
+    subtitles,
+    system,
+    system_config,
+    translation_memory,
+    upload,
+)
 from app.api.routers import settings as settings_router
+from app.core.config import settings
+from app.core.db import close_db, get_db, init_db
+from app.core.init_db import init_database
+from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -25,6 +44,7 @@ logger = get_logger(__name__)
 # =============================================================================
 # Application Lifecycle
 # =============================================================================
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -39,11 +59,12 @@ async def lifespan(app: FastAPI):
     # Run database migrations automatically before initializing
     try:
         logger.info("Checking database migration status...")
+        from pathlib import Path
+
         from alembic import command
         from alembic.config import Config
-        from alembic.script import ScriptDirectory
         from alembic.runtime.migration import MigrationContext
-        from pathlib import Path
+        from alembic.script import ScriptDirectory
         from sqlalchemy import create_engine
 
         # Get alembic.ini path
@@ -53,6 +74,7 @@ async def lifespan(app: FastAPI):
 
         # Check if migration is needed
         from app.core.config import settings
+
         engine = create_engine(settings.database_url)
 
         with engine.connect() as conn:
@@ -88,10 +110,12 @@ async def lifespan(app: FastAPI):
             logger.info("Initializing system settings...")
             with next(get_db()) as db:
                 from app.core.init_settings import init_system_settings
+
                 init_system_settings(db)
 
                 # Preload runtime configuration from database
                 from app.core.runtime_config import load_config_from_db
+
                 load_config_from_db(db)
 
             logger.info("System settings initialized")
@@ -104,13 +128,14 @@ async def lifespan(app: FastAPI):
             logger.info("Running database health check...")
             with next(get_db()) as db:
                 from app.core.db_health import check_and_repair_database
+
                 results = check_and_repair_database(db)
 
-                if results['initial_status'] != 'healthy':
+                if results["initial_status"] != "healthy":
                     logger.warning(f"Database health issues detected: {results['initial_status']}")
-                    if results['repairs']:
+                    if results["repairs"]:
                         logger.info(f"Database repairs made: {results['repairs']}")
-                    if results['errors']:
+                    if results["errors"]:
                         logger.error(f"Database repair errors: {results['errors']}")
                     logger.info(f"Final database status: {results['final_status']}")
                 else:
@@ -124,6 +149,7 @@ async def lifespan(app: FastAPI):
             logger.info("Initializing AI provider configurations...")
             with next(get_db()) as db:
                 from app.core.init_ai_providers import init_ai_providers
+
                 init_ai_providers(db)
             logger.info("AI provider initialization completed")
         except Exception as e:
@@ -135,6 +161,7 @@ async def lifespan(app: FastAPI):
             logger.info("Syncing models from Ollama...")
             with next(get_db()) as db:
                 from app.core.model_sync import sync_models_from_ollama
+
                 await sync_models_from_ollama(db)
             logger.info("Model sync completed")
         except Exception as e:
@@ -146,17 +173,22 @@ async def lifespan(app: FastAPI):
             logger.info("Syncing default model from database...")
             with next(get_db()) as db:
                 from app.models.setting import Setting
-                default_model_setting = db.query(Setting).filter(
-                    Setting.key == "default_mt_model"
-                ).first()
+
+                default_model_setting = (
+                    db.query(Setting).filter(Setting.key == "default_mt_model").first()
+                )
 
                 if default_model_setting:
                     # Update the settings object directly (it's a singleton)
                     settings.default_mt_model = default_model_setting.value
-                    logger.info(f"Default model synced from database: {default_model_setting.value}")
+                    logger.info(
+                        f"Default model synced from database: {default_model_setting.value}"
+                    )
                     logger.info(f"Verified runtime value: {settings.default_mt_model}")
                 else:
-                    logger.info(f"No default model in database, using config default: {settings.default_mt_model}")
+                    logger.info(
+                        f"No default model in database, using config default: {settings.default_mt_model}"
+                    )
         except Exception as e:
             logger.warning(f"Failed to sync default model from database: {e}", exc_info=True)
 
@@ -164,6 +196,7 @@ async def lifespan(app: FastAPI):
         try:
             logger.info("Loading Jellyfin configuration from database...")
             from app.core.config import load_jellyfin_settings_from_db
+
             load_jellyfin_settings_from_db()
             logger.info("Jellyfin configuration loaded successfully")
         except Exception as e:
@@ -174,21 +207,24 @@ async def lifespan(app: FastAPI):
         try:
             logger.info("Checking for stuck running jobs...")
             with next(get_db()) as db:
+                from datetime import datetime
+
                 from app.models.translation_job import TranslationJob
-                from datetime import datetime, timezone
-                
-                stuck_jobs = db.query(TranslationJob).filter(
-                    TranslationJob.status == "running"
-                ).all()
-                
+
+                stuck_jobs = (
+                    db.query(TranslationJob).filter(TranslationJob.status == "running").all()
+                )
+
                 if stuck_jobs:
-                    logger.warning(f"Found {len(stuck_jobs)} stuck running jobs, marking as failed...")
+                    logger.warning(
+                        f"Found {len(stuck_jobs)} stuck running jobs, marking as failed..."
+                    )
                     for job in stuck_jobs:
                         job.status = "failed"
                         job.error = "任务因服务重启而中断 (Task interrupted by server restart)"
-                        job.finished_at = datetime.now(timezone.utc)
+                        job.finished_at = datetime.now(UTC)
                         logger.info(f"Reset stuck job: {job.id}")
-                    
+
                     db.commit()
                     logger.info(f"Successfully reset {len(stuck_jobs)} stuck jobs")
                 else:
@@ -239,6 +275,7 @@ app.add_middleware(
 # =============================================================================
 # Exception Handlers
 # =============================================================================
+
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
@@ -353,21 +390,19 @@ if FRONTEND_DIST.exists():
         For other routes, serves frontend SPA (index.html).
         """
         # Check if it's an API route
-        if request.url.path.startswith("/api/") or request.url.path.startswith("/docs") or request.url.path.startswith("/redoc"):
-            return JSONResponse(
-                status_code=404,
-                content={"detail": "Not found"}
-            )
+        if (
+            request.url.path.startswith("/api/")
+            or request.url.path.startswith("/docs")
+            or request.url.path.startswith("/redoc")
+        ):
+            return JSONResponse(status_code=404, content={"detail": "Not found"})
 
         # For non-API routes, serve frontend SPA
         index_path = FRONTEND_DIST / "index.html"
         if index_path.exists():
             return FileResponse(index_path)
 
-        return JSONResponse(
-            status_code=404,
-            content={"detail": "Page not found"}
-        )
+        return JSONResponse(status_code=404, content={"detail": "Page not found"})
 else:
     logger.warning(f"Frontend directory not found at {FRONTEND_DIST}")
 

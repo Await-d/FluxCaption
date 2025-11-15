@@ -5,10 +5,8 @@ Analyzes Jellyfin media items to determine which subtitle languages are missing
 based on configured requirements.
 """
 
-from typing import Optional
-
 from app.core.logging import get_logger
-from app.schemas.jellyfin import JellyfinItem, MediaStream
+from app.schemas.jellyfin import JellyfinItem
 
 logger = get_logger(__name__)
 
@@ -22,170 +20,120 @@ logger = get_logger(__name__)
 ISO639_2_TO_BCP47 = {
     # English
     "eng": "en",
-    
     # Chinese variants
     "chi": "zh-CN",  # Simplified Chinese (default)
     "zho": "zh-CN",  # Chinese
     "cmn": "zh-CN",  # Mandarin Chinese
     "yue": "zh-HK",  # Cantonese
-    
     # Japanese
     "jpn": "ja",
-    
     # Korean
     "kor": "ko",
-    
     # French
     "fre": "fr",
     "fra": "fr",
-    
     # German
     "ger": "de",
     "deu": "de",
-    
     # Spanish
     "spa": "es",
-    
     # Russian
     "rus": "ru",
-    
     # Italian
     "ita": "it",
-    
     # Portuguese
     "por": "pt",
-    
     # Arabic
     "ara": "ar",
-    
     # Hindi
     "hin": "hi",
-    
     # Thai
     "tha": "th",
-    
     # Vietnamese
     "vie": "vi",
-    
     # Polish
     "pol": "pl",
-    
     # Dutch
     "dut": "nl",
     "nld": "nl",
-    
     # Turkish
     "tur": "tr",
-    
     # Swedish
     "swe": "sv",
-    
     # Danish
     "dan": "da",
-    
     # Norwegian
     "nor": "no",
     "nob": "nb",  # Norwegian Bokmål
     "nno": "nn",  # Norwegian Nynorsk
-    
     # Finnish
     "fin": "fi",
-    
     # Greek
     "gre": "el",
     "ell": "el",
-    
     # Hebrew
     "heb": "he",
-    
     # Czech
     "cze": "cs",
     "ces": "cs",
-    
     # Romanian
     "rum": "ro",
     "ron": "ro",
-    
     # Hungarian
     "hun": "hu",
-    
     # Indonesian
     "ind": "id",
-    
     # Malay
     "may": "ms",
     "msa": "ms",
-    
     # Ukrainian
     "ukr": "uk",
-    
     # Bulgarian
     "bul": "bg",
-    
     # Croatian
     "hrv": "hr",
-    
     # Serbian
     "srp": "sr",
-    
     # Slovak
     "slo": "sk",
     "slk": "sk",
-    
     # Slovenian
     "slv": "sl",
-    
     # Lithuanian
     "lit": "lt",
-    
     # Latvian
     "lav": "lv",
-    
     # Estonian
     "est": "et",
-    
     # Catalan
     "cat": "ca",
-    
     # Basque
     "baq": "eu",
     "eus": "eu",
-    
     # Galician
     "glg": "gl",
-    
     # Icelandic
     "ice": "is",
     "isl": "is",
-    
     # Persian/Farsi
     "per": "fa",
     "fas": "fa",
-    
     # Bengali
     "ben": "bn",
-    
     # Urdu
     "urd": "ur",
-    
     # Tamil
     "tam": "ta",
-    
     # Telugu
     "tel": "te",
-    
     # Marathi
     "mar": "mr",
-    
     # Kannada
     "kan": "kn",
-    
     # Malayalam
     "mal": "ml",
-    
     # Punjabi
     "pan": "pa",
-    
     # Gujarati
     "guj": "gu",
 }
@@ -194,13 +142,13 @@ ISO639_2_TO_BCP47 = {
 def get_required_langs_from_rules(db_session=None) -> list[str]:
     """
     从启用的自动翻译规则中推断需要检测的语言列表。
-    
+
     如果有自动翻译规则，则从规则中提取所有目标语言作为检测目标。
     如果没有规则，返回默认的常用语言列表。
-    
+
     Args:
         db_session: Optional database session
-        
+
     Returns:
         list[str]: 需要检测的语言代码列表（BCP-47格式）
     """
@@ -208,21 +156,20 @@ def get_required_langs_from_rules(db_session=None) -> list[str]:
         # 无数据库连接，返回默认语言
         logger.warning("No database session provided, using default languages")
         return ["zh-CN", "en", "ja"]
-    
+
     try:
-        from app.models.auto_translation_rule import AutoTranslationRule
         import json
-        
+
+        from app.models.auto_translation_rule import AutoTranslationRule
+
         # 查询所有启用的自动翻译规则
-        rules = db_session.query(AutoTranslationRule).filter(
-            AutoTranslationRule.enabled == True
-        ).all()
-        
+        rules = db_session.query(AutoTranslationRule).filter(AutoTranslationRule.enabled).all()
+
         if not rules:
             # 没有规则，返回默认语言
             logger.info("No auto translation rules found, using default languages")
             return ["zh-CN", "en", "ja"]
-        
+
         # 从规则中提取所有目标语言
         target_langs = set()
         for rule in rules:
@@ -232,23 +179,23 @@ def get_required_langs_from_rules(db_session=None) -> list[str]:
             except Exception as e:
                 logger.warning(f"Failed to parse target_langs from rule {rule.id}: {e}")
                 continue
-        
+
         if not target_langs:
             # 规则中没有目标语言，返回默认语言
             logger.warning("No target languages found in rules, using default languages")
             return ["zh-CN", "en", "ja"]
-        
-        result = sorted(list(target_langs))
+
+        result = sorted(target_langs)
         logger.info(f"Inferred required languages from {len(rules)} rules: {result}")
         return result
-        
+
     except Exception as e:
         logger.error(f"Failed to get required languages from rules: {e}", exc_info=True)
         # 出错时返回默认语言
         return ["zh-CN", "en", "ja"]
 
 
-def normalize_language_code(language: Optional[str], language_tag: Optional[str] = None) -> str:
+def normalize_language_code(language: str | None, language_tag: str | None = None) -> str:
     """
     Normalize language code to BCP-47 format.
 
@@ -289,6 +236,7 @@ def normalize_language_code(language: Optional[str], language_tag: Optional[str]
 # Detector
 # =============================================================================
 
+
 class LanguageDetector:
     """
     Detects missing subtitle languages for Jellyfin media items.
@@ -324,7 +272,7 @@ class LanguageDetector:
                 if lang != "und":
                     languages.add(lang)
 
-        return sorted(list(languages))
+        return sorted(languages)
 
     @staticmethod
     def extract_subtitle_streams(item: JellyfinItem) -> list[dict]:
@@ -386,15 +334,17 @@ class LanguageDetector:
                 if lang == "und":
                     continue
 
-                streams.append({
-                    "index": stream.index,
-                    "language": lang,
-                    "display_title": stream.display_title or f"{lang.upper()} subtitle",
-                    "codec": stream.codec or "unknown",
-                    "is_default": stream.is_default,
-                    "is_forced": stream.is_forced,
-                    "is_external": stream.is_external,
-                })
+                streams.append(
+                    {
+                        "index": stream.index,
+                        "language": lang,
+                        "display_title": stream.display_title or f"{lang.upper()} subtitle",
+                        "codec": stream.codec or "unknown",
+                        "is_default": stream.is_default,
+                        "is_forced": stream.is_forced,
+                        "is_external": stream.is_external,
+                    }
+                )
 
         # Sort by index to maintain original order
         return sorted(streams, key=lambda x: x["index"])
@@ -426,18 +376,18 @@ class LanguageDetector:
                 if lang != "und":
                     languages.add(lang)
 
-        return sorted(list(languages))
+        return sorted(languages)
 
     @staticmethod
     def detect_missing_languages(
         item: JellyfinItem,
         required_langs: list[str],
         check_type: str = "subtitle",
-        db_session = None,
+        db_session=None,
     ) -> list[str]:
         """
         Detect which required languages are missing from an item.
-        
+
         Checks both Jellyfin streams AND database records to avoid re-translating.
 
         Args:
@@ -460,22 +410,22 @@ class LanguageDetector:
             existing_langs = LanguageDetector.extract_audio_languages(item)
         else:
             raise ValueError(f"Invalid check_type: {check_type}")
-        
+
         # Also check database for generated subtitles
         if db_session and check_type == "subtitle":
-            from app.models.subtitle import Subtitle
             from app.models.media_asset import MediaAsset
-            
+            from app.models.subtitle import Subtitle
+
             # Find asset by item_id
             asset = db_session.query(MediaAsset).filter_by(item_id=item.id).first()
             if asset:
                 # Get all subtitle languages from database
                 db_subtitles = db_session.query(Subtitle).filter_by(asset_id=asset.id).all()
                 db_langs = {sub.lang.lower() for sub in db_subtitles}
-                
+
                 # Merge with existing languages
                 existing_langs = list(set(existing_langs) | db_langs)
-                
+
                 logger.debug(
                     f"Item {item.name}: found {len(db_langs)} subtitles in database: {sorted(db_langs)}"
                 )
@@ -484,9 +434,7 @@ class LanguageDetector:
         required_normalized = [lang.lower() for lang in required_langs]
 
         # Find missing languages
-        missing = [
-            lang for lang in required_normalized if lang not in existing_langs
-        ]
+        missing = [lang for lang in required_normalized if lang not in existing_langs]
 
         logger.debug(
             f"Item {item.name}: existing {check_type}s={existing_langs}, "

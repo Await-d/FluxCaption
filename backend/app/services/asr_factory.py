@@ -5,11 +5,11 @@ Provides a unified interface to switch between different ASR engines
 (faster-whisper, FunASR) based on configuration.
 """
 
-from typing import Protocol, Optional, Callable
-from pathlib import Path
+from collections.abc import Callable
+from typing import Protocol
 
-from app.core.logging import get_logger
 from app.core.config import settings
+from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -17,6 +17,7 @@ logger = get_logger(__name__)
 # =============================================================================
 # ASR Protocol (Interface)
 # =============================================================================
+
 
 class ASRProtocol(Protocol):
     """
@@ -32,14 +33,14 @@ class ASRProtocol(Protocol):
     def transcribe(
         self,
         audio_path: str,
-        language: Optional[str] = None,
+        language: str | None = None,
         task: str = "transcribe",
         vad_filter: bool = True,
         vad_threshold: float = 0.5,
         beam_size: int = 5,
         best_of: int = 5,
         temperature: float = 0.0,
-        progress_callback: Optional[Callable[[int, int], None]] = None,
+        progress_callback: Callable[[int, int], None] | None = None,
     ) -> tuple[list[dict], dict]:
         """Transcribe audio file to text with timestamps."""
         ...
@@ -48,7 +49,7 @@ class ASRProtocol(Protocol):
         self,
         audio_path: str,
         output_path: str,
-        language: Optional[str] = None,
+        language: str | None = None,
         **kwargs,
     ) -> dict:
         """Transcribe audio and save as SRT subtitle."""
@@ -58,7 +59,7 @@ class ASRProtocol(Protocol):
         self,
         audio_path: str,
         output_path: str,
-        language: Optional[str] = None,
+        language: str | None = None,
         **kwargs,
     ) -> dict:
         """Transcribe audio and save as VTT subtitle."""
@@ -73,8 +74,10 @@ class ASRProtocol(Protocol):
 # ASR Engine Enum
 # =============================================================================
 
+
 class ASREngine:
     """ASR engine types."""
+
     FASTER_WHISPER = "faster-whisper"
     FUNASR = "funasr"
 
@@ -82,6 +85,7 @@ class ASREngine:
 # =============================================================================
 # ASR Factory
 # =============================================================================
+
 
 class ASRFactory:
     """
@@ -92,10 +96,10 @@ class ASRFactory:
 
     @staticmethod
     def create_asr_service(
-        engine: Optional[str] = None,
-        model_name: Optional[str] = None,
-        device: Optional[str] = None,
-        **kwargs
+        engine: str | None = None,
+        model_name: str | None = None,
+        device: str | None = None,
+        **kwargs,
     ) -> ASRProtocol:
         """
         Create an ASR service instance based on the specified engine.
@@ -115,25 +119,27 @@ class ASRFactory:
             ImportError: ASR engine library not installed
         """
         # Use configured engine if not specified
-        engine = engine or getattr(settings, 'asr_engine', ASREngine.FASTER_WHISPER)
+        engine = engine or getattr(settings, "asr_engine", ASREngine.FASTER_WHISPER)
 
         logger.info(f"Creating ASR service with engine: {engine}")
 
         if engine == ASREngine.FASTER_WHISPER:
             from app.services.asr_service import ASRService
+
             return ASRService(
                 model_name=model_name,
                 device=device,
-                compute_type=kwargs.get('compute_type'),
-                download_root=kwargs.get('download_root'),
+                compute_type=kwargs.get("compute_type"),
+                download_root=kwargs.get("download_root"),
             )
 
         elif engine == ASREngine.FUNASR:
             from app.services.funasr_service import FunASRService
+
             return FunASRService(
                 model_name=model_name,
                 device=device,
-                download_root=kwargs.get('download_root'),
+                download_root=kwargs.get("download_root"),
             )
 
         else:
@@ -165,6 +171,7 @@ class ASRFactory:
         # Check faster-whisper
         try:
             import faster_whisper
+
             available.append(ASREngine.FASTER_WHISPER)
         except ImportError:
             pass
@@ -172,6 +179,7 @@ class ASRFactory:
         # Check FunASR
         try:
             import funasr
+
             available.append(ASREngine.FUNASR)
         except ImportError:
             pass
@@ -196,13 +204,10 @@ class ASRFactory:
 # Global ASR Service Instance
 # =============================================================================
 
-_global_asr_service: Optional[ASRProtocol] = None
+_global_asr_service: ASRProtocol | None = None
 
 
-def get_asr_service(
-    engine: Optional[str] = None,
-    force_new: bool = False
-) -> ASRProtocol:
+def get_asr_service(engine: str | None = None, force_new: bool = False) -> ASRProtocol:
     """
     Get the global ASR service instance.
 

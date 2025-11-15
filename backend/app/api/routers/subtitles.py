@@ -4,18 +4,19 @@ Subtitle library API endpoints.
 Provides REST API for browsing and managing subtitle records in the database.
 """
 
-from typing import Optional, Annotated
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import func, desc
+from typing import Annotated
 
-from app.core.db import get_db
-from app.models.user import User
-from app.api.routers.auth import get_current_user
-from app.core.logging import get_logger
-from app.models.subtitle import Subtitle
-from app.models.media_asset import MediaAsset
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import desc, func
+from sqlalchemy.orm import Session
+
+from app.api.routers.auth import get_current_user
+from app.core.db import get_db
+from app.core.logging import get_logger
+from app.models.media_asset import MediaAsset
+from app.models.subtitle import Subtitle
+from app.models.user import User
 
 logger = get_logger(__name__)
 
@@ -26,23 +27,25 @@ router = APIRouter(prefix="/api/subtitles", tags=["Subtitles"])
 # Response Models
 # =============================================================================
 
+
 class SubtitleRecord(BaseModel):
     """Subtitle record with media information."""
+
     id: str
     lang: str
     format: str
     origin: str
-    source_lang: Optional[str]
+    source_lang: str | None
     is_uploaded: bool
-    line_count: Optional[int]
-    word_count: Optional[int]
+    line_count: int | None
+    word_count: int | None
     created_at: str
 
     # Media asset info
-    media_name: Optional[str]
-    media_type: Optional[str]
-    media_path: Optional[str]
-    item_id: Optional[str]
+    media_name: str | None
+    media_type: str | None
+    media_path: str | None
+    item_id: str | None
 
     class Config:
         from_attributes = True
@@ -50,6 +53,7 @@ class SubtitleRecord(BaseModel):
 
 class SubtitleListResponse(BaseModel):
     """Response for subtitle list endpoint."""
+
     subtitles: list[SubtitleRecord]
     total: int
     limit: int
@@ -58,6 +62,7 @@ class SubtitleListResponse(BaseModel):
 
 class SubtitleContentResponse(BaseModel):
     """Response for subtitle content endpoint."""
+
     content: str
     format: str
     lang: str
@@ -66,12 +71,14 @@ class SubtitleContentResponse(BaseModel):
 
 class DeleteSubtitleRequest(BaseModel):
     """Request for deleting subtitles."""
+
     subtitle_ids: list[str]
     delete_files: bool = False  # Whether to delete physical files
 
 
 class DeleteSubtitleResponse(BaseModel):
     """Response for subtitle deletion."""
+
     deleted_count: int
     failed_ids: list[str]
     message: str
@@ -81,15 +88,18 @@ class DeleteSubtitleResponse(BaseModel):
 # Endpoints
 # =============================================================================
 
+
 @router.get("/", response_model=SubtitleListResponse)
 async def list_subtitles(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-    lang: Optional[str] = Query(default=None, description="Filter by language"),
-    origin: Optional[str] = Query(default=None, description="Filter by origin (asr/mt/manual/jellyfin)"),
-    search: Optional[str] = Query(default=None, description="Search media name"),
+    lang: str | None = Query(default=None, description="Filter by language"),
+    origin: str | None = Query(
+        default=None, description="Filter by origin (asr/mt/manual/jellyfin)"
+    ),
+    search: str | None = Query(default=None, description="Search media name"),
 ):
     """
     List all subtitle records with pagination and filters.
@@ -109,13 +119,11 @@ async def list_subtitles(
         # Build query with joins
         query = db.query(
             Subtitle,
-            MediaAsset.name.label('media_name'),
-            MediaAsset.type.label('media_type'),
-            MediaAsset.path.label('media_path'),
-            MediaAsset.item_id.label('item_id'),
-        ).outerjoin(
-            MediaAsset, Subtitle.asset_id == MediaAsset.id
-        )
+            MediaAsset.name.label("media_name"),
+            MediaAsset.type.label("media_type"),
+            MediaAsset.path.label("media_path"),
+            MediaAsset.item_id.label("item_id"),
+        ).outerjoin(MediaAsset, Subtitle.asset_id == MediaAsset.id)
 
         # Apply filters
         if lang:
@@ -140,21 +148,23 @@ async def list_subtitles(
         # Format response
         subtitles = []
         for subtitle, media_name, media_type, media_path, item_id in results:
-            subtitles.append(SubtitleRecord(
-                id=str(subtitle.id),
-                lang=subtitle.lang,
-                format=subtitle.format,
-                origin=subtitle.origin,
-                source_lang=subtitle.source_lang,
-                is_uploaded=subtitle.is_uploaded,
-                line_count=subtitle.line_count,
-                word_count=subtitle.word_count,
-                created_at=subtitle.created_at.isoformat() if subtitle.created_at else "",
-                media_name=media_name,
-                media_type=media_type,
-                media_path=media_path,
-                item_id=item_id,
-            ))
+            subtitles.append(
+                SubtitleRecord(
+                    id=str(subtitle.id),
+                    lang=subtitle.lang,
+                    format=subtitle.format,
+                    origin=subtitle.origin,
+                    source_lang=subtitle.source_lang,
+                    is_uploaded=subtitle.is_uploaded,
+                    line_count=subtitle.line_count,
+                    word_count=subtitle.word_count,
+                    created_at=subtitle.created_at.isoformat() if subtitle.created_at else "",
+                    media_name=media_name,
+                    media_type=media_type,
+                    media_path=media_path,
+                    item_id=item_id,
+                )
+            )
 
         return SubtitleListResponse(
             subtitles=subtitles,
@@ -195,6 +205,7 @@ async def get_subtitle_content(
 
         # Read subtitle file
         from pathlib import Path
+
         file_path = Path(subtitle.storage_path)
 
         if not file_path.exists():
@@ -202,20 +213,20 @@ async def get_subtitle_content(
 
         # Read file content (with line limit)
         lines = []
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, encoding="utf-8") as f:
             for i, line in enumerate(f):
                 if i >= max_lines:
                     lines.append(f"\n... (truncated at {max_lines} lines)")
                     break
                 lines.append(line)
 
-        content = ''.join(lines)
+        content = "".join(lines)
 
         return SubtitleContentResponse(
             content=content,
             format=subtitle.format,
             lang=subtitle.lang,
-            line_count=subtitle.line_count or len([l for l in content.split('\n') if l.strip()]),
+            line_count=subtitle.line_count or len([l for l in content.split("\n") if l.strip()]),
         )
 
     except HTTPException:
@@ -241,25 +252,27 @@ async def get_subtitle_stats(
         total = db.query(func.count(Subtitle.id)).scalar()
 
         # By language
-        by_lang = db.query(
-            Subtitle.lang,
-            func.count(Subtitle.id).label('count')
-        ).group_by(Subtitle.lang).all()
+        by_lang = (
+            db.query(Subtitle.lang, func.count(Subtitle.id).label("count"))
+            .group_by(Subtitle.lang)
+            .all()
+        )
 
         # By origin
-        by_origin = db.query(
-            Subtitle.origin,
-            func.count(Subtitle.id).label('count')
-        ).group_by(Subtitle.origin).all()
+        by_origin = (
+            db.query(Subtitle.origin, func.count(Subtitle.id).label("count"))
+            .group_by(Subtitle.origin)
+            .all()
+        )
 
         # Uploaded vs not uploaded
-        uploaded = db.query(func.count(Subtitle.id)).filter(Subtitle.is_uploaded == True).scalar()
-        not_uploaded = db.query(func.count(Subtitle.id)).filter(Subtitle.is_uploaded == False).scalar()
+        uploaded = db.query(func.count(Subtitle.id)).filter(Subtitle.is_uploaded).scalar()
+        not_uploaded = db.query(func.count(Subtitle.id)).filter(not Subtitle.is_uploaded).scalar()
 
         return {
             "total": total,
-            "by_language": {lang: count for lang, count in by_lang},
-            "by_origin": {origin: count for origin, count in by_origin},
+            "by_language": dict(by_lang),
+            "by_origin": dict(by_origin),
             "uploaded": uploaded,
             "not_uploaded": not_uploaded,
         }
@@ -267,7 +280,6 @@ async def get_subtitle_stats(
     except Exception as e:
         logger.error(f"Failed to get subtitle stats: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
-
 
 
 @router.delete("/{subtitle_id}")
@@ -298,6 +310,7 @@ async def delete_subtitle(
         # Delete physical file if requested
         if delete_file:
             from pathlib import Path
+
             file_path = Path(subtitle.storage_path)
             if file_path.exists():
                 try:
@@ -361,6 +374,7 @@ async def batch_delete_subtitles(
                 # Delete physical file if requested
                 if request.delete_files:
                     from pathlib import Path
+
                     file_path = Path(subtitle.storage_path)
                     if file_path.exists():
                         try:

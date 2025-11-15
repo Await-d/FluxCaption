@@ -5,13 +5,10 @@ Extracts audio from video files and converts to format suitable for ASR.
 """
 
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
-from typing import Optional, Callable
-import tempfile
-import shutil
 
 from app.core.logging import get_logger
-from app.core.config import settings
 
 logger = get_logger(__name__)
 
@@ -20,29 +17,35 @@ logger = get_logger(__name__)
 # Exceptions
 # =============================================================================
 
+
 class AudioExtractionError(Exception):
     """Base exception for audio extraction errors."""
+
     pass
 
 
 class FFmpegNotFoundError(AudioExtractionError):
     """FFmpeg executable not found."""
+
     pass
 
 
 class VideoFileNotFoundError(AudioExtractionError):
     """Video file not found."""
+
     pass
 
 
 class AudioExtractionFailedError(AudioExtractionError):
     """Audio extraction failed."""
+
     pass
 
 
 # =============================================================================
 # Audio Extractor
 # =============================================================================
+
 
 class AudioExtractor:
     """
@@ -89,8 +92,8 @@ class AudioExtractor:
         sample_rate: int = 16000,
         channels: int = 1,
         audio_codec: str = "pcm_s16le",
-        audio_track: Optional[int] = None,
-        progress_callback: Optional[Callable[[float], None]] = None,
+        audio_track: int | None = None,
+        progress_callback: Callable[[float], None] | None = None,
     ) -> str:
         """
         Extract audio from video file.
@@ -114,7 +117,7 @@ class AudioExtractor:
         """
         # Check if input is a URL or local file
         is_url = video_path.startswith(("http://", "https://"))
-        
+
         if not is_url:
             video_file = Path(video_path)
             if not video_file.exists():
@@ -131,11 +134,15 @@ class AudioExtractor:
         # Build ffmpeg command
         cmd = [
             self.ffmpeg_path,
-            "-i", video_path if is_url else str(video_file),
+            "-i",
+            video_path if is_url else str(video_file),
             "-vn",  # No video
-            "-acodec", audio_codec,
-            "-ar", str(sample_rate),
-            "-ac", str(channels),
+            "-acodec",
+            audio_codec,
+            "-ar",
+            str(sample_rate),
+            "-ac",
+            str(channels),
         ]
 
         # Select specific audio track if specified
@@ -155,8 +162,8 @@ class AudioExtractor:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                encoding='utf-8',
-                errors='ignore',  # Ignore encoding errors from media metadata
+                encoding="utf-8",
+                errors="ignore",  # Ignore encoding errors from media metadata
             )
 
             # Monitor progress and collect stderr
@@ -178,7 +185,7 @@ class AudioExtractor:
             process.wait()
 
             if process.returncode != 0:
-                stderr = ''.join(stderr_lines)
+                stderr = "".join(stderr_lines)
                 raise AudioExtractionFailedError(
                     f"FFmpeg failed with code {process.returncode}: {stderr}"
                 )
@@ -228,14 +235,21 @@ class AudioExtractor:
         # Build ffmpeg command with seek and duration
         cmd = [
             self.ffmpeg_path,
-            "-ss", str(start_time),  # Seek to start
-            "-i", str(video_file),
-            "-t", str(duration),  # Duration
+            "-ss",
+            str(start_time),  # Seek to start
+            "-i",
+            str(video_file),
+            "-t",
+            str(duration),  # Duration
             "-vn",
-            "-acodec", kwargs.get("audio_codec", "pcm_s16le"),
-            "-ar", str(kwargs.get("sample_rate", 16000)),
-            "-ac", str(kwargs.get("channels", 1)),
-            "-y", str(output_file),
+            "-acodec",
+            kwargs.get("audio_codec", "pcm_s16le"),
+            "-ar",
+            str(kwargs.get("sample_rate", 16000)),
+            "-ac",
+            str(kwargs.get("channels", 1)),
+            "-y",
+            str(output_file),
         ]
 
         try:
@@ -248,9 +262,7 @@ class AudioExtractor:
             return str(output_file)
 
         except subprocess.CalledProcessError as e:
-            raise AudioExtractionFailedError(
-                f"Segment extraction failed: {e.stderr.decode()}"
-            )
+            raise AudioExtractionFailedError(f"Segment extraction failed: {e.stderr.decode()}")
 
     def split_audio(
         self,
@@ -274,8 +286,7 @@ class AudioExtractor:
             List of segment info dicts with 'path', 'start', 'duration'
         """
         logger.info(
-            f"Splitting {video_path} into {segment_duration}s segments "
-            f"(overlap={overlap}s)"
+            f"Splitting {video_path} into {segment_duration}s segments (overlap={overlap}s)"
         )
 
         # Get total duration
@@ -307,12 +318,14 @@ class AudioExtractor:
                 **kwargs,
             )
 
-            segments.append({
-                "path": str(segment_file),
-                "start": current_time,
-                "duration": actual_duration,
-                "index": segment_index,
-            })
+            segments.append(
+                {
+                    "path": str(segment_file),
+                    "start": current_time,
+                    "duration": actual_duration,
+                    "index": segment_index,
+                }
+            )
 
             # Move to next segment with overlap
             current_time += segment_duration - overlap
@@ -321,7 +334,7 @@ class AudioExtractor:
         logger.info(f"Split into {len(segments)} segments")
         return segments
 
-    def _get_duration(self, video_path: str) -> Optional[float]:
+    def _get_duration(self, video_path: str) -> float | None:
         """
         Get video duration using ffprobe.
 
@@ -334,9 +347,12 @@ class AudioExtractor:
         try:
             cmd = [
                 "ffprobe",
-                "-v", "error",
-                "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
                 str(video_path),
             ]
 
@@ -384,10 +400,14 @@ class AudioExtractor:
         try:
             cmd = [
                 "ffprobe",
-                "-v", "error",
-                "-select_streams", "a",
-                "-show_entries", "stream=index,codec_name,channels,sample_rate,duration",
-                "-of", "json",
+                "-v",
+                "error",
+                "-select_streams",
+                "a",
+                "-show_entries",
+                "stream=index,codec_name,channels,sample_rate,duration",
+                "-of",
+                "json",
                 str(video_path),
             ]
 
@@ -399,6 +419,7 @@ class AudioExtractor:
             )
 
             import json
+
             data = json.loads(result.stdout)
             streams = data.get("streams", [])
 

@@ -4,13 +4,11 @@ Automatic Speech Recognition (ASR) service using faster-whisper.
 Transcribes audio to text with timestamps for subtitle generation.
 """
 
-import os
+from collections.abc import Callable
 from pathlib import Path
-from typing import Optional, Callable, Iterator
-import tempfile
 
-from app.core.logging import get_logger
 from app.core.config import settings
+from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -22,24 +20,29 @@ _whisper_model = None
 # Exceptions
 # =============================================================================
 
+
 class ASRError(Exception):
     """Base exception for ASR errors."""
+
     pass
 
 
 class ModelLoadError(ASRError):
     """Model loading failed."""
+
     pass
 
 
 class TranscriptionError(ASRError):
     """Transcription failed."""
+
     pass
 
 
 # =============================================================================
 # ASR Service
 # =============================================================================
+
 
 class ASRService:
     """
@@ -51,10 +54,10 @@ class ASRService:
 
     def __init__(
         self,
-        model_name: Optional[str] = None,
-        device: Optional[str] = None,
-        compute_type: Optional[str] = None,
-        download_root: Optional[str] = None,
+        model_name: str | None = None,
+        device: str | None = None,
+        compute_type: str | None = None,
+        download_root: str | None = None,
     ):
         """
         Initialize ASR service.
@@ -116,14 +119,14 @@ class ASRService:
     def transcribe(
         self,
         audio_path: str,
-        language: Optional[str] = None,
+        language: str | None = None,
         task: str = "transcribe",
         vad_filter: bool = True,
         vad_threshold: float = 0.5,
         beam_size: int = 5,
         best_of: int = 5,
         temperature: float = 0.0,
-        progress_callback: Optional[Callable[[int, int], None]] = None,
+        progress_callback: Callable[[int, int], None] | None = None,
     ) -> tuple[list[dict], dict]:
         """
         Transcribe audio file to text with timestamps.
@@ -167,7 +170,7 @@ class ASRService:
                 vad_params = {
                     "threshold": vad_threshold,
                     "min_speech_duration_ms": 250,
-                    "max_speech_duration_s": float('inf'),
+                    "max_speech_duration_s": float("inf"),
                     "min_silence_duration_ms": 2000,
                 }
 
@@ -188,15 +191,17 @@ class ASRService:
             total_segments = 0
 
             for segment in segments_iterator:
-                segments.append({
-                    "id": segment.id,
-                    "start": segment.start,
-                    "end": segment.end,
-                    "text": segment.text.strip(),
-                    "words": getattr(segment, "words", None),
-                    "avg_logprob": segment.avg_logprob,
-                    "no_speech_prob": segment.no_speech_prob,
-                })
+                segments.append(
+                    {
+                        "id": segment.id,
+                        "start": segment.start,
+                        "end": segment.end,
+                        "text": segment.text.strip(),
+                        "words": getattr(segment, "words", None),
+                        "avg_logprob": segment.avg_logprob,
+                        "no_speech_prob": segment.no_speech_prob,
+                    }
+                )
 
                 if progress_callback:
                     total_segments += 1
@@ -232,7 +237,7 @@ class ASRService:
         self,
         audio_path: str,
         output_path: str,
-        language: Optional[str] = None,
+        language: str | None = None,
         **kwargs,
     ) -> dict:
         """
@@ -276,7 +281,7 @@ class ASRService:
         self,
         audio_path: str,
         output_path: str,
-        language: Optional[str] = None,
+        language: str | None = None,
         **kwargs,
     ) -> dict:
         """
@@ -397,7 +402,7 @@ class ASRService:
 # Singleton Instance
 # =============================================================================
 
-_asr_service: Optional[ASRService] = None
+_asr_service: ASRService | None = None
 
 
 def get_asr_service() -> ASRService:

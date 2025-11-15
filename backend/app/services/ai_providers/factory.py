@@ -4,17 +4,16 @@ AI Provider Factory and Manager.
 Handles creation and management of AI providers.
 """
 
-from typing import Optional, Dict, Type
 from app.core.logging import get_logger
 from app.services.ai_providers.base import BaseAIProvider
+from app.services.ai_providers.claude_provider import ClaudeProvider
+from app.services.ai_providers.custom_openai_provider import CustomOpenAIProvider
+from app.services.ai_providers.deepseek_provider import DeepSeekProvider
+from app.services.ai_providers.gemini_provider import GeminiProvider
+from app.services.ai_providers.moonshot_provider import MoonshotProvider
 from app.services.ai_providers.ollama_provider import OllamaProvider
 from app.services.ai_providers.openai_provider import OpenAIProvider
-from app.services.ai_providers.deepseek_provider import DeepSeekProvider
-from app.services.ai_providers.claude_provider import ClaudeProvider
-from app.services.ai_providers.gemini_provider import GeminiProvider
 from app.services.ai_providers.zhipu_provider import ZhipuProvider
-from app.services.ai_providers.moonshot_provider import MoonshotProvider
-from app.services.ai_providers.custom_openai_provider import CustomOpenAIProvider
 
 logger = get_logger(__name__)
 
@@ -27,7 +26,7 @@ class AIProviderFactory:
     """
 
     # Registry of available providers
-    _providers: Dict[str, Type[BaseAIProvider]] = {
+    _providers: dict[str, type[BaseAIProvider]] = {
         "ollama": OllamaProvider,
         "openai": OpenAIProvider,
         "deepseek": DeepSeekProvider,
@@ -39,7 +38,7 @@ class AIProviderFactory:
     }
 
     @classmethod
-    def register_provider(cls, name: str, provider_class: Type[BaseAIProvider]):
+    def register_provider(cls, name: str, provider_class: type[BaseAIProvider]):
         """
         Register a new AI provider.
 
@@ -59,10 +58,10 @@ class AIProviderFactory:
     def create_provider(
         cls,
         provider_name: str,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
         timeout: int = 300,
-        **kwargs
+        **kwargs,
     ) -> BaseAIProvider:
         """
         Create an AI provider instance.
@@ -85,19 +84,13 @@ class AIProviderFactory:
         if provider_name_lower not in cls._providers:
             available = ", ".join(cls._providers.keys())
             raise ValueError(
-                f"Unknown AI provider: {provider_name}. "
-                f"Available providers: {available}"
+                f"Unknown AI provider: {provider_name}. Available providers: {available}"
             )
 
         provider_class = cls._providers[provider_name_lower]
 
         try:
-            provider = provider_class(
-                api_key=api_key,
-                base_url=base_url,
-                timeout=timeout,
-                **kwargs
-            )
+            provider = provider_class(api_key=api_key, base_url=base_url, timeout=timeout, **kwargs)
             logger.info(f"Created {provider_name} provider instance")
             return provider
 
@@ -114,12 +107,12 @@ class AIProviderManager:
     """
 
     def __init__(self):
-        self._provider_cache: Dict[str, BaseAIProvider] = {}
+        self._provider_cache: dict[str, BaseAIProvider] = {}
 
     def get_provider(
         self,
         provider_name: str,
-        config: Optional[dict] = None,
+        config: dict | None = None,
         use_cache: bool = True,
     ) -> BaseAIProvider:
         """
@@ -152,7 +145,7 @@ class AIProviderManager:
     def get_provider_from_model_id(
         self,
         model_id: str,
-        config: Optional[dict] = None,
+        config: dict | None = None,
     ) -> tuple[BaseAIProvider, str]:
         """
         Get provider and model name from a model identifier.

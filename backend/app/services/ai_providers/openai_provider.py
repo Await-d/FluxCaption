@@ -4,14 +4,15 @@ OpenAI AI Provider Implementation.
 Supports OpenAI API and compatible providers (OpenRouter, etc.).
 """
 
-from typing import Optional, AsyncIterator
+from collections.abc import AsyncIterator
+
 import httpx
 
 from app.core.logging import get_logger
 from app.services.ai_providers.base import (
-    BaseAIProvider,
-    AIModelInfo,
     AIGenerateResponse,
+    AIModelInfo,
+    BaseAIProvider,
 )
 
 logger = get_logger(__name__)
@@ -27,17 +28,10 @@ class OpenAIProvider(BaseAIProvider):
     DEFAULT_BASE_URL = "https://api.openai.com/v1"
 
     def __init__(
-        self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        timeout: int = 300,
-        **kwargs
+        self, api_key: str | None = None, base_url: str | None = None, timeout: int = 300, **kwargs
     ):
         super().__init__(
-            api_key=api_key,
-            base_url=base_url or self.DEFAULT_BASE_URL,
-            timeout=timeout,
-            **kwargs
+            api_key=api_key, base_url=base_url or self.DEFAULT_BASE_URL, timeout=timeout, **kwargs
         )
         if not self.api_key:
             raise ValueError("OpenAI provider requires an API key")
@@ -119,9 +113,9 @@ class OpenAIProvider(BaseAIProvider):
         self,
         model: str,
         prompt: str,
-        system: Optional[str] = None,
+        system: str | None = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
         **kwargs,
     ) -> AIGenerateResponse:
         """Generate text using OpenAI."""
@@ -179,9 +173,9 @@ class OpenAIProvider(BaseAIProvider):
         self,
         model: str,
         prompt: str,
-        system: Optional[str] = None,
+        system: str | None = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
         **kwargs,
     ) -> AsyncIterator[str]:
         """Generate text using OpenAI with streaming."""
@@ -224,6 +218,7 @@ class OpenAIProvider(BaseAIProvider):
 
                         try:
                             import json
+
                             data = json.loads(line)
                             delta = data["choices"][0].get("delta", {})
                             content = delta.get("content")

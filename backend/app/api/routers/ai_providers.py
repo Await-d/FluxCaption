@@ -4,17 +4,17 @@ AI Provider Configuration API Router.
 Endpoints for managing AI provider configurations, quotas, and usage monitoring.
 """
 
-from typing import List, Optional
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+
 import sqlalchemy as sa
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.logging import get_logger
 from app.models.ai_provider_config import AIProviderConfig
-from app.models.ai_provider_usage import AIProviderQuota, AIProviderUsageLog
+from app.models.ai_provider_usage import AIProviderUsageLog
 from app.services.ai_providers.factory import AIProviderFactory, provider_manager
 from app.services.ai_quota_service import AIQuotaService
 
@@ -26,19 +26,20 @@ router = APIRouter(prefix="/ai-providers", tags=["AI Providers"])
 # Pydantic Schemas
 # =============================================================================
 
+
 class ProviderConfigCreate(BaseModel):
     """Schema for creating/updating provider config."""
 
     provider_name: str = Field(..., description="Provider identifier (e.g., 'openai', 'deepseek')")
     display_name: str = Field(..., description="Display name for UI")
     is_enabled: bool = Field(default=False, description="Whether provider is enabled")
-    api_key: Optional[str] = Field(default=None, description="API key (encrypted)")
-    base_url: Optional[str] = Field(default=None, description="API base URL")
+    api_key: str | None = Field(default=None, description="API key (encrypted)")
+    base_url: str | None = Field(default=None, description="API base URL")
     timeout: int = Field(default=300, description="Request timeout in seconds")
-    extra_config: Optional[dict] = Field(default=None, description="Extra configuration as JSON")
-    default_model: Optional[str] = Field(default=None, description="Default model name")
+    extra_config: dict | None = Field(default=None, description="Extra configuration as JSON")
+    default_model: str | None = Field(default=None, description="Default model name")
     priority: int = Field(default=0, description="Display priority (higher = first)")
-    description: Optional[str] = Field(default=None, description="Provider description")
+    description: str | None = Field(default=None, description="Provider description")
 
 
 class ProviderConfigResponse(BaseModel):
@@ -48,14 +49,14 @@ class ProviderConfigResponse(BaseModel):
     provider_name: str
     display_name: str
     is_enabled: bool
-    base_url: Optional[str]
+    base_url: str | None
     timeout: int
-    default_model: Optional[str]
-    last_health_check: Optional[datetime]
+    default_model: str | None
+    last_health_check: datetime | None
     is_healthy: bool
-    health_error: Optional[str]
+    health_error: str | None
     priority: int
-    description: Optional[str]
+    description: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -66,34 +67,36 @@ class ProviderConfigResponse(BaseModel):
 class QuotaConfigUpdate(BaseModel):
     """Schema for updating quota configuration."""
 
-    daily_limit: Optional[float] = Field(default=None, description="Daily spending limit in USD")
-    monthly_limit: Optional[float] = Field(default=None, description="Monthly spending limit in USD")
-    daily_token_limit: Optional[int] = Field(default=None, description="Daily token limit")
-    monthly_token_limit: Optional[int] = Field(default=None, description="Monthly token limit")
-    requests_per_minute: Optional[int] = Field(default=None, description="Max requests per minute")
-    requests_per_hour: Optional[int] = Field(default=None, description="Max requests per hour")
+    daily_limit: float | None = Field(default=None, description="Daily spending limit in USD")
+    monthly_limit: float | None = Field(default=None, description="Monthly spending limit in USD")
+    daily_token_limit: int | None = Field(default=None, description="Daily token limit")
+    monthly_token_limit: int | None = Field(default=None, description="Monthly token limit")
+    requests_per_minute: int | None = Field(default=None, description="Max requests per minute")
+    requests_per_hour: int | None = Field(default=None, description="Max requests per hour")
     alert_threshold_percent: int = Field(default=80, description="Alert threshold percentage")
-    auto_disable_on_limit: bool = Field(default=True, description="Auto-disable when limit exceeded")
+    auto_disable_on_limit: bool = Field(
+        default=True, description="Auto-disable when limit exceeded"
+    )
 
 
 class QuotaResponse(BaseModel):
     """Schema for quota response."""
 
     provider_name: str
-    daily_limit: Optional[float]
-    monthly_limit: Optional[float]
+    daily_limit: float | None
+    monthly_limit: float | None
     current_daily_cost: float
     current_monthly_cost: float
     current_daily_tokens: int
     current_monthly_tokens: int
-    daily_remaining: Optional[float]
-    monthly_remaining: Optional[float]
+    daily_remaining: float | None
+    monthly_remaining: float | None
     daily_usage_percent: float
     monthly_usage_percent: float
     alert_threshold_percent: int
     auto_disable_on_limit: bool
-    daily_reset_at: Optional[datetime]
-    monthly_reset_at: Optional[datetime]
+    daily_reset_at: datetime | None
+    monthly_reset_at: datetime | None
 
     class Config:
         from_attributes = True
@@ -115,7 +118,8 @@ class UsageStatsResponse(BaseModel):
 # Provider Configuration Endpoints
 # =============================================================================
 
-@router.get("", response_model=List[ProviderConfigResponse])
+
+@router.get("", response_model=list[ProviderConfigResponse])
 async def list_providers(
     enabled_only: bool = Query(default=False, description="Only return enabled providers"),
     db: Session = Depends(get_db),
@@ -124,7 +128,7 @@ async def list_providers(
     stmt = sa.select(AIProviderConfig)
 
     if enabled_only:
-        stmt = stmt.where(AIProviderConfig.is_enabled == True)
+        stmt = stmt.where(AIProviderConfig.is_enabled)
 
     stmt = stmt.order_by(AIProviderConfig.priority.desc(), AIProviderConfig.created_at)
 
@@ -138,9 +142,7 @@ async def get_provider(
     db: Session = Depends(get_db),
 ):
     """Get a specific provider configuration."""
-    stmt = sa.select(AIProviderConfig).where(
-        AIProviderConfig.provider_name == provider_name
-    )
+    stmt = sa.select(AIProviderConfig).where(AIProviderConfig.provider_name == provider_name)
     provider = db.execute(stmt).scalar_one_or_none()
 
     if not provider:
@@ -162,13 +164,11 @@ async def create_or_update_provider(
         raise HTTPException(
             status_code=400,
             detail=f"Invalid provider '{config.provider_name}'. "
-                   f"Available: {', '.join(available_providers)}"
+            f"Available: {', '.join(available_providers)}",
         )
 
     # Check if exists
-    stmt = sa.select(AIProviderConfig).where(
-        AIProviderConfig.provider_name == config.provider_name
-    )
+    stmt = sa.select(AIProviderConfig).where(AIProviderConfig.provider_name == config.provider_name)
     existing = db.execute(stmt).scalar_one_or_none()
 
     if existing:
@@ -176,6 +176,7 @@ async def create_or_update_provider(
         for field, value in config.model_dump(exclude_unset=True).items():
             if field == "extra_config" and value is not None:
                 import json
+
                 setattr(existing, field, json.dumps(value))
             else:
                 setattr(existing, field, value)
@@ -187,6 +188,7 @@ async def create_or_update_provider(
     else:
         # Create new
         import json
+
         provider_config = AIProviderConfig(
             **config.model_dump(exclude={"extra_config"}),
             extra_config=json.dumps(config.extra_config) if config.extra_config else None,
@@ -204,9 +206,7 @@ async def delete_provider(
     db: Session = Depends(get_db),
 ):
     """Delete a provider configuration."""
-    stmt = sa.select(AIProviderConfig).where(
-        AIProviderConfig.provider_name == provider_name
-    )
+    stmt = sa.select(AIProviderConfig).where(AIProviderConfig.provider_name == provider_name)
     provider = db.execute(stmt).scalar_one_or_none()
 
     if not provider:
@@ -227,9 +227,7 @@ async def check_provider_health(
     """Check provider health and update status."""
 
     # Get provider config
-    stmt = sa.select(AIProviderConfig).where(
-        AIProviderConfig.provider_name == provider_name
-    )
+    stmt = sa.select(AIProviderConfig).where(AIProviderConfig.provider_name == provider_name)
     config_record = db.execute(stmt).scalar_one_or_none()
 
     if not config_record:
@@ -238,6 +236,7 @@ async def check_provider_health(
     try:
         # Get provider instance
         import json
+
         provider_config = {
             "api_key": config_record.api_key,
             "base_url": config_record.base_url,
@@ -254,7 +253,7 @@ async def check_provider_health(
         provider = provider_manager.get_provider(
             provider_name,
             config=provider_config,
-            use_cache=False  # Don't use cache for health check
+            use_cache=False,  # Don't use cache for health check
         )
 
         # Perform health check
@@ -281,10 +280,7 @@ async def check_provider_health(
         db.commit()
 
         logger.error(f"Health check failed for {provider_name}: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Health check failed: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")
 
 
 @router.get("/{provider_name}/models")
@@ -295,9 +291,7 @@ async def list_provider_models(
     """List available models for a provider."""
 
     # Get provider config
-    stmt = sa.select(AIProviderConfig).where(
-        AIProviderConfig.provider_name == provider_name
-    )
+    stmt = sa.select(AIProviderConfig).where(AIProviderConfig.provider_name == provider_name)
     config_record = db.execute(stmt).scalar_one_or_none()
 
     if not config_record:
@@ -306,6 +300,7 @@ async def list_provider_models(
     try:
         # Get provider instance
         import json
+
         provider_config = {
             "api_key": config_record.api_key,
             "base_url": config_record.base_url,
@@ -320,9 +315,7 @@ async def list_provider_models(
                 pass
 
         provider = provider_manager.get_provider(
-            provider_name,
-            config=provider_config,
-            use_cache=False
+            provider_name, config=provider_config, use_cache=False
         )
 
         # List models
@@ -347,15 +340,13 @@ async def list_provider_models(
 
     except Exception as e:
         logger.error(f"Failed to list models for {provider_name}: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to list models: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to list models: {str(e)}")
 
 
 # =============================================================================
 # Quota Management Endpoints
 # =============================================================================
+
 
 @router.get("/{provider_name}/quota", response_model=QuotaResponse)
 async def get_provider_quota(
@@ -425,7 +416,7 @@ async def update_provider_quota(
             auto_disable_on_limit=quota.auto_disable_on_limit,
             daily_reset_at=quota.daily_reset_at,
             monthly_reset_at=quota.monthly_reset_at,
-        )
+        ),
     }
 
 
@@ -465,9 +456,10 @@ async def reset_provider_quota(
 # Usage Statistics Endpoints
 # =============================================================================
 
-@router.get("/{provider_name}/usage-stats", response_model=List[UsageStatsResponse])
+
+@router.get("/{provider_name}/usage-stats", response_model=list[UsageStatsResponse])
 async def get_usage_stats(
-    provider_name: Optional[str] = None,
+    provider_name: str | None = None,
     days: int = Query(default=7, ge=1, le=90, description="Number of days to look back"),
     db: Session = Depends(get_db),
 ):
@@ -489,21 +481,19 @@ async def get_usage_logs(
     provider_name: str,
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
-    job_id: Optional[str] = Query(default=None),
+    job_id: str | None = Query(default=None),
     errors_only: bool = Query(default=False),
     db: Session = Depends(get_db),
 ):
     """Get detailed usage logs for a provider."""
 
-    stmt = sa.select(AIProviderUsageLog).where(
-        AIProviderUsageLog.provider_name == provider_name
-    )
+    stmt = sa.select(AIProviderUsageLog).where(AIProviderUsageLog.provider_name == provider_name)
 
     if job_id:
         stmt = stmt.where(AIProviderUsageLog.job_id == job_id)
 
     if errors_only:
-        stmt = stmt.where(AIProviderUsageLog.is_error == True)
+        stmt = stmt.where(AIProviderUsageLog.is_error)
 
     stmt = stmt.order_by(AIProviderUsageLog.created_at.desc())
     stmt = stmt.offset(offset).limit(limit)
@@ -511,13 +501,15 @@ async def get_usage_logs(
     logs = db.execute(stmt).scalars().all()
 
     # Count total
-    count_stmt = sa.select(sa.func.count()).select_from(AIProviderUsageLog).where(
-        AIProviderUsageLog.provider_name == provider_name
+    count_stmt = (
+        sa.select(sa.func.count())
+        .select_from(AIProviderUsageLog)
+        .where(AIProviderUsageLog.provider_name == provider_name)
     )
     if job_id:
         count_stmt = count_stmt.where(AIProviderUsageLog.job_id == job_id)
     if errors_only:
-        count_stmt = count_stmt.where(AIProviderUsageLog.is_error == True)
+        count_stmt = count_stmt.where(AIProviderUsageLog.is_error)
 
     total = db.execute(count_stmt).scalar()
 
@@ -560,19 +552,21 @@ async def get_usage_summary(
         sa.func.sum(AIProviderUsageLog.total_tokens).label("total_tokens"),
         sa.func.sum(AIProviderUsageLog.total_cost).label("total_cost"),
         sa.func.avg(AIProviderUsageLog.response_time_ms).label("avg_response_time"),
-        sa.func.sum(sa.case((AIProviderUsageLog.is_error == True, 1), else_=0)).label("error_count"),
+        sa.func.sum(sa.case((AIProviderUsageLog.is_error, 1), else_=0)).label("error_count"),
     ).where(AIProviderUsageLog.created_at >= start_date)
 
     result = db.execute(stmt).first()
 
     # Per-provider breakdown
-    provider_stmt = sa.select(
-        AIProviderUsageLog.provider_name,
-        sa.func.count(AIProviderUsageLog.id).label("requests"),
-        sa.func.sum(AIProviderUsageLog.total_cost).label("cost"),
-    ).where(
-        AIProviderUsageLog.created_at >= start_date
-    ).group_by(AIProviderUsageLog.provider_name)
+    provider_stmt = (
+        sa.select(
+            AIProviderUsageLog.provider_name,
+            sa.func.count(AIProviderUsageLog.id).label("requests"),
+            sa.func.sum(AIProviderUsageLog.total_cost).label("cost"),
+        )
+        .where(AIProviderUsageLog.created_at >= start_date)
+        .group_by(AIProviderUsageLog.provider_name)
+    )
 
     provider_stats = db.execute(provider_stmt).all()
 
@@ -588,7 +582,8 @@ async def get_usage_summary(
             "error_count": result.error_count or 0,
             "success_rate": (
                 ((result.total_requests - result.error_count) / result.total_requests * 100)
-                if result.total_requests > 0 else 0.0
+                if result.total_requests > 0
+                else 0.0
             ),
         },
         "by_provider": [

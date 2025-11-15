@@ -2,25 +2,25 @@
 Correction Rules API endpoints.
 """
 
+import logging
 import re
 from typing import Annotated
-import logging
 
+import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-import sqlalchemy as sa
 
-from app.core.db import get_db
-from app.models.user import User
-from app.models.correction_rule import CorrectionRule
 from app.api.routers.auth import get_current_user
+from app.core.db import get_db
+from app.models.correction_rule import CorrectionRule
+from app.models.user import User
 from app.schemas.correction import (
-    CorrectionRuleCreate,
-    CorrectionRuleUpdate,
-    CorrectionRuleResponse,
-    CorrectionRuleListResponse,
     ApplyCorrectionRequest,
     ApplyCorrectionResponse,
+    CorrectionRuleCreate,
+    CorrectionRuleListResponse,
+    CorrectionRuleResponse,
+    CorrectionRuleUpdate,
 )
 
 logger = logging.getLogger(__name__)
@@ -61,17 +61,11 @@ def list_correction_rules(
         stmt = stmt.where(CorrectionRule.is_active == is_active)
     if source_lang:
         stmt = stmt.where(
-            sa.or_(
-                CorrectionRule.source_lang == source_lang,
-                CorrectionRule.source_lang.is_(None)
-            )
+            sa.or_(CorrectionRule.source_lang == source_lang, CorrectionRule.source_lang.is_(None))
         )
     if target_lang:
         stmt = stmt.where(
-            sa.or_(
-                CorrectionRule.target_lang == target_lang,
-                CorrectionRule.target_lang.is_(None)
-            )
+            sa.or_(CorrectionRule.target_lang == target_lang, CorrectionRule.target_lang.is_(None))
         )
 
     # Order by priority (descending) then created_at
@@ -150,10 +144,7 @@ def create_correction_rule(
         try:
             re.compile(request.source_pattern)
         except re.error as e:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid regex pattern: {str(e)}"
-            )
+            raise HTTPException(status_code=400, detail=f"Invalid regex pattern: {str(e)}")
 
     # Create rule
     rule = CorrectionRule(
@@ -219,10 +210,7 @@ def update_correction_rule(
             try:
                 re.compile(pattern)
             except re.error as e:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Invalid regex pattern: {str(e)}"
-                )
+                raise HTTPException(status_code=400, detail=f"Invalid regex pattern: {str(e)}")
 
     for field, value in update_data.items():
         setattr(rule, field, value)
@@ -282,21 +270,21 @@ def apply_corrections(
         ApplyCorrectionResponse: Original and corrected text with applied rules
     """
     # Get applicable rules
-    stmt = sa.select(CorrectionRule).where(CorrectionRule.is_active == True)
+    stmt = sa.select(CorrectionRule).where(CorrectionRule.is_active)
 
     # Filter by language
     if request.source_lang:
         stmt = stmt.where(
             sa.or_(
                 CorrectionRule.source_lang == request.source_lang,
-                CorrectionRule.source_lang.is_(None)
+                CorrectionRule.source_lang.is_(None),
             )
         )
     if request.target_lang:
         stmt = stmt.where(
             sa.or_(
                 CorrectionRule.target_lang == request.target_lang,
-                CorrectionRule.target_lang.is_(None)
+                CorrectionRule.target_lang.is_(None),
             )
         )
 

@@ -4,16 +4,15 @@ Structured logging configuration for FluxCaption.
 Provides JSON-formatted logging with context tracking for jobs, phases, and operations.
 """
 
+import json
 import logging
 import sys
-import json
+from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from contextvars import ContextVar
 
 from app.core.config import settings
-
 
 # =============================================================================
 # Context Variables for Request/Task Tracking
@@ -27,6 +26,7 @@ phase_var: ContextVar[str | None] = ContextVar("phase", default=None)
 # =============================================================================
 # JSON Formatter
 # =============================================================================
+
 
 class JSONFormatter(logging.Formatter):
     """
@@ -82,6 +82,7 @@ class JSONFormatter(logging.Formatter):
 # Text Formatter (for human-readable output)
 # =============================================================================
 
+
 class TextFormatter(logging.Formatter):
     """
     Custom text formatter for human-readable logging.
@@ -132,6 +133,7 @@ class TextFormatter(logging.Formatter):
 # Logger Configuration
 # =============================================================================
 
+
 def configure_logging() -> None:
     """
     Configure application logging based on settings.
@@ -179,6 +181,7 @@ def configure_logging() -> None:
 # Logger Helper Functions
 # =============================================================================
 
+
 def get_logger(name: str) -> logging.Logger:
     """
     Get a logger instance with the given name.
@@ -192,12 +195,7 @@ def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)
 
 
-def log_with_context(
-    logger: logging.Logger,
-    level: int,
-    message: str,
-    **extra: Any
-) -> None:
+def log_with_context(logger: logging.Logger, level: int, message: str, **extra: Any) -> None:
     """
     Log a message with additional context fields.
 
@@ -250,6 +248,7 @@ def clear_context() -> None:
 # =============================================================================
 # Context Manager for Job Logging
 # =============================================================================
+
 
 class JobLogContext:
     """

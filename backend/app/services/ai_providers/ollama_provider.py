@@ -5,14 +5,15 @@ Adapter for existing Ollama client to implement BaseAIProvider interface.
 """
 
 import json
-from typing import Optional, AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable
+
 import httpx
 
 from app.core.logging import get_logger
 from app.services.ai_providers.base import (
-    BaseAIProvider,
-    AIModelInfo,
     AIGenerateResponse,
+    AIModelInfo,
+    BaseAIProvider,
 )
 
 logger = get_logger(__name__)
@@ -47,9 +48,7 @@ class OllamaProvider(BaseAIProvider):
                         id=model_data.get("name"),
                         name=model_data.get("name"),
                         provider=self.provider_name,
-                        context_length=model_data.get("details", {}).get(
-                            "parameter_size", 4096
-                        ),
+                        context_length=model_data.get("details", {}).get("parameter_size", 4096),
                         supports_streaming=True,
                         description=f"Ollama model: {model_data.get('name')}",
                     )
@@ -74,9 +73,9 @@ class OllamaProvider(BaseAIProvider):
         self,
         model: str,
         prompt: str,
-        system: Optional[str] = None,
+        system: str | None = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
         **kwargs,
     ) -> AIGenerateResponse:
         """Generate text using Ollama."""
@@ -125,9 +124,9 @@ class OllamaProvider(BaseAIProvider):
         self,
         model: str,
         prompt: str,
-        system: Optional[str] = None,
+        system: str | None = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
         **kwargs,
     ) -> AsyncIterator[str]:
         """Generate text using Ollama with streaming."""
@@ -176,7 +175,7 @@ class OllamaProvider(BaseAIProvider):
     async def pull_model(
         self,
         model_name: str,
-        progress_callback: Optional[Callable[[dict], None]] = None,
+        progress_callback: Callable[[dict], None] | None = None,
     ) -> None:
         """Pull a model from Ollama registry."""
         async with httpx.AsyncClient(timeout=self.extra_config.get("pull_timeout", 3600)) as client:

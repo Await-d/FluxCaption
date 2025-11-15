@@ -4,8 +4,9 @@ Subtitle parsing service.
 Provides unified parsing for SRT, ASS, and VTT subtitle formats.
 """
 
-from typing import List, Dict, Any, Optional
 from pathlib import Path
+from typing import Any
+
 import pysubs2
 
 from app.core.logging import get_logger
@@ -22,7 +23,7 @@ class SubtitleEntry:
         start_ms: int,
         end_ms: int,
         text: str,
-        style: Optional[str] = None,
+        style: str | None = None,
     ):
         self.index = index
         self.start_ms = start_ms
@@ -30,7 +31,7 @@ class SubtitleEntry:
         self.text = text
         self.style = style
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
             "index": self.index,
@@ -62,9 +63,9 @@ class SubtitleParser:
     @staticmethod
     def parse(
         file_path: str,
-        limit: Optional[int] = None,
-        offset: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> dict[str, Any]:
         """
         Parse a subtitle file.
 
@@ -145,9 +146,8 @@ class SubtitleParser:
             logger.error(f"Failed to parse subtitle file {file_path}: {e}", exc_info=True)
             raise ValueError(f"Failed to parse subtitle: {str(e)}")
 
-
     @staticmethod
-    def get_subtitle_info(file_path: str) -> Dict[str, Any]:
+    def get_subtitle_info(file_path: str) -> dict[str, Any]:
         """
         Get basic information about a subtitle file without parsing all entries.
 

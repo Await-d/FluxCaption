@@ -6,17 +6,16 @@ Handles writing translated subtitles back to Jellyfin via two modes:
 - sidecar: Write subtitle file next to media file
 """
 
-from pathlib import Path
-from typing import Optional
 from datetime import datetime
+from pathlib import Path
 
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.models.subtitle import Subtitle
 from app.models.media_asset import MediaAsset
-from app.services.jellyfin_client import get_jellyfin_client, JellyfinError
+from app.models.subtitle import Subtitle
+from app.services.jellyfin_client import JellyfinError, get_jellyfin_client
 
 logger = get_logger(__name__)
 
@@ -25,24 +24,29 @@ logger = get_logger(__name__)
 # Exceptions
 # =============================================================================
 
+
 class WritebackError(Exception):
     """Base exception for writeback errors."""
+
     pass
 
 
 class WritebackFileNotFoundError(WritebackError):
     """Subtitle file not found."""
+
     pass
 
 
 class WritebackPermissionError(WritebackError):
     """Permission denied for sidecar mode."""
+
     pass
 
 
 # =============================================================================
 # Writeback Service
 # =============================================================================
+
 
 class WritebackService:
     """
@@ -57,7 +61,7 @@ class WritebackService:
     async def writeback_subtitle(
         session: Session,
         subtitle_id: str,
-        mode: Optional[str] = None,
+        mode: str | None = None,
         force: bool = False,
     ) -> dict:
         """
@@ -144,16 +148,12 @@ class WritebackService:
             WritebackFileNotFoundError: Subtitle file not found
             WritebackError: Upload failed
         """
-        logger.info(
-            f"Uploading subtitle {subtitle.id} to Jellyfin item {asset.item_id}"
-        )
+        logger.info(f"Uploading subtitle {subtitle.id} to Jellyfin item {asset.item_id}")
 
         # Verify subtitle file exists
         subtitle_path = Path(subtitle.storage_path)
         if not subtitle_path.exists():
-            raise WritebackFileNotFoundError(
-                f"Subtitle file not found: {subtitle.storage_path}"
-            )
+            raise WritebackFileNotFoundError(f"Subtitle file not found: {subtitle.storage_path}")
 
         # Get Jellyfin client
         jellyfin_client = get_jellyfin_client()
@@ -200,16 +200,12 @@ class WritebackService:
             WritebackPermissionError: Permission denied
             WritebackError: Write failed
         """
-        logger.info(
-            f"Writing subtitle {subtitle.id} as sidecar for {asset.name}"
-        )
+        logger.info(f"Writing subtitle {subtitle.id} as sidecar for {asset.name}")
 
         # Verify subtitle file exists
         subtitle_path = Path(subtitle.storage_path)
         if not subtitle_path.exists():
-            raise WritebackFileNotFoundError(
-                f"Subtitle file not found: {subtitle.storage_path}"
-            )
+            raise WritebackFileNotFoundError(f"Subtitle file not found: {subtitle.storage_path}")
 
         # Get media file path
         if not asset.path:
@@ -257,7 +253,7 @@ class WritebackService:
     async def batch_writeback(
         session: Session,
         subtitle_ids: list[str],
-        mode: Optional[str] = None,
+        mode: str | None = None,
         force: bool = False,
     ) -> dict:
         """
@@ -291,8 +287,7 @@ class WritebackService:
                 logger.error(f"Writeback failed for {subtitle_id}: {e}")
 
         logger.info(
-            f"Batch writeback complete: {results['success']} succeeded, "
-            f"{results['failed']} failed"
+            f"Batch writeback complete: {results['success']} succeeded, {results['failed']} failed"
         )
 
         return results

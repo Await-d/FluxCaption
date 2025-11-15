@@ -5,10 +5,11 @@ This provides the same interface as the old ollama_client but uses
 the new unified AI client system internally.
 """
 
-from typing import Optional, Callable
+from collections.abc import Callable
+
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.services.ai_providers.ollama_provider import OllamaProvider
-from app.core.config import settings
 
 logger = get_logger(__name__)
 
@@ -23,7 +24,7 @@ class LegacyOllamaClient:
 
     def __init__(self):
         """Initialize legacy Ollama client."""
-        self._provider: Optional[OllamaProvider] = None
+        self._provider: OllamaProvider | None = None
 
     def _get_provider(self) -> OllamaProvider:
         """Get or create Ollama provider instance."""
@@ -46,7 +47,7 @@ class LegacyOllamaClient:
                 "name": model.name,
                 "details": {
                     "parameter_size": model.context_length,
-                }
+                },
             }
             for model in models_info
         ]
@@ -59,7 +60,7 @@ class LegacyOllamaClient:
     async def pull_model(
         self,
         model_name: str,
-        progress_callback: Optional[Callable[[dict], None]] = None,
+        progress_callback: Callable[[dict], None] | None = None,
     ) -> None:
         """Pull a model from Ollama registry with progress tracking."""
         provider = self._get_provider()
@@ -69,9 +70,9 @@ class LegacyOllamaClient:
         self,
         model: str,
         prompt: str,
-        system: Optional[str] = None,
+        system: str | None = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
     ) -> str:
         """Generate text using a model."""
         provider = self._get_provider()
@@ -88,7 +89,7 @@ class LegacyOllamaClient:
         self,
         model: str,
         prompt: str,
-        system: Optional[str] = None,
+        system: str | None = None,
         temperature: float = 0.7,
     ):
         """Generate text using a model with streaming response."""

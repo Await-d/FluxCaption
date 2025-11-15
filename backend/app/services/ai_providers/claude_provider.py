@@ -4,14 +4,15 @@ Claude (Anthropic) AI Provider Implementation.
 Supports Anthropic's Claude API.
 """
 
-from typing import Optional, AsyncIterator
+from collections.abc import AsyncIterator
+
 import httpx
 
 from app.core.logging import get_logger
 from app.services.ai_providers.base import (
-    BaseAIProvider,
-    AIModelInfo,
     AIGenerateResponse,
+    AIModelInfo,
+    BaseAIProvider,
 )
 
 logger = get_logger(__name__)
@@ -28,17 +29,10 @@ class ClaudeProvider(BaseAIProvider):
     ANTHROPIC_VERSION = "2023-06-01"
 
     def __init__(
-        self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        timeout: int = 300,
-        **kwargs
+        self, api_key: str | None = None, base_url: str | None = None, timeout: int = 300, **kwargs
     ):
         super().__init__(
-            api_key=api_key,
-            base_url=base_url or self.DEFAULT_BASE_URL,
-            timeout=timeout,
-            **kwargs
+            api_key=api_key, base_url=base_url or self.DEFAULT_BASE_URL, timeout=timeout, **kwargs
         )
         if not self.api_key:
             raise ValueError("Claude provider requires an API key")
@@ -125,17 +119,15 @@ class ClaudeProvider(BaseAIProvider):
         self,
         model: str,
         prompt: str,
-        system: Optional[str] = None,
+        system: str | None = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
         **kwargs,
     ) -> AIGenerateResponse:
         """Generate text using Claude."""
         payload = {
             "model": model,
-            "messages": [
-                {"role": "user", "content": prompt}
-            ],
+            "messages": [{"role": "user", "content": prompt}],
             "max_tokens": max_tokens or 4096,
             "temperature": temperature,
         }
@@ -185,17 +177,15 @@ class ClaudeProvider(BaseAIProvider):
         self,
         model: str,
         prompt: str,
-        system: Optional[str] = None,
+        system: str | None = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
         **kwargs,
     ) -> AsyncIterator[str]:
         """Generate text using Claude with streaming."""
         payload = {
             "model": model,
-            "messages": [
-                {"role": "user", "content": prompt}
-            ],
+            "messages": [{"role": "user", "content": prompt}],
             "max_tokens": max_tokens or 4096,
             "temperature": temperature,
             "stream": True,
@@ -226,6 +216,7 @@ class ClaudeProvider(BaseAIProvider):
 
                         try:
                             import json
+
                             data = json.loads(line)
 
                             event_type = data.get("type")

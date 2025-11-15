@@ -4,24 +4,19 @@ Subtitle Sync API Router
 Endpoints for syncing subtitle files to translation memory.
 """
 
-from typing import Optional, List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.logging import get_logger
+from app.models.media_asset import MediaAsset
 from app.models.subtitle import Subtitle
 from app.models.subtitle_sync_record import SubtitleSyncRecord
-from app.models.media_asset import MediaAsset
 from app.services.subtitle_sync_service import SubtitleSyncService
-from app.workers.tasks import (
-    sync_subtitle_task,
-    sync_asset_subtitles_task,
-    sync_all_subtitles_task
-)
+from app.workers.tasks import sync_all_subtitles_task, sync_asset_subtitles_task, sync_subtitle_task
 
 logger = get_logger(__name__)
 
@@ -32,67 +27,52 @@ router = APIRouter(prefix="/api/v1/subtitle-sync", tags=["subtitle-sync"])
 # Request/Response Models
 # =============================================================================
 
+
 class SyncSubtitleRequest(BaseModel):
     """Request to sync a single subtitle."""
+
     subtitle_id: str = Field(..., description="Subtitle ID to sync")
-    mode: str = Field(
-        "incremental",
-        description="Sync mode: full, incremental, skip"
-    )
-    paired_subtitle_id: Optional[str] = Field(
-        None,
-        description="Optional paired subtitle ID for translation pairs"
+    mode: str = Field("incremental", description="Sync mode: full, incremental, skip")
+    paired_subtitle_id: str | None = Field(
+        None, description="Optional paired subtitle ID for translation pairs"
     )
 
 
 class SyncAssetRequest(BaseModel):
     """Request to sync all subtitles for an asset."""
+
     asset_id: str = Field(..., description="Media asset ID")
-    mode: str = Field(
-        "incremental",
-        description="Sync mode: full, incremental, skip"
-    )
-    auto_pair: bool = Field(
-        True,
-        description="Automatically pair subtitles for translation memory"
-    )
+    mode: str = Field("incremental", description="Sync mode: full, incremental, skip")
+    auto_pair: bool = Field(True, description="Automatically pair subtitles for translation memory")
 
 
 class BatchSyncRequest(BaseModel):
     """Request to batch sync multiple subtitles."""
-    subtitle_ids: Optional[List[str]] = Field(
-        None,
-        description="List of subtitle IDs to sync (if None, sync all)"
+
+    subtitle_ids: list[str] | None = Field(
+        None, description="List of subtitle IDs to sync (if None, sync all)"
     )
-    mode: str = Field(
-        "incremental",
-        description="Sync mode: full, incremental, skip"
-    )
-    auto_pair: bool = Field(
-        True,
-        description="Auto-pair subtitles"
-    )
-    limit: Optional[int] = Field(
-        None,
-        description="Limit number of assets to process"
-    )
+    mode: str = Field("incremental", description="Sync mode: full, incremental, skip")
+    auto_pair: bool = Field(True, description="Auto-pair subtitles")
+    limit: int | None = Field(None, description="Limit number of assets to process")
 
 
 class SyncRecordResponse(BaseModel):
     """Sync record response."""
+
     id: str
     subtitle_id: str
-    asset_id: Optional[str]
+    asset_id: str | None
     status: str
     sync_mode: str
     total_lines: int
     synced_lines: int
     skipped_lines: int
     failed_lines: int
-    paired_subtitle_id: Optional[str]
-    started_at: Optional[str]
-    finished_at: Optional[str]
-    error_message: Optional[str]
+    paired_subtitle_id: str | None
+    started_at: str | None
+    finished_at: str | None
+    error_message: str | None
     created_at: str
 
     class Config:
@@ -101,6 +81,7 @@ class SyncRecordResponse(BaseModel):
 
 class SubtitlePairResponse(BaseModel):
     """Subtitle pair response."""
+
     source_subtitle_id: str
     source_lang: str
     target_subtitle_id: str
@@ -109,9 +90,10 @@ class SubtitlePairResponse(BaseModel):
 
 class SyncStatusResponse(BaseModel):
     """Sync status response."""
+
     subtitle_id: str
     lang: str
-    latest_sync: Optional[SyncRecordResponse]
+    latest_sync: SyncRecordResponse | None
     sync_count: int
 
 
@@ -119,11 +101,12 @@ class SyncStatusResponse(BaseModel):
 # API Endpoints
 # =============================================================================
 
+
 @router.post("/sync", response_model=dict)
 async def sync_subtitle(
     request: SyncSubtitleRequest,
     background: bool = Query(True, description="Run sync in background"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     Sync a subtitle file to translation memory.
@@ -153,25 +136,18 @@ async def sync_subtitle(
         # Run in background using Celery
         task = sync_subtitle_task.apply_async(
             args=[request.subtitle_id],
-            kwargs={
-                "mode": request.mode,
-                "paired_subtitle_id": request.paired_subtitle_id
-            },
-            queue="translate"
+            kwargs={"mode": request.mode, "paired_subtitle_id": request.paired_subtitle_id},
+            queue="translate",
         )
 
-        return {
-            "status": "queued",
-            "task_id": task.id,
-            "subtitle_id": request.subtitle_id
-        }
+        return {"status": "queued", "task_id": task.id, "subtitle_id": request.subtitle_id}
     else:
         # Run synchronously
         sync_service = SubtitleSyncService(db)
         sync_record = sync_service.sync_subtitle_to_memory(
             subtitle_id=request.subtitle_id,
             mode=request.mode,
-            paired_subtitle_id=request.paired_subtitle_id
+            paired_subtitle_id=request.paired_subtitle_id,
         )
 
         return {
@@ -179,7 +155,7 @@ async def sync_subtitle(
             "sync_record_id": str(sync_record.id),
             "synced_lines": sync_record.synced_lines,
             "skipped_lines": sync_record.skipped_lines,
-            "failed_lines": sync_record.failed_lines
+            "failed_lines": sync_record.failed_lines,
         }
 
 
@@ -187,7 +163,7 @@ async def sync_subtitle(
 async def sync_asset_subtitles(
     request: SyncAssetRequest,
     background: bool = Query(True, description="Run sync in background"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     Sync all subtitles for a media asset.
@@ -211,35 +187,23 @@ async def sync_asset_subtitles(
         # Run in background
         task = sync_asset_subtitles_task.apply_async(
             args=[request.asset_id],
-            kwargs={
-                "mode": request.mode,
-                "auto_pair": request.auto_pair
-            },
-            queue="translate"
+            kwargs={"mode": request.mode, "auto_pair": request.auto_pair},
+            queue="translate",
         )
 
-        return {
-            "status": "queued",
-            "task_id": task.id,
-            "asset_id": request.asset_id
-        }
+        return {"status": "queued", "task_id": task.id, "asset_id": request.asset_id}
     else:
         # Run synchronously
         sync_service = SubtitleSyncService(db)
         results = sync_service.sync_asset_subtitles(
-            asset_id=request.asset_id,
-            mode=request.mode,
-            auto_pair=request.auto_pair
+            asset_id=request.asset_id, mode=request.mode, auto_pair=request.auto_pair
         )
 
         return results
 
 
 @router.post("/sync/batch", response_model=dict)
-async def batch_sync_subtitles(
-    request: BatchSyncRequest,
-    db: Session = Depends(get_db)
-):
+async def batch_sync_subtitles(request: BatchSyncRequest, db: Session = Depends(get_db)):
     """
     Batch sync multiple subtitles or all subtitles in the system.
 
@@ -256,26 +220,15 @@ async def batch_sync_subtitles(
 
     # Run global sync task
     task = sync_all_subtitles_task.apply_async(
-        kwargs={
-            "mode": request.mode,
-            "auto_pair": request.auto_pair,
-            "limit": request.limit
-        },
-        queue="translate"
+        kwargs={"mode": request.mode, "auto_pair": request.auto_pair, "limit": request.limit},
+        queue="translate",
     )
 
-    return {
-        "status": "queued",
-        "task_id": task.id,
-        "message": "Batch sync started"
-    }
+    return {"status": "queued", "task_id": task.id, "message": "Batch sync started"}
 
 
 @router.get("/status/{subtitle_id}", response_model=SyncStatusResponse)
-async def get_sync_status(
-    subtitle_id: str,
-    db: Session = Depends(get_db)
-):
+async def get_sync_status(subtitle_id: str, db: Session = Depends(get_db)):
     """
     Get sync status for a subtitle.
 
@@ -296,23 +249,22 @@ async def get_sync_status(
     latest_sync = sync_service.get_sync_status(subtitle_id)
 
     # Count total syncs
-    sync_count = db.query(SubtitleSyncRecord).filter(
-        SubtitleSyncRecord.subtitle_id == UUID(subtitle_id)
-    ).count()
+    sync_count = (
+        db.query(SubtitleSyncRecord)
+        .filter(SubtitleSyncRecord.subtitle_id == UUID(subtitle_id))
+        .count()
+    )
 
     return SyncStatusResponse(
         subtitle_id=subtitle_id,
         lang=subtitle.lang,
         latest_sync=SyncRecordResponse.from_orm(latest_sync) if latest_sync else None,
-        sync_count=sync_count
+        sync_count=sync_count,
     )
 
 
-@router.get("/pairs/{asset_id}", response_model=List[SubtitlePairResponse])
-async def discover_subtitle_pairs(
-    asset_id: str,
-    db: Session = Depends(get_db)
-):
+@router.get("/pairs/{asset_id}", response_model=list[SubtitlePairResponse])
+async def discover_subtitle_pairs(asset_id: str, db: Session = Depends(get_db)):
     """
     Discover all possible subtitle pairs for an asset.
 
@@ -336,20 +288,20 @@ async def discover_subtitle_pairs(
             source_subtitle_id=str(source.id),
             source_lang=source.lang,
             target_subtitle_id=str(target.id),
-            target_lang=target.lang
+            target_lang=target.lang,
         )
         for source, target in pairs
     ]
 
 
-@router.get("/records", response_model=List[SyncRecordResponse])
+@router.get("/records", response_model=list[SyncRecordResponse])
 async def list_sync_records(
-    subtitle_id: Optional[str] = Query(None, description="Filter by subtitle ID"),
-    asset_id: Optional[str] = Query(None, description="Filter by asset ID"),
-    status: Optional[str] = Query(None, description="Filter by status"),
+    subtitle_id: str | None = Query(None, description="Filter by subtitle ID"),
+    asset_id: str | None = Query(None, description="Filter by asset ID"),
+    status: str | None = Query(None, description="Filter by status"),
     limit: int = Query(100, ge=1, le=1000, description="Number of records to return"),
     offset: int = Query(0, ge=0, description="Number of records to skip"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     List sync records with optional filters.
@@ -385,10 +337,7 @@ async def list_sync_records(
 
 
 @router.delete("/records/{record_id}")
-async def delete_sync_record(
-    record_id: str,
-    db: Session = Depends(get_db)
-):
+async def delete_sync_record(record_id: str, db: Session = Depends(get_db)):
     """
     Delete a sync record.
 
@@ -407,4 +356,3 @@ async def delete_sync_record(
     db.commit()
 
     return {"status": "success", "message": "Sync record deleted"}
-

@@ -5,27 +5,24 @@ Handles loading, saving, and translating subtitle files (.srt, .ass, .vtt).
 Preserves timing information and ASS formatting tags.
 """
 
-import re
 import json
+import re
 from pathlib import Path
-from typing import Optional
+
 import pysubs2
-from pysubs2 import SSAFile, SSAEvent
 import sqlalchemy as sa
+from pysubs2 import SSAEvent, SSAFile
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.services.ollama_client import ollama_client  # Keep for backward compatibility
-from app.services.unified_ai_client import UnifiedAIClient
 from app.services.prompts import (
     SUBTITLE_TRANSLATION_SYSTEM_PROMPT,
-    BATCH_TRANSLATION_SYSTEM_PROMPT,
     TRANSLATION_PROOFREADING_SYSTEM_PROMPT,
-    build_translation_prompt,
-    build_batch_translation_prompt,
     build_proofreading_prompt,
+    build_translation_prompt,
 )
 from app.services.translation_cache_service import TranslationCacheService
+from app.services.unified_ai_client import UnifiedAIClient
 
 logger = get_logger(__name__)
 
@@ -33,6 +30,7 @@ logger = get_logger(__name__)
 # =============================================================================
 # AI Response Parsing
 # =============================================================================
+
 
 def extract_translation_from_response(response: str) -> str:
     """
@@ -60,32 +58,34 @@ def extract_translation_from_response(response: str) -> str:
     try:
         data = json.loads(response)
         if isinstance(data, dict) and "translation" in data:
-            logger.debug(f"Extracted translation via direct JSON parsing")
+            logger.debug("Extracted translation via direct JSON parsing")
             return data["translation"].strip()
     except (json.JSONDecodeError, ValueError):
         pass
 
     # Strategy 2: Remove markdown code blocks and try parsing
     # Handles cases like: ```json\n{"translation": "..."}\n```
-    cleaned = re.sub(r'^```(?:json)?\s*\n?|\n?```$', '', response, flags=re.MULTILINE | re.DOTALL)
+    cleaned = re.sub(r"^```(?:json)?\s*\n?|\n?```$", "", response, flags=re.MULTILINE | re.DOTALL)
     cleaned = cleaned.strip()
     try:
         data = json.loads(cleaned)
         if isinstance(data, dict) and "translation" in data:
-            logger.debug(f"Extracted translation via markdown-cleaned JSON parsing")
+            logger.debug("Extracted translation via markdown-cleaned JSON parsing")
             return data["translation"].strip()
     except (json.JSONDecodeError, ValueError):
         pass
 
     # Strategy 3: Extract first JSON object with "translation" field using regex
     # Handles cases where JSON is embedded in text
-    match = re.search(r'\{[^{}]*"translation"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"\s*[^{}]*\}', response, re.DOTALL)
+    match = re.search(
+        r'\{[^{}]*"translation"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"\s*[^{}]*\}', response, re.DOTALL
+    )
     if match:
         try:
             json_str = match.group(0)
             data = json.loads(json_str)
             if isinstance(data, dict) and "translation" in data:
-                logger.debug(f"Extracted translation via regex JSON extraction")
+                logger.debug("Extracted translation via regex JSON extraction")
                 return data["translation"].strip()
         except (json.JSONDecodeError, ValueError):
             pass
@@ -103,12 +103,12 @@ def extract_translation_from_response(response: str) -> str:
 
     for prefix in common_prefixes:
         if response.lower().startswith(prefix.lower()):
-            result = response[len(prefix):].strip()
+            result = response[len(prefix) :].strip()
             logger.debug(f"Extracted translation by removing prefix: {prefix}")
             return result
 
     # Strategy 5: Return original response as fallback
-    logger.debug(f"Using original response as translation (no extraction pattern matched)")
+    logger.debug("Using original response as translation (no extraction pattern matched)")
     return response
 
 
@@ -117,11 +117,11 @@ def extract_translation_from_response(response: str) -> str:
 # =============================================================================
 
 # Regex pattern for ASS formatting tags
-ASS_TAG_PATTERN = re.compile(r'\{[^}]+\}')
+ASS_TAG_PATTERN = re.compile(r"\{[^}]+\}")
 
 
 def strip_ass_tags(text: str) -> tuple[str, list[str]]:
-    """
+    r"""
     Extract ASS formatting tags from text.
 
     Args:
@@ -131,7 +131,7 @@ def strip_ass_tags(text: str) -> tuple[str, list[str]]:
         tuple: (plain_text, list_of_tags)
     """
     tags = ASS_TAG_PATTERN.findall(text)
-    plain_text = ASS_TAG_PATTERN.sub('', text).strip()
+    plain_text = ASS_TAG_PATTERN.sub("", text).strip()
     return plain_text, tags
 
 
@@ -152,12 +152,13 @@ def restore_tags(tags: list[str], translated_text: str) -> str:
         return translated_text
 
     # Place all tags at the beginning
-    return ''.join(tags) + translated_text
+    return "".join(tags) + translated_text
 
 
 # =============================================================================
 # Text Normalization
 # =============================================================================
+
 
 def normalize_text(text: str, target_lang: str) -> str:
     """
@@ -171,29 +172,29 @@ def normalize_text(text: str, target_lang: str) -> str:
         str: Normalized text
     """
     # Remove extra whitespace
-    text = ' '.join(text.split())
+    text = " ".join(text.split())
 
     # Language-specific normalization
-    if target_lang.startswith('zh'):
+    if target_lang.startswith("zh"):
         # Chinese: use full-width punctuation
         replacements = {
-            ',': '，',
-            '.': '。',
-            '!': '！',
-            '?': '？',
-            ':': '：',
-            ';': '；',
+            ",": "，",
+            ".": "。",
+            "!": "！",
+            "?": "？",
+            ":": "：",
+            ";": "；",
         }
         for eng, chn in replacements.items():
             text = text.replace(eng, chn)
 
-    elif target_lang.startswith('ja'):
+    elif target_lang.startswith("ja"):
         # Japanese: use Japanese punctuation
         replacements = {
-            ',': '、',
-            '.': '。',
-            '!': '！',
-            '?': '？',
+            ",": "、",
+            ".": "。",
+            "!": "！",
+            "?": "？",
         }
         for eng, jpn in replacements.items():
             text = text.replace(eng, jpn)
@@ -225,7 +226,7 @@ def split_long_line(text: str, max_length: int = 42) -> str:
         word_length = len(word) + (1 if current_line else 0)  # +1 for space
 
         if current_length + word_length > max_length and current_line:
-            lines.append(' '.join(current_line))
+            lines.append(" ".join(current_line))
             current_line = [word]
             current_length = len(word)
         else:
@@ -233,16 +234,13 @@ def split_long_line(text: str, max_length: int = 42) -> str:
             current_length += word_length
 
     if current_line:
-        lines.append(' '.join(current_line))
+        lines.append(" ".join(current_line))
 
-    return '\\N'.join(lines)  # ASS line break
+    return "\\N".join(lines)  # ASS line break
 
 
 def apply_correction_rules(
-    text: str,
-    source_lang: Optional[str],
-    target_lang: Optional[str],
-    db_session: Optional[object] = None
+    text: str, source_lang: str | None, target_lang: str | None, db_session: object | None = None
 ) -> str:
     """
     Apply correction rules to translated text.
@@ -263,21 +261,19 @@ def apply_correction_rules(
         from app.models.correction_rule import CorrectionRule
 
         # Get applicable rules
-        stmt = sa.select(CorrectionRule).where(CorrectionRule.is_active == True)
+        stmt = sa.select(CorrectionRule).where(CorrectionRule.is_active)
 
         # Filter by language
         if source_lang:
             stmt = stmt.where(
                 sa.or_(
-                    CorrectionRule.source_lang == source_lang,
-                    CorrectionRule.source_lang.is_(None)
+                    CorrectionRule.source_lang == source_lang, CorrectionRule.source_lang.is_(None)
                 )
             )
         if target_lang:
             stmt = stmt.where(
                 sa.or_(
-                    CorrectionRule.target_lang == target_lang,
-                    CorrectionRule.target_lang.is_(None)
+                    CorrectionRule.target_lang == target_lang, CorrectionRule.target_lang.is_(None)
                 )
             )
 
@@ -329,6 +325,7 @@ def apply_correction_rules(
 # Subtitle File Operations
 # =============================================================================
 
+
 class SubtitleService:
     """Service for subtitle file operations."""
 
@@ -359,7 +356,7 @@ class SubtitleService:
             raise ValueError(f"Invalid subtitle file: {e}")
 
     @staticmethod
-    def save_subtitle(subs: SSAFile, file_path: str, format: Optional[str] = None) -> None:
+    def save_subtitle(subs: SSAFile, file_path: str, format: str | None = None) -> None:
         """
         Save a subtitle file.
 
@@ -375,10 +372,10 @@ class SubtitleService:
             # Determine format from file extension if not specified
             if format is None:
                 suffix = Path(file_path).suffix.lower()
-                format = suffix[1:] if suffix else 'srt'
+                format = suffix[1:] if suffix else "srt"
 
             # Validate format
-            if format not in ['srt', 'ass', 'vtt']:
+            if format not in ["srt", "ass", "vtt"]:
                 raise ValueError(f"Unsupported subtitle format: {format}")
 
             # Ensure output directory exists
@@ -398,16 +395,16 @@ class SubtitleService:
         output_path: str,
         source_lang: str,
         target_lang: str,
-        model: Optional[str] = None,
-        provider: Optional[str] = None,
+        model: str | None = None,
+        provider: str | None = None,
         batch_size: int = 10,
         preserve_formatting: bool = True,
         enable_proofreading: bool = True,
-        progress_callback: Optional[callable] = None,
-        db_session: Optional[object] = None,
-        subtitle_id: Optional[str] = None,
-        asset_id: Optional[str] = None,
-        media_name: Optional[str] = None,
+        progress_callback: callable | None = None,
+        db_session: object | None = None,
+        subtitle_id: str | None = None,
+        asset_id: str | None = None,
+        media_name: str | None = None,
     ) -> dict:
         """
         Translate a subtitle file using multi-provider AI support.
@@ -479,16 +476,16 @@ class SubtitleService:
             cache_service = TranslationCacheService(db_session) if db_session else None
 
             for i in range(0, total_events, batch_size):
-                batch = texts_to_translate[i:i + batch_size]
+                batch = texts_to_translate[i : i + batch_size]
                 batch_end = min(i + batch_size, total_events)
                 batch_num = i // batch_size + 1
                 total_batches = (total_events + batch_size - 1) // batch_size
 
                 logger.info(
-                    f"\n{'='*80}\n"
-                    f"开始翻译批次 {batch_num}/{total_batches} (行 {i+1}-{batch_end}/{total_events})\n"
+                    f"\n{'=' * 80}\n"
+                    f"开始翻译批次 {batch_num}/{total_batches} (行 {i + 1}-{batch_end}/{total_events})\n"
                     f"{source_lang} → {target_lang} | 模型: {model}\n"
-                    f"{'='*80}"
+                    f"{'=' * 80}"
                 )
 
                 # Process each line in the batch
@@ -532,7 +529,7 @@ class SubtitleService:
                         )
                         # Extract translation from AI response (supports JSON and plain text)
                         translated = extract_translation_from_response(translated)
-                        
+
                         # Log detailed translation
                         logger.info(
                             f"[行 {current_line_num + 1}/{total_events}] [AI翻译] "
@@ -558,7 +555,9 @@ class SubtitleService:
                                     provider=provider,
                                 )
                                 # Extract translation from proofreading response (supports JSON and plain text)
-                                proofread_result = extract_translation_from_response(proofread_result)
+                                proofread_result = extract_translation_from_response(
+                                    proofread_result
+                                )
 
                                 # Only use proofread result if it's not empty
                                 if proofread_result:
@@ -577,7 +576,9 @@ class SubtitleService:
                                         )
                                     translated = proofread_result
                             except Exception as e:
-                                logger.warning(f"Proofreading failed for line {current_line_num + 1}: {e}")
+                                logger.warning(
+                                    f"Proofreading failed for line {current_line_num + 1}: {e}"
+                                )
                                 # Keep original translation if proofreading fails
 
                         batch_translations.append(translated)
@@ -625,18 +626,22 @@ class SubtitleService:
                     completed += 1
                     if progress_callback:
                         source_text = line[:50] + "..." if len(line) > 50 else line
-                        target_text = batch_translations[-1][:50] + "..." if len(batch_translations[-1]) > 50 else batch_translations[-1]
+                        target_text = (
+                            batch_translations[-1][:50] + "..."
+                            if len(batch_translations[-1]) > 50
+                            else batch_translations[-1]
+                        )
                         message = f"行 {current_line_num + 1}/{total_events}: {source_text} → {target_text}"
                         progress_callback(completed, total_events, message)
 
                 translated_texts.extend(batch_translations)
-                
+
                 # Log batch completion
                 logger.info(
-                    f"\n{'-'*80}\n"
+                    f"\n{'-' * 80}\n"
                     f"批次 {batch_num}/{total_batches} 完成 ✓\n"
-                    f"已翻译: {completed}/{total_events} 行 ({completed/total_events*100:.1f}%)\n"
-                    f"{'-'*80}\n"
+                    f"已翻译: {completed}/{total_events} 行 ({completed / total_events * 100:.1f}%)\n"
+                    f"{'-' * 80}\n"
                 )
 
             # Commit all translation memory records at once
@@ -650,9 +655,9 @@ class SubtitleService:
 
             # Log final translation statistics
             logger.info(
-                f"\n{'='*80}\n"
+                f"\n{'=' * 80}\n"
                 f"翻译完成汇总 - {source_lang} → {target_lang}\n"
-                f"{'='*80}\n"
+                f"{'=' * 80}\n"
                 f"总行数: {total_events}\n"
                 f"已翻译: {len(translated_texts)}\n"
                 f"跳过: {total_events - len(translated_texts)}\n"
@@ -662,7 +667,7 @@ class SubtitleService:
                 f"AI校对改进: {proofread_count} ({(proofread_count / cache_misses * 100) if cache_misses > 0 else 0:.1f}%)\n"
                 f"---\n"
                 f"输出文件: {output_path}\n"
-                f"{'='*80}\n"
+                f"{'=' * 80}\n"
             )
 
             # Apply translations back to subtitle events
@@ -678,14 +683,13 @@ class SubtitleService:
                         translated_text,
                         source_lang=source_lang,
                         target_lang=target_lang,
-                        db_session=db_session
+                        db_session=db_session,
                     )
 
                     # Split long lines if needed
                     if settings.translation_max_line_length > 0:
                         translated_text = split_long_line(
-                            translated_text,
-                            settings.translation_max_line_length
+                            translated_text, settings.translation_max_line_length
                         )
 
                     # Restore formatting tags
@@ -723,12 +727,12 @@ class SubtitleService:
         """
         suffix = Path(file_path).suffix.lower()
         format_map = {
-            '.srt': 'srt',
-            '.ass': 'ass',
-            '.ssa': 'ass',
-            '.vtt': 'vtt',
+            ".srt": "srt",
+            ".ass": "ass",
+            ".ssa": "ass",
+            ".vtt": "vtt",
         }
-        return format_map.get(suffix, 'unknown')
+        return format_map.get(suffix, "unknown")
 
     @staticmethod
     def validate_file(file_path: str) -> bool:
@@ -742,7 +746,7 @@ class SubtitleService:
             bool: True if valid, False otherwise
         """
         format = SubtitleService.detect_format(file_path)
-        if format == 'unknown':
+        if format == "unknown":
             return False
 
         try:
@@ -758,105 +762,107 @@ class SubtitleService:
     ) -> dict:
         """
         Merge multiple SRT segment files into a single subtitle file.
-        
+
         Each segment should have been generated from a specific time range
         of the source audio. This function adjusts timestamps to create
         continuous subtitles.
-        
+
         Args:
             segment_files: List of segment info dicts with:
                 - path: Path to SRT file
                 - start: Start time of this segment in seconds
                 - duration: Duration of this segment in seconds
             output_path: Path to save merged subtitle file
-            
+
         Returns:
             dict: Merge statistics
-            
+
         Raises:
             Exception: If merge fails
         """
         logger.info(f"Merging {len(segment_files)} SRT segments into {output_path}")
-        
+
         merged_subs = pysubs2.SSAFile()
         total_events = 0
-        
+
         for segment_idx, segment_info in enumerate(segment_files, start=1):
             segment_path = segment_info["path"]
             segment_start_ms = int(segment_info["start"] * 1000)  # Convert to milliseconds
-            
+
             logger.debug(f"Processing segment {segment_idx}/{len(segment_files)}: {segment_path}")
-            
+
             # Load segment subtitle
             if not Path(segment_path).exists():
                 logger.warning(f"Segment file not found: {segment_path}, skipping")
                 continue
-                
+
             try:
                 segment_subs = pysubs2.load(segment_path)
             except Exception as e:
                 logger.error(f"Failed to load segment {segment_path}: {e}")
                 continue
-            
+
             # Adjust timestamps and merge events
             for event in segment_subs:
                 # Create a copy of the event
                 new_event = event.copy()
-                
+
                 # Adjust timestamps by adding segment start offset
                 new_event.start += segment_start_ms
                 new_event.end += segment_start_ms
-                
+
                 merged_subs.append(new_event)
                 total_events += 1
-        
+
         # Sort events by start time (important for proper subtitle display)
         merged_subs.sort()
-        
+
         # Remove potential duplicates at segment boundaries
         # (due to overlap in audio segments)
         deduplicated_subs = pysubs2.SSAFile()
         last_event = None
         duplicates_removed = 0
-        
+
         for event in merged_subs:
             # Check if this event is a duplicate of the last one
             if last_event and SubtitleService._are_events_duplicate(last_event, event):
                 duplicates_removed += 1
                 logger.debug(f"Removing duplicate event: {event.text[:50]}")
                 continue
-            
+
             deduplicated_subs.append(event)
             last_event = event
-        
+
         # Save merged subtitle
         deduplicated_subs.save(output_path)
-        
+
         logger.info(
             f"Merged {len(segment_files)} segments into {len(deduplicated_subs)} events "
             f"(removed {duplicates_removed} duplicates)"
         )
-        
+
         return {
             "total_segments": len(segment_files),
             "total_events": len(deduplicated_subs),
             "duplicates_removed": duplicates_removed,
         }
-    
+
     @staticmethod
-    def _are_events_duplicate(event1: SSAEvent, event2: SSAEvent, time_threshold_ms: int = 100) -> bool:
+    def _are_events_duplicate(
+        event1: SSAEvent, event2: SSAEvent, time_threshold_ms: int = 100
+    ) -> bool:
         """
         Check if two subtitle events are duplicates.
-        
+
         Events are considered duplicates if they have:
         - Similar start time (within threshold)
         - Identical or very similar text
-        
+
         Args:
             event1: First event
             event2: Second event
             time_threshold_ms: Maximum time difference to consider as duplicate (ms)
-            
+
         Returns:
             bool: True if events are duplicates
         """
@@ -864,24 +870,24 @@ class SubtitleService:
         time_diff = abs(event1.start - event2.start)
         if time_diff > time_threshold_ms:
             return False
-        
+
         # Check text similarity (normalize for comparison)
         text1 = event1.plaintext.strip().lower()
         text2 = event2.plaintext.strip().lower()
-        
+
         # Exact match
         if text1 == text2:
             return True
-        
+
         # Very similar (accounting for minor differences)
         # Calculate simple similarity ratio
         if len(text1) > 0 and len(text2) > 0:
             # Use Levenshtein-like comparison
             max_len = max(len(text1), len(text2))
             # Count matching characters
-            matches = sum(c1 == c2 for c1, c2 in zip(text1, text2))
+            matches = sum(c1 == c2 for c1, c2 in zip(text1, text2, strict=False))
             similarity = matches / max_len
-            
+
             return similarity > 0.9  # 90% similarity threshold
-        
+
         return False

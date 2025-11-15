@@ -4,8 +4,6 @@ Translation prompt templates for LLM-based subtitle translation.
 Provides system and user prompts for accurate, context-aware subtitle translation.
 """
 
-from typing import Optional
-
 
 # =============================================================================
 # System Prompts
@@ -48,7 +46,7 @@ SUBTITLE_TRANSLATION_SYSTEM_PROMPT = """You are a professional subtitle translat
 **Remember: Output ONLY the JSON object. No prefixes, no explanations, no analysis."""
 
 
-BATCH_TRANSLATION_SYSTEM_PROMPT = """You are a professional subtitle translator. You will receive multiple subtitle lines separated by "---". 
+BATCH_TRANSLATION_SYSTEM_PROMPT = """You are a professional subtitle translator. You will receive multiple subtitle lines separated by "---".
 
 **OUTPUT FORMAT - CRITICAL:**
 - Output ONLY the translations separated by "---"
@@ -122,12 +120,13 @@ TRANSLATION_PROOFREADING_SYSTEM_PROMPT = """You are a professional translation p
 # User Prompt Templates
 # =============================================================================
 
+
 def build_translation_prompt(
     source_lang: str,
     target_lang: str,
     text: str,
-    terminology: Optional[dict[str, str]] = None,
-    context: Optional[str] = None,
+    terminology: dict[str, str] | None = None,
+    context: str | None = None,
 ) -> str:
     """
     Build a user prompt for single-line translation.
@@ -145,8 +144,12 @@ def build_translation_prompt(
     prompt_parts = []
 
     # Language direction with detailed instruction
-    prompt_parts.append(f"Translate the following subtitle line from {source_lang} to {target_lang}.")
-    prompt_parts.append("This is a subtitle for video content. Keep it concise, natural, and faithful to the original meaning.")
+    prompt_parts.append(
+        f"Translate the following subtitle line from {source_lang} to {target_lang}."
+    )
+    prompt_parts.append(
+        "This is a subtitle for video content. Keep it concise, natural, and faithful to the original meaning."
+    )
 
     # Language-specific instruction upfront (before text)
     lang_instruction = get_language_instruction(target_lang)
@@ -166,7 +169,9 @@ def build_translation_prompt(
     prompt_parts.append(f"\nSource text:\n{text}")
 
     # Strong output instruction - explicitly forbid explanations
-    prompt_parts.append("\nOutput the translation only. Do not explain, analyze, or add any commentary:")
+    prompt_parts.append(
+        "\nOutput the translation only. Do not explain, analyze, or add any commentary:"
+    )
 
     return "\n".join(prompt_parts)
 
@@ -175,7 +180,7 @@ def build_batch_translation_prompt(
     source_lang: str,
     target_lang: str,
     texts: list[str],
-    terminology: Optional[dict[str, str]] = None,
+    terminology: dict[str, str] | None = None,
 ) -> str:
     """
     Build a user prompt for batch translation.
@@ -206,7 +211,9 @@ def build_batch_translation_prompt(
 
     # Strong output instruction
     prompt_parts.append("\nOutput format: translation1---translation2---translation3")
-    prompt_parts.append("Do not add explanations, numbering, or any other text. Only the translations separated by '---'.")
+    prompt_parts.append(
+        "Do not add explanations, numbering, or any other text. Only the translations separated by '---'."
+    )
 
     return "\n".join(prompt_parts)
 
@@ -233,7 +240,9 @@ def build_proofreading_prompt(
 
     # Task description
     prompt_parts.append(f"Review this subtitle translation from {source_lang} to {target_lang}.")
-    prompt_parts.append("Check for accuracy, fluency, grammar, naturalness, and character correctness.")
+    prompt_parts.append(
+        "Check for accuracy, fluency, grammar, naturalness, and character correctness."
+    )
 
     # Language-specific instruction (BEFORE showing the texts)
     lang_instruction = get_language_instruction(target_lang)
@@ -245,7 +254,9 @@ def build_proofreading_prompt(
     prompt_parts.append(f"\nCurrent translation ({target_lang}):\n{translated_text}")
 
     # Output instruction
-    prompt_parts.append("\nOutput the final corrected translation (or the original if already good):")
+    prompt_parts.append(
+        "\nOutput the final corrected translation (or the original if already good):"
+    )
 
     return "\n".join(prompt_parts)
 
@@ -266,7 +277,7 @@ LANGUAGE_SPECIFIC_INSTRUCTIONS = {
 }
 
 
-def get_language_instruction(lang_code: str) -> Optional[str]:
+def get_language_instruction(lang_code: str) -> str | None:
     """
     Get language-specific instruction for a target language.
 
@@ -283,8 +294,8 @@ def build_enhanced_prompt(
     source_lang: str,
     target_lang: str,
     text: str,
-    terminology: Optional[dict[str, str]] = None,
-    context: Optional[str] = None,
+    terminology: dict[str, str] | None = None,
+    context: str | None = None,
 ) -> str:
     """
     Build an enhanced translation prompt with language-specific instructions.
@@ -306,7 +317,9 @@ def build_enhanced_prompt(
     if lang_instruction:
         # Insert before the "Source text:" section
         parts = base_prompt.split("Source text:")
-        enhanced = parts[0] + f"\nLanguage-specific rule: {lang_instruction}\n\nSource text:" + parts[1]
+        enhanced = (
+            parts[0] + f"\nLanguage-specific rule: {lang_instruction}\n\nSource text:" + parts[1]
+        )
         return enhanced
 
     return base_prompt
@@ -315,6 +328,7 @@ def build_enhanced_prompt(
 # =============================================================================
 # Prompt Validation
 # =============================================================================
+
 
 def validate_translation_response(
     response: str,

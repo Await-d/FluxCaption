@@ -4,23 +4,22 @@ AI Model Configuration Management Endpoints.
 Provides API for managing AI model configurations and pricing.
 """
 
-from typing import Annotated, Optional
-from uuid import UUID
-from fastapi import APIRouter, HTTPException, status, Depends, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import desc, and_
-import sqlalchemy as sa
+from typing import Annotated
 
-from app.core.db import get_db
-from app.models.user import User
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import and_, desc
+from sqlalchemy.orm import Session
+
 from app.api.routers.auth import get_current_user
+from app.core.db import get_db
 from app.core.logging import get_logger
 from app.models.ai_model_config import AIModelConfig
+from app.models.user import User
 from app.schemas.ai_models import (
     AIModelConfigCreate,
-    AIModelConfigUpdate,
-    AIModelConfigResponse,
     AIModelConfigList,
+    AIModelConfigResponse,
+    AIModelConfigUpdate,
     PricingCalculation,
 )
 
@@ -36,7 +35,7 @@ router = APIRouter(prefix="/api/ai-models", tags=["AI Models"])
 )
 async def list_models(
     current_user: Annotated[User, Depends(get_current_user)],
-    provider: Optional[str] = Query(None, description="Filter by provider"),
+    provider: str | None = Query(None, description="Filter by provider"),
     enabled_only: bool = Query(False, description="Only return enabled models"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(50, ge=1, le=100, description="Items per page"),
@@ -62,7 +61,7 @@ async def list_models(
         query = query.filter(AIModelConfig.provider_name == provider)
 
     if enabled_only:
-        query = query.filter(AIModelConfig.is_enabled == True)
+        query = query.filter(AIModelConfig.is_enabled)
 
     # Get total count
     total = query.count()
@@ -72,7 +71,7 @@ async def list_models(
         query.order_by(
             desc(AIModelConfig.provider_name),
             desc(AIModelConfig.priority),
-            AIModelConfig.display_name
+            AIModelConfig.display_name,
         )
         .offset((page - 1) * page_size)
         .limit(page_size)
@@ -199,12 +198,16 @@ async def create_model(
     """
     try:
         # Check if model already exists
-        existing = db.query(AIModelConfig).filter(
-            and_(
-                AIModelConfig.provider_name == request.provider_name,
-                AIModelConfig.model_name == request.model_name,
+        existing = (
+            db.query(AIModelConfig)
+            .filter(
+                and_(
+                    AIModelConfig.provider_name == request.provider_name,
+                    AIModelConfig.model_name == request.model_name,
+                )
             )
-        ).first()
+            .first()
+        )
 
         if existing:
             raise HTTPException(
@@ -390,12 +393,16 @@ async def calculate_price(
     Raises:
         HTTPException: If model not found or pricing not available
     """
-    model = db.query(AIModelConfig).filter(
-        and_(
-            AIModelConfig.provider_name == provider_name,
-            AIModelConfig.model_name == model_name,
+    model = (
+        db.query(AIModelConfig)
+        .filter(
+            and_(
+                AIModelConfig.provider_name == provider_name,
+                AIModelConfig.model_name == model_name,
+            )
         )
-    ).first()
+        .first()
+    )
 
     if not model:
         raise HTTPException(

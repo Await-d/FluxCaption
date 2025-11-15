@@ -4,7 +4,6 @@ Custom OpenAI-Compatible Provider Implementation.
 Supports any OpenAI-compatible API endpoint (OpenRouter, LocalAI, vLLM, etc.).
 """
 
-from typing import Optional
 from app.services.ai_providers.openai_provider import OpenAIProvider
 
 
@@ -24,11 +23,7 @@ class CustomOpenAIProvider(OpenAIProvider):
     """
 
     def __init__(
-        self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        timeout: int = 300,
-        **kwargs
+        self, api_key: str | None = None, base_url: str | None = None, timeout: int = 300, **kwargs
     ):
         """
         Initialize custom OpenAI-compatible provider.
@@ -46,7 +41,7 @@ class CustomOpenAIProvider(OpenAIProvider):
             api_key=api_key or "dummy",  # Some endpoints don't require API key
             base_url=base_url,
             timeout=timeout,
-            **kwargs
+            **kwargs,
         )
 
     @property

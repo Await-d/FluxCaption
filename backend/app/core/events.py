@@ -4,9 +4,11 @@ SSE (Server-Sent Events) support for real-time progress updates.
 Provides event publishing and subscription for job progress streaming.
 """
 
-import json
 import asyncio
-from typing import AsyncGenerator
+import json
+from collections.abc import AsyncGenerator
+from datetime import UTC
+
 from redis import asyncio as aioredis
 
 from app.core.config import settings
@@ -98,11 +100,11 @@ class EventPublisher:
             total: Total units
             error: Error message (if any)
         """
-        from datetime import datetime, timezone
-        
+        from datetime import datetime
+
         # Generate timestamp ONCE for both event and database
-        timestamp = datetime.now(timezone.utc)
-        
+        timestamp = datetime.now(UTC)
+
         event_data = {
             "job_id": job_id,
             "phase": phase,
@@ -159,7 +161,7 @@ class EventPublisher:
             new_value: New value
             changed_by: Username who made the change
         """
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         event_data = {
             "event_type": "config_change",
@@ -167,15 +169,14 @@ class EventPublisher:
             "old_value": old_value,
             "new_value": new_value,
             "changed_by": changed_by,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
         # Publish to config change channel
         await self.publish_event("config:changes", event_data)
 
         logger.info(
-            f"Configuration change published: {setting_key} = {new_value} "
-            f"(changed by {changed_by})"
+            f"Configuration change published: {setting_key} = {new_value} (changed by {changed_by})"
         )
 
 
@@ -248,7 +249,10 @@ event_subscriber = EventSubscriber()
 # SSE Response Generator
 # =============================================================================
 
-async def generate_sse_response(channel: str, initial_job_state: dict | None = None) -> AsyncGenerator[str, None]:
+
+async def generate_sse_response(
+    channel: str, initial_job_state: dict | None = None
+) -> AsyncGenerator[str, None]:
     """
     Generate SSE response stream with historical events.
 

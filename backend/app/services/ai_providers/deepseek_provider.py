@@ -4,9 +4,8 @@ DeepSeek AI Provider Implementation.
 DeepSeek uses OpenAI-compatible API, so we inherit from OpenAIProvider.
 """
 
-from typing import Optional
-from app.services.ai_providers.openai_provider import OpenAIProvider
 from app.services.ai_providers.base import AIModelInfo
+from app.services.ai_providers.openai_provider import OpenAIProvider
 
 
 class DeepSeekProvider(OpenAIProvider):
@@ -20,17 +19,10 @@ class DeepSeekProvider(OpenAIProvider):
     DEFAULT_BASE_URL = "https://api.deepseek.com/v1"
 
     def __init__(
-        self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        timeout: int = 300,
-        **kwargs
+        self, api_key: str | None = None, base_url: str | None = None, timeout: int = 300, **kwargs
     ):
         super().__init__(
-            api_key=api_key,
-            base_url=base_url or self.DEFAULT_BASE_URL,
-            timeout=timeout,
-            **kwargs
+            api_key=api_key, base_url=base_url or self.DEFAULT_BASE_URL, timeout=timeout, **kwargs
         )
 
     @property

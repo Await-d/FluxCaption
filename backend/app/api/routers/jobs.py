@@ -5,25 +5,25 @@ Provides API for creating, querying, and monitoring translation jobs.
 """
 
 import json
-from uuid import UUID
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated
-from fastapi import APIRouter, HTTPException, status, Depends, Query
-from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from uuid import UUID
 
-from app.core.db import get_db
-from app.models.user import User
-from app.api.routers.auth import get_current_user, get_current_user_sse
-from app.core.events import generate_sse_response
-from app.core.config import settings
-from app.core.settings_helper import get_default_mt_model
-from app.core.logging import get_logger
-from app.models.translation_job import TranslationJob
-from app.schemas.jobs import JobCreate, JobResponse, JobListResponse
-from app.workers.tasks import translate_subtitle_task
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import desc
+from sqlalchemy.orm import Session
+
+from app.api.routers.auth import get_current_user, get_current_user_sse
+from app.core.db import get_db
+from app.core.events import generate_sse_response
+from app.core.logging import get_logger
+from app.core.settings_helper import get_default_mt_model
+from app.models.translation_job import TranslationJob
+from app.models.user import User
+from app.schemas.jobs import JobCreate, JobListResponse, JobResponse
+from app.workers.tasks import translate_subtitle_task
 
 logger = get_logger(__name__)
 
@@ -62,16 +62,19 @@ async def create_translation_job(
         source_path = request.source_path
         if request.source_type == "jellyfin" and request.item_id and not source_path:
             from app.services.jellyfin_client import get_jellyfin_client
+
             try:
                 jellyfin = get_jellyfin_client()
                 item_data = await jellyfin.get_item_details(request.item_id)
                 # Try to get path from item or media sources
-                if hasattr(item_data, 'path') and item_data.path:
+                if hasattr(item_data, "path") and item_data.path:
                     source_path = item_data.path
-                elif hasattr(item_data, 'media_sources') and item_data.media_sources:
+                elif hasattr(item_data, "media_sources") and item_data.media_sources:
                     if item_data.media_sources[0].path:
                         source_path = item_data.media_sources[0].path
-                logger.info(f"Retrieved media path from Jellyfin for item {request.item_id}: {source_path}")
+                logger.info(
+                    f"Retrieved media path from Jellyfin for item {request.item_id}: {source_path}"
+                )
             except Exception as e:
                 logger.warning(f"Failed to get media path from Jellyfin: {e}")
 
@@ -234,7 +237,7 @@ async def list_jobs(
 
     if status:
         query = query.filter(TranslationJob.status == status)
-    
+
     if type:
         query = query.filter(TranslationJob.source_type == type)
 
@@ -320,7 +323,7 @@ async def stream_job_progress(
         "progress": job.progress,
         "timestamp": (job.started_at or job.created_at).isoformat(),  # Include timestamp
     }
-    
+
     # Add error if present
     if job.error:
         initial_state["error"] = job.error
@@ -338,7 +341,6 @@ async def stream_job_progress(
             "X-Accel-Buffering": "no",  # Disable nginx buffering
         },
     )
-
 
 
 @router.post(
@@ -402,7 +404,7 @@ async def cancel_job(
         # Update job status
         job.status = "cancelled"
         job.error = "Job cancelled by user request"
-        job.finished_at = datetime.now(timezone.utc)
+        job.finished_at = datetime.now(UTC)
         db.commit()
         db.refresh(job)
 
@@ -449,14 +451,14 @@ async def delete_job(
 ) -> None:
     """
     Delete a translation job record.
-    
+
     Only allows deletion of completed, failed, or cancelled jobs.
     Running or queued jobs must be cancelled first.
-    
+
     Args:
         job_id: Job ID
         db: Database session
-        
+
     Raises:
         HTTPException: If job not found or cannot be deleted
     """
@@ -478,8 +480,9 @@ async def delete_job(
     try:
         # Delete task logs first (foreign key constraint)
         from app.models.task_log import TaskLog
+
         db.query(TaskLog).filter(TaskLog.job_id == str(job_id)).delete()
-        
+
         # Delete the job
         db.delete(job)
         db.commit()
@@ -615,7 +618,6 @@ async def retry_job(
         )
 
 
-
 @router.post(
     "/{job_id}/start",
     response_model=JobResponse,
@@ -743,7 +745,7 @@ async def batch_start_jobs(
     for job_id in request.job_ids:
         try:
             job = db.query(TranslationJob).filter(TranslationJob.id == job_id).first()
-            
+
             if not job:
                 failed.append({"job_id": str(job_id), "reason": "Job not found"})
                 continue
@@ -768,7 +770,9 @@ async def batch_start_jobs(
                     priority=job.priority or 5,
                 )
             else:
-                failed.append({"job_id": str(job_id), "reason": f"Invalid source_type: {job.source_type}"})
+                failed.append(
+                    {"job_id": str(job_id), "reason": f"Invalid source_type: {job.source_type}"}
+                )
                 continue
 
             job.celery_task_id = task.id
@@ -787,7 +791,6 @@ async def batch_start_jobs(
         "total_started": len(started),
         "total_failed": len(failed),
     }
-
 
 
 @router.get(
@@ -814,68 +817,59 @@ async def download_subtitle(
     Raises:
         HTTPException: If job not found, not completed, or file doesn't exist
     """
-    from pathlib import Path
-    from fastapi.responses import FileResponse
     import os
-    
+    from pathlib import Path
+
+    from fastapi.responses import FileResponse
+
     try:
         # Get job
         job = db.query(TranslationJob).filter(TranslationJob.id == UUID(job_id)).first()
-        
+
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
-        
+
         # Check job status
         if job.status != "success":
             raise HTTPException(
-                status_code=400,
-                detail=f"Job is not completed successfully. Status: {job.status}"
+                status_code=400, detail=f"Job is not completed successfully. Status: {job.status}"
             )
-        
+
         # Parse result_paths
         if not job.result_paths:
             raise HTTPException(status_code=404, detail="No result files available")
-        
+
         result_paths = json.loads(job.result_paths)
-        
+
         if file_index >= len(result_paths):
             raise HTTPException(
                 status_code=404,
-                detail=f"File index {file_index} out of range. Available: {len(result_paths)}"
+                detail=f"File index {file_index} out of range. Available: {len(result_paths)}",
             )
-        
+
         file_path = result_paths[file_index]
-        
+
         # Check if file exists
         if not os.path.exists(file_path):
-            raise HTTPException(
-                status_code=404,
-                detail=f"File not found: {file_path}"
-            )
-        
+            raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
+
         # Get filename from path
         filename = Path(file_path).name
-        
+
         logger.info(f"Downloading subtitle file: {file_path} for job {job_id}")
-        
+
         return FileResponse(
             path=file_path,
             filename=filename,
             media_type="text/plain",
-            headers={
-                "Content-Disposition": f'attachment; filename="{filename}"'
-            }
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to download subtitle for job {job_id}: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to download subtitle: {str(e)}"
-        )
-
+        raise HTTPException(status_code=500, detail=f"Failed to download subtitle: {str(e)}")
 
 
 @router.get(
@@ -905,7 +899,7 @@ async def preview_source_subtitle(
         HTTPException: If job not found or source file doesn't exist
     """
     from app.services.subtitle_parser import SubtitleParser
-    
+
     try:
         # Get job
         job = db.query(TranslationJob).filter(TranslationJob.id == UUID(job_id)).first()
@@ -926,14 +920,20 @@ async def preview_source_subtitle(
 
             asset = db.query(MediaAsset).filter(MediaAsset.item_id == job.item_id).first()
             if asset:
-                asr_subtitle = db.query(Subtitle).filter(
-                    Subtitle.asset_id == asset.id,
-                    Subtitle.origin == "asr",
-                    Subtitle.lang == job.source_lang
-                ).first()
+                asr_subtitle = (
+                    db.query(Subtitle)
+                    .filter(
+                        Subtitle.asset_id == asset.id,
+                        Subtitle.origin == "asr",
+                        Subtitle.lang == job.source_lang,
+                    )
+                    .first()
+                )
 
                 if asr_subtitle:
-                    logger.info(f"ASR task - previewing ASR-generated source subtitle: {asr_subtitle.storage_path}")
+                    logger.info(
+                        f"ASR task - previewing ASR-generated source subtitle: {asr_subtitle.storage_path}"
+                    )
                     parser = SubtitleParser()
                     result = parser.parse(asr_subtitle.storage_path, limit=limit, offset=offset)
                     return result
@@ -941,7 +941,7 @@ async def preview_source_subtitle(
             # No ASR subtitle found
             raise HTTPException(
                 status_code=404,
-                detail="This is an ASR task - no original subtitle file exists. ASR-generated subtitle will be available after completion."
+                detail="This is an ASR task - no original subtitle file exists. ASR-generated subtitle will be available after completion.",
             )
 
         logger.info(f"Previewing source subtitle for job {job_id}: {job.source_path}")
@@ -951,27 +951,18 @@ async def preview_source_subtitle(
         result = parser.parse(job.source_path, limit=limit, offset=offset)
 
         return result
-        
+
     except HTTPException:
         raise
     except FileNotFoundError as e:
         logger.error(f"Source subtitle file not found for job {job_id}: {e}")
-        raise HTTPException(
-            status_code=404,
-            detail=f"Source subtitle file not found: {str(e)}"
-        )
+        raise HTTPException(status_code=404, detail=f"Source subtitle file not found: {str(e)}")
     except ValueError as e:
         logger.error(f"Failed to parse source subtitle for job {job_id}: {e}")
-        raise HTTPException(
-            status_code=400,
-            detail=f"Failed to parse subtitle: {str(e)}"
-        )
+        raise HTTPException(status_code=400, detail=f"Failed to parse subtitle: {str(e)}")
     except Exception as e:
         logger.error(f"Failed to preview source subtitle for job {job_id}: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to preview subtitle: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to preview subtitle: {str(e)}")
 
 
 @router.get(
@@ -1003,63 +994,53 @@ async def preview_result_subtitle(
         HTTPException: If job not found, not completed, or file doesn't exist
     """
     from app.services.subtitle_parser import SubtitleParser
-    
+
     try:
         # Get job
         job = db.query(TranslationJob).filter(TranslationJob.id == UUID(job_id)).first()
-        
+
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
-        
+
         # Check job status
         if job.status != "success":
             raise HTTPException(
-                status_code=400,
-                detail=f"Job is not completed successfully. Status: {job.status}"
+                status_code=400, detail=f"Job is not completed successfully. Status: {job.status}"
             )
-        
+
         # Parse result_paths
         if not job.result_paths:
             raise HTTPException(status_code=404, detail="No result files available")
-        
+
         result_paths = json.loads(job.result_paths)
-        
+
         if file_index >= len(result_paths):
             raise HTTPException(
                 status_code=404,
-                detail=f"File index {file_index} out of range. Available: {len(result_paths)}"
+                detail=f"File index {file_index} out of range. Available: {len(result_paths)}",
             )
-        
+
         file_path = result_paths[file_index]
-        
+
         logger.info(f"Previewing result subtitle for job {job_id}: {file_path}")
-        
+
         # Parse subtitle file
         parser = SubtitleParser()
         result = parser.parse(file_path, limit=limit, offset=offset)
-        
+
         return result
-        
+
     except HTTPException:
         raise
     except FileNotFoundError as e:
         logger.error(f"Result subtitle file not found for job {job_id}: {e}")
-        raise HTTPException(
-            status_code=404,
-            detail=f"Result subtitle file not found: {str(e)}"
-        )
+        raise HTTPException(status_code=404, detail=f"Result subtitle file not found: {str(e)}")
     except ValueError as e:
         logger.error(f"Failed to parse result subtitle for job {job_id}: {e}")
-        raise HTTPException(
-            status_code=400,
-            detail=f"Failed to parse subtitle: {str(e)}"
-        )
+        raise HTTPException(status_code=400, detail=f"Failed to parse subtitle: {str(e)}")
     except Exception as e:
         logger.error(f"Failed to preview result subtitle for job {job_id}: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to preview subtitle: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to preview subtitle: {str(e)}")
 
 
 @router.patch(
@@ -1075,95 +1056,88 @@ async def update_subtitle_entries(
 ):
     """
     Update specific subtitle entries in a translated subtitle file.
-    
+
     Args:
         job_id: Job ID
         file_index: Index of the result file to update
         entries: Dictionary mapping entry indices to new text
         db: Database session
-        
+
     Returns:
         Success message
-        
+
     Raises:
         HTTPException: If update fails
     """
-    import pysubs2
     from pathlib import Path
-    
+
+    import pysubs2
+
     try:
         # Get job
         job = db.query(TranslationJob).filter(TranslationJob.id == UUID(job_id)).first()
-        
+
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
-        
+
         # Check job status
         if job.status != "success":
             raise HTTPException(
-                status_code=400,
-                detail=f"Job is not completed successfully. Status: {job.status}"
+                status_code=400, detail=f"Job is not completed successfully. Status: {job.status}"
             )
-        
+
         # Parse result_paths
         if not job.result_paths:
             raise HTTPException(status_code=404, detail="No result files available")
-        
+
         result_paths = json.loads(job.result_paths)
-        
+
         if file_index >= len(result_paths):
             raise HTTPException(
                 status_code=404,
-                detail=f"File index {file_index} out of range. Available: {len(result_paths)}"
+                detail=f"File index {file_index} out of range. Available: {len(result_paths)}",
             )
-        
+
         file_path = result_paths[file_index]
-        
+
         # Check file exists
         if not Path(file_path).exists():
-            raise HTTPException(
-                status_code=404,
-                detail=f"Subtitle file not found: {file_path}"
-            )
-        
+            raise HTTPException(status_code=404, detail=f"Subtitle file not found: {file_path}")
+
         logger.info(f"Updating subtitle entries for job {job_id}, file {file_path}")
         logger.info(f"Updating {len(entries)} entries: {list(entries.keys())}")
-        
+
         # Load subtitle file
         subs = pysubs2.load(file_path)
-        
+
         # Update entries
         updated_count = 0
         for index, new_text in entries.items():
             # Convert 1-based index to 0-based
             idx = index - 1
-            
+
             if 0 <= idx < len(subs):
                 subs[idx].text = new_text
                 updated_count += 1
             else:
                 logger.warning(f"Invalid entry index: {index} (valid range: 1-{len(subs)})")
-        
+
         # Save subtitle file
         subs.save(file_path)
-        
+
         logger.info(f"Updated {updated_count} subtitle entries in {file_path}")
-        
+
         return {
             "message": f"Successfully updated {updated_count} entries",
             "updated_count": updated_count,
             "total_entries": len(subs),
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to update subtitle for job {job_id}: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to update subtitle: {str(e)}"
-        )
-
+        raise HTTPException(status_code=500, detail=f"Failed to update subtitle: {str(e)}")
 
 
 @router.get(
@@ -1177,39 +1151,40 @@ async def get_job_logs(
 ) -> dict:
     """
     Get historical execution logs for a translation job.
-    
+
     Returns all logged progress events for the job, ordered by timestamp.
-    
+
     Args:
         job_id: Job ID
         db: Database session
-        
+
     Returns:
         dict: Job logs with metadata
-        
+
     Raises:
         HTTPException: If job not found
     """
+
     from app.models.task_log import TaskLog
-    import sqlalchemy as sa
-    
+
     try:
         # Verify job exists
         job = db.query(TranslationJob).filter(TranslationJob.id == job_id).first()
-        
+
         if not job:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Job '{job_id}' not found",
             )
-        
+
         # Get all logs for this job, ordered by timestamp
-        logs = db.query(TaskLog).filter(
-            TaskLog.job_id == str(job_id)
-        ).order_by(
-            TaskLog.timestamp.asc()
-        ).all()
-        
+        logs = (
+            db.query(TaskLog)
+            .filter(TaskLog.job_id == str(job_id))
+            .order_by(TaskLog.timestamp.asc())
+            .all()
+        )
+
         # Convert to dict format
         log_entries = []
         for log in logs:
@@ -1220,23 +1195,23 @@ async def get_job_logs(
                 "status": log.status,
                 "progress": log.progress,
             }
-            
+
             if log.completed is not None:
                 entry["completed"] = log.completed
-            
+
             if log.total is not None:
                 entry["total"] = log.total
-            
+
             if log.extra_data:
                 try:
                     entry["extra_data"] = json.loads(log.extra_data)
                 except json.JSONDecodeError:
                     entry["extra_data"] = log.extra_data
-            
+
             log_entries.append(entry)
-        
+
         logger.info(f"Retrieved {len(log_entries)} log entries for job {job_id}")
-        
+
         return {
             "job_id": str(job_id),
             "job_status": job.status,
@@ -1282,12 +1257,7 @@ async def resume_paused_job(
         HTTPException: If job not found or cannot be resumed
     """
     # Use row-level lock to prevent concurrent resume operations
-    job = (
-        db.query(TranslationJob)
-        .filter(TranslationJob.id == job_id)
-        .with_for_update()
-        .first()
-    )
+    job = db.query(TranslationJob).filter(TranslationJob.id == job_id).with_for_update().first()
 
     if not job:
         raise HTTPException(
@@ -1365,4 +1335,3 @@ async def resume_paused_job(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to resume job: {str(e)}",
         )
-

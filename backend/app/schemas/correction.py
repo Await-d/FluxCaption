@@ -3,11 +3,13 @@ Pydantic schemas for correction rules.
 """
 
 from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
 class CorrectionRuleBase(BaseModel):
     """Base correction rule schema."""
+
     name: str = Field(..., min_length=1, max_length=255)
     source_pattern: str = Field(..., min_length=1)
     target_text: str = Field(..., min_length=0)
@@ -22,11 +24,13 @@ class CorrectionRuleBase(BaseModel):
 
 class CorrectionRuleCreate(CorrectionRuleBase):
     """Schema for creating a correction rule."""
+
     pass
 
 
 class CorrectionRuleUpdate(BaseModel):
     """Schema for updating a correction rule."""
+
     name: str | None = Field(default=None, min_length=1, max_length=255)
     source_pattern: str | None = Field(default=None, min_length=1)
     target_text: str | None = Field(default=None, min_length=0)
@@ -41,6 +45,7 @@ class CorrectionRuleUpdate(BaseModel):
 
 class CorrectionRuleResponse(CorrectionRuleBase):
     """Schema for correction rule response."""
+
     id: str
     created_by: str
     created_at: datetime
@@ -51,6 +56,7 @@ class CorrectionRuleResponse(CorrectionRuleBase):
 
 class CorrectionRuleListResponse(BaseModel):
     """Schema for paginated correction rule list."""
+
     rules: list[CorrectionRuleResponse]
     total: int
     page: int
@@ -59,6 +65,7 @@ class CorrectionRuleListResponse(BaseModel):
 
 class ApplyCorrectionRequest(BaseModel):
     """Schema for applying correction rules to text."""
+
     text: str = Field(..., min_length=1)
     source_lang: str | None = Field(default=None)
     target_lang: str | None = Field(default=None)
@@ -66,6 +73,7 @@ class ApplyCorrectionRequest(BaseModel):
 
 class ApplyCorrectionResponse(BaseModel):
     """Schema for correction application result."""
+
     original_text: str
     corrected_text: str
     rules_applied: list[str]  # List of rule IDs applied

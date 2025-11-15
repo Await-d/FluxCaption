@@ -24,9 +24,9 @@ def get_default_mt_model() -> str:
         from app.models.setting import Setting
 
         with SessionLocal() as db:
-            default_model_setting = db.query(Setting).filter(
-                Setting.key == "default_mt_model"
-            ).first()
+            default_model_setting = (
+                db.query(Setting).filter(Setting.key == "default_mt_model").first()
+            )
 
             if default_model_setting and default_model_setting.value:
                 logger.debug(f"Using default model from database: {default_model_setting.value}")
