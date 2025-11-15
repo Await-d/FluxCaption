@@ -152,6 +152,11 @@ const navigationGroups: NavigationGroup[] = [
         icon: Settings,
       },
       {
+        nameKey: 'nav.systemConfig',
+        href: '/system-config',
+        icon: Wrench,
+      },
+      {
         nameKey: 'nav.profile',
         href: '/profile',
         icon: User,

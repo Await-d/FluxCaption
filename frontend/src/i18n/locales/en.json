@@ -37,6 +37,7 @@
     "autoTranslation": "Auto Translation",
     "cache": "Translation Cache",
     "settings": "Settings",
+    "systemConfig": "System Config",
     "corrections": "Correction Rules",
     "profile": "Profile",
     "group": {
