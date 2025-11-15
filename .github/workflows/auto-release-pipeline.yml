@@ -198,31 +198,30 @@ jobs:
 
       - name: Create GitHub Release
         if: steps.check_changes.outputs.needs_version_bump == 'true'
-        uses: actions/create-release@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: "v${{ steps.calc_version.outputs.new_version }}"
-          release_name: "Release v${{ steps.calc_version.outputs.new_version }}"
-          body: |
-            ## Changes in v${{ steps.calc_version.outputs.new_version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${{ steps.calc_version.outputs.new_version }}" \
+            --title "Release v${{ steps.calc_version.outputs.new_version }}" \
+            --notes "$(cat <<'EOF'
+          ## Changes in v${{ steps.calc_version.outputs.new_version }}
 
-            ${{ steps.changelog.outputs.changelog }}
+          ${{ steps.changelog.outputs.changelog }}
 
-            ## Docker Image
-            ```bash
-            docker pull ${{ secrets.DOCKERHUB_USERNAME || 'await2719' }}/fluxcaption:v${{ steps.calc_version.outputs.new_version }}
-            docker pull ${{ secrets.DOCKERHUB_USERNAME || 'await2719' }}/fluxcaption:latest
-            ```
+          ## Docker Image
+          \`\`\`bash
+          docker pull ${{ secrets.DOCKERHUB_USERNAME || 'await2719' }}/fluxcaption:v${{ steps.calc_version.outputs.new_version }}
+          docker pull ${{ secrets.DOCKERHUB_USERNAME || 'await2719' }}/fluxcaption:latest
+          \`\`\`
 
-            ## Quick Start
-            ```bash
-            git clone https://github.com/Await-d/FluxCaption.git
-            cd FluxCaption
-            ./scripts/deployment/quick-start.sh
-            ```
-          draft: false
-          prerelease: false
+          ## Quick Start
+          \`\`\`bash
+          git clone https://github.com/Await-d/FluxCaption.git
+          cd FluxCaption
+          docker compose up -d
+          \`\`\`
+          EOF
+          )"
 
       - name: Clean up old tags (keep last 10)
         if: steps.check_changes.outputs.needs_version_bump == 'true'
@@ -269,6 +268,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
+          file: backend/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
