@@ -83,9 +83,7 @@ jobs:
           REDIS_URL: redis://localhost:6379/0
           TEST_DATABASE_URL: postgresql+psycopg://test_user:test_pass@localhost:5432/test_db
         run: |
-          echo "Integration tests temporarily disabled for CI stability"
-          echo "TODO: Fix authentication and database connection issues in tests"
-          echo "Exit code 4 indicates test failures that need debugging"
+          pytest tests/integration -v -m "not slow" --timeout=60
 
       - name: Upload coverage reports
         uses: codecov/codecov-action@v4
