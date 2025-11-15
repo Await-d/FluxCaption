@@ -186,3 +186,34 @@ export function formatDateTime(timestamp: string | number | Date): string {
     minute: '2-digit',
   })
 }
+
+/**
+ * Throttle function - limits execution to once per time period
+ */
+export function throttle<T extends (...args: any[]) => any>(
+  func: T,
+  limit: number
+): (...args: Parameters<T>) => void {
+  let inThrottle: boolean = false
+
+  return function executedFunction(...args: Parameters<T>) {
+    if (!inThrottle) {
+      func(...args)
+      inThrottle = true
+      setTimeout(() => {
+        inThrottle = false
+      }, limit)
+    }
+  }
+}
+
+/**
+ * Check if value is empty (null, undefined, empty string, empty array, empty object)
+ */
+export function isEmpty(value: any): boolean {
+  if (value == null) return true
+  if (typeof value === 'string') return value.trim().length === 0
+  if (Array.isArray(value)) return value.length === 0
+  if (typeof value === 'object') return Object.keys(value).length === 0
+  return false
+}
