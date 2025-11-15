@@ -98,7 +98,7 @@ class TestASRTranslationWorkflow:
         """
         # Create ASR + translate job
         response = client.post(
-            "/api/jobs",
+            "/api/jobs/translate",
             json={
                 "type": "asr_then_translate",
                 "target_langs": ["zh-CN"],
@@ -131,7 +131,7 @@ class TestJobManagement:
         """Test cancelling a running job."""
         # Create a job
         response = client.post(
-            "/api/jobs",
+            "/api/jobs/translate",
             json={
                 "type": "translate",
                 "target_langs": ["zh-CN"],
@@ -154,7 +154,7 @@ class TestJobManagement:
         """Test retrying a failed job."""
         # Create a job
         response = client.post(
-            "/api/jobs",
+            "/api/jobs/translate",
             json={
                 "type": "translate",
                 "target_langs": ["zh-CN"],
@@ -300,7 +300,7 @@ class TestLongRunningWorkflows:
         """
         # Create job
         response = client.post(
-            "/api/jobs",
+            "/api/jobs/translate",
             json={
                 "type": "asr_then_translate",
                 "target_langs": ["zh-CN", "ja"],

@@ -14,6 +14,8 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.core.db import Base, get_db
 from app.core.config import settings
+from app.models.user import User
+from app.services.auth_service import AuthService
 
 
 # =============================================================================
@@ -25,7 +27,7 @@ def test_engine():
     """Create test database engine."""
     # Use test database URL if available in environment, otherwise use configured URL
     import os
-    test_db_url = os.environ.get("TEST_DATABASE_URL") or settings.database_url
+    test_db_url = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL") or settings.database_url
     engine = create_engine(test_db_url, pool_pre_ping=True, future=True)
 
     # Create tables
@@ -61,8 +63,33 @@ def db_session(test_engine) -> Generator[Session, None, None]:
 # =============================================================================
 
 @pytest.fixture(scope="function")
-def client(db_session: Session) -> Generator[TestClient, None, None]:
-    """Create FastAPI test client with test database."""
+def test_user(db_session: Session) -> User:
+    """Create a test user for authentication."""
+    # Check if test user already exists
+    existing_user = db_session.query(User).filter(User.username == "testuser").first()
+    if existing_user:
+        return existing_user
+
+    # Create a new test user
+    user = AuthService.create_user(
+        db=db_session,
+        username="testuser",
+        password="testpass123",
+        email="test@example.com",
+        is_admin=True,
+    )
+    return user
+
+
+@pytest.fixture(scope="function")
+def auth_token(test_user: User) -> str:
+    """Create an authentication token for the test user."""
+    return AuthService.create_access_token(data={"sub": test_user.username})
+
+
+@pytest.fixture(scope="function")
+def client(db_session: Session, auth_token: str) -> Generator[TestClient, None, None]:
+    """Create FastAPI test client with test database and authentication."""
 
     def override_get_db():
         try:
@@ -73,6 +100,8 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
     app.dependency_overrides[get_db] = override_get_db
 
     with TestClient(app) as test_client:
+        # Add authorization header to all requests
+        test_client.headers.update({"Authorization": f"Bearer {auth_token}"})
         yield test_client
 
     app.dependency_overrides.clear()
