@@ -5,7 +5,7 @@ import './index.css'
 import './i18n/config'
 
 // Initialize theme on startup
-import { useThemeStore } from '@/stores/useThemeStore'
+import { useThemeStore } from './stores/useThemeStore'
 const initialTheme = useThemeStore.getState().theme
 const root = window.document.documentElement
 root.classList.remove('light', 'dark')

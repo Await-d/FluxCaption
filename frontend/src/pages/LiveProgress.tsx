@@ -5,14 +5,14 @@ import {
   Activity, TrendingUp, Zap, Database, Cpu, BarChart3, ChevronDown, ChevronUp,
   Download, Film, Music, Subtitles
 } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
-import { Badge } from '@/components/ui/Badge'
-import { Button } from '@/components/ui/Button'
-import { Progress } from '@/components/ui/Progress'
-import api from '@/lib/api'
-import { subscribeToJobProgress } from '@/lib/sse'
-import { getLanguageName } from '@/lib/utils'
-import type { JobListResponse, ProgressEvent, TranslationJob } from '@/types/api'
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
+import { Badge } from '../components/ui/Badge'
+import { Button } from '../components/ui/Button'
+import { Progress } from '../components/ui/Progress'
+import api from '../lib/api'
+import { subscribeToJobProgress } from '../lib/sse'
+import { getLanguageName } from '../lib/utils'
+import type { JobListResponse, ProgressEvent, TranslationJob } from '../types/api'
 import { useTranslation } from 'react-i18next'
 
 // Extend ProgressEvent with timestamp for display

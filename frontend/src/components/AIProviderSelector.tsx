@@ -9,8 +9,8 @@ import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Cloud, Check, AlertCircle, Loader2, DollarSign, ChevronDown } from 'lucide-react';
-import { aiProviderApi, AIProviderConfig } from '@/api/aiProviders';
-import * as aiModelsApi from '@/api/aiModels';
+import { aiProviderApi, AIProviderConfig } from '../api/aiProviders';
+import * as aiModelsApi from '../api/aiModels';
 
 interface AIProviderSelectorProps {
   value?: {

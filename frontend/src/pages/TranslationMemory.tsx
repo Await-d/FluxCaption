@@ -1,11 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Database, Search, Filter, BookOpen, Edit2, Trash2, Wand2, CheckSquare, Square, X, RefreshCw } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
-import { Badge } from '@/components/ui/Badge'
-import { Input } from '@/components/ui/Input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/Select'
-import { Button } from '@/components/ui/Button'
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
+import { Badge } from '../components/ui/Badge'
+import { Input } from '../components/ui/Input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/Select'
+import { Button } from '../components/ui/Button'
 import {
   Dialog,
   DialogContent,
@@ -13,7 +13,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/Dialog'
+} from '../components/ui/Dialog'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,13 +23,13 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/AlertDialog'
-import { Textarea } from '@/components/ui/Textarea'
-import { Checkbox } from '@/components/ui/Checkbox'
-import { Label } from '@/components/ui/Label'
-import { useToast } from '@/hooks/use-toast'
-import api from '@/lib/api'
-import { getLanguageName } from '@/lib/utils'
+} from '../components/ui/AlertDialog'
+import { Textarea } from '../components/ui/Textarea'
+import { Checkbox } from '../components/ui/Checkbox'
+import { Label } from '../components/ui/Label'
+import { useToast } from '../hooks/use-toast'
+import api from '../lib/api'
+import { getLanguageName } from '../lib/utils'
 import { useTranslation } from 'react-i18next'
 
 interface TranslationPair {

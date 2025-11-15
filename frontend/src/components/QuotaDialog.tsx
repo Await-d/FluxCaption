@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, DollarSign, AlertTriangle, RotateCcw } from 'lucide-react';
-import { aiProviderApi, ProviderQuota } from '@/api/aiProviders';
+import { aiProviderApi, ProviderQuota } from '../api/aiProviders';
 
 interface QuotaDialogProps {
   providerName: string;

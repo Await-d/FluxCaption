@@ -26,8 +26,8 @@ import {
   Cloud,
   Boxes,
 } from 'lucide-react'
-import { useUIStore } from '@/stores/useUIStore'
-import { cn } from '@/lib/utils'
+import { useUIStore } from '../../stores/useUIStore'
+import { cn } from '../../lib/utils'
 import { useTranslation } from 'react-i18next'
 
 interface NavigationItem {
