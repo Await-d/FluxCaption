@@ -14,6 +14,7 @@ FluxCaption is a comprehensive subtitle translation system that automatically de
 - 🔄 **Real-time Progress** - SSE-based progress tracking
 - 🎨 **Modern UI** - React 19 with Tailwind CSS and Radix UI
 - 🚀 **Production-Ready** - Complete error handling, logging, and monitoring
+- 🤖 **CI/CD Pipeline** - Automated releases with Docker multi-arch builds
 
 ## 🏗️ Architecture
 
