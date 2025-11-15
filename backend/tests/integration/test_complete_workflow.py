@@ -36,17 +36,29 @@ class TestManualSubtitleTranslationWorkflow:
             response = client.post(
                 "/api/upload/subtitle",
                 files={"file": ("test.srt", f, "text/plain")},
-                data={
-                    "source_lang": "en",
-                    "target_langs": "zh-CN,ja",
-                    "mt_model": "qwen2.5:7b-instruct",
-                },
             )
 
-        assert response.status_code == 200
+        assert response.status_code == 201  # UploadResponse returns 201
         upload_data = response.json()
-        assert "job_id" in upload_data
-        job_id = upload_data["job_id"]
+        assert "file_id" in upload_data
+        file_id = upload_data["file_id"]
+
+        # Step 2: Create translation job using the uploaded file
+        response = client.post(
+            "/api/jobs/translate",
+            json={
+                "source_type": "subtitle",
+                "source_path": upload_data["path"],  # Use the uploaded file path
+                "source_lang": "en",
+                "target_langs": ["zh-CN", "ja"],
+                "model": "qwen2.5:7b-instruct",
+            },
+        )
+
+        assert response.status_code == 201
+        job_data = response.json()
+        assert "id" in job_data
+        job_id = job_data["id"]
 
         # Step 2: Check job was created
         response = client.get(f"/api/jobs/{job_id}")
