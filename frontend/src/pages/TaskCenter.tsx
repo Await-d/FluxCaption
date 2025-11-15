@@ -14,9 +14,9 @@ import {
   Database,
   Users,
 } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/Card'
-import { Button } from '../components/ui/Button'
-import api from '../lib/api'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
+import api from '@/lib/api'
 
 export function TaskCenter() {
   const { t } = useTranslation()

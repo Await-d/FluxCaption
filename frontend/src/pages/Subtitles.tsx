@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Database, Search, Filter, Trash2, CheckSquare, Square, ChevronDown, ChevronUp, RefreshCw, Activity, CheckCircle, XCircle, Clock } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
-import { Badge } from '../components/ui/Badge'
-import { Button } from '../components/ui/Button'
-import { Input } from '../components/ui/Input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/Select'
-import { Checkbox } from '../components/ui/Checkbox'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
+import { Badge } from '@/components/ui/Badge'
+import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/Select'
+import { Checkbox } from '@/components/ui/Checkbox'
 import {
   Dialog,
   DialogContent,
@@ -14,9 +14,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '../components/ui/Dialog'
-import api from '../lib/api'
-import { getLanguageName } from '../lib/utils'
+} from '@/components/ui/Dialog'
+import api from '@/lib/api'
+import { getLanguageName } from '@/lib/utils'
 import { useTranslation } from 'react-i18next'
 
 interface SubtitleContentPreviewProps {

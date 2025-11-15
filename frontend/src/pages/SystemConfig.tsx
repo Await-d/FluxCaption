@@ -10,14 +10,14 @@ import {
   CheckCircle2,
   History,
 } from 'lucide-react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/Card'
-import { Button } from '../components/ui/Button'
-import { Input } from '../components/ui/Input'
-import { Label } from '../components/ui/Label'
-import { Badge } from '../components/ui/Badge'
-import { Textarea } from '../components/ui/Textarea'
-import api from '../lib/api'
-import type { SystemConfigCategory, SettingChangeHistory } from '../types/api'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
+import { Label } from '@/components/ui/Label'
+import { Badge } from '@/components/ui/Badge'
+import { Textarea } from '@/components/ui/Textarea'
+import api from '@/lib/api'
+import type { SystemConfigCategory, SettingChangeHistory } from '@/types/api'
 
 export function SystemConfig() {
   const { t } = useTranslation()

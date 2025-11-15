@@ -6,11 +6,11 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from '../components/ui/Dialog'
-import { Button } from '../components/ui/Button'
-import { Badge } from '../components/ui/Badge'
-import api from '../lib/api'
-import type { SubtitleEntry } from '../types/api'
+} from '@/components/ui/Dialog'
+import { Button } from '@/components/ui/Button'
+import { Badge } from '@/components/ui/Badge'
+import api from '@/lib/api'
+import type { SubtitleEntry } from '@/types/api'
 import { useTranslation } from 'react-i18next'
 
 interface SubtitlePreviewDialogProps {

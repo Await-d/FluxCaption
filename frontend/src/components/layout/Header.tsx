@@ -1,11 +1,11 @@
 import { Moon, Sun, Monitor, Languages, LogOut, User } from 'lucide-react'
-import { useThemeStore } from '../stores/useThemeStore'
-import { useAuthStore } from '../stores/authStore'
-import { Button } from '../components/ui/Button'
+import { useThemeStore } from '@/stores/useThemeStore'
+import { useAuthStore } from '@/stores/authStore'
+import { Button } from '@/components/ui/Button'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useMutation } from '@tanstack/react-query'
-import authApi from '../lib/authApi'
+import authApi from '@/lib/authApi'
 
 const routeNames: Record<string, string> = {
   '/': 'nav.dashboard',

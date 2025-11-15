@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { Save, FolderOpen, Plus, X } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/Card'
-import { Button } from '../components/ui/Button'
-import { Input } from '../components/ui/Input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/Select'
-import api from '../lib/api'
-import type { AppSettings } from '../types/api'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/Select'
+import api from '@/lib/api'
+import type { AppSettings } from '@/types/api'
 import { useTranslation } from 'react-i18next'
 
 export function Settings() {

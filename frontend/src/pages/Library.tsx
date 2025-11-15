@@ -14,17 +14,17 @@ import {
   CheckCircle2,
   Loader2,
 } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
-import { Button } from '../components/ui/Button'
-import { Badge } from '../components/ui/Badge'
-import { Input } from '../components/ui/Input'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
+import { Badge } from '@/components/ui/Badge'
+import { Input } from '@/components/ui/Input'
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '../components/ui/Select'
+} from '@/components/ui/Select'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,10 +34,10 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '../components/ui/AlertDialog'
-import api from '../lib/api'
-import { formatBytes, formatDuration, getLanguageName } from '../lib/utils'
-import type { JellyfinLibrary, JellyfinMediaItem } from '../types/api'
+} from '@/components/ui/AlertDialog'
+import api from '@/lib/api'
+import { formatBytes, formatDuration, getLanguageName } from '@/lib/utils'
+import type { JellyfinLibrary, JellyfinMediaItem } from '@/types/api'
 import { useTranslation } from 'react-i18next'
 
 export function Library() {

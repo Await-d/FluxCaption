@@ -10,8 +10,8 @@ import {
   DollarSign,
   Activity,
 } from 'lucide-react';
-import { aiProviderApi, AIProviderConfig } from '../api/aiProviders';
-import QuotaDialog from '../components/QuotaDialog';
+import { aiProviderApi, AIProviderConfig } from '@/api/aiProviders';
+import QuotaDialog from '@/components/QuotaDialog';
 
 const AIProvidersPage: React.FC = () => {
   const { t } = useTranslation();

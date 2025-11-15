@@ -8,8 +8,8 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Edit2, Trash2, DollarSign, Check, X, Loader2 } from 'lucide-react';
-import * as aiModelsApi from '../api/aiModels';
-import type { AIModelConfig, AIModelConfigCreate, AIModelConfigUpdate } from '../api/aiModels';
+import * as aiModelsApi from '@/api/aiModels';
+import type { AIModelConfig, AIModelConfigCreate, AIModelConfigUpdate } from '@/api/aiModels';
 import { toast } from 'sonner';
 
 export default function AIModelsPage() {
