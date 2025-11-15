@@ -38,6 +38,8 @@ jobs:
 
       - name: Type check
         working-directory: ./frontend
+        env:
+          NODE_PATH: src
         run: pnpm type-check
 
       - name: Lint
