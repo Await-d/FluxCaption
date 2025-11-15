@@ -9,7 +9,7 @@ import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Cloud, Check, AlertCircle, Loader2, DollarSign, ChevronDown } from 'lucide-react';
-import * as aiProviderApi from '../api/aiProviders';
+import { aiProviderApi, AIProviderConfig } from '../api/aiProviders';
 import * as aiModelsApi from '../api/aiModels';
 
 interface AIProviderSelectorProps {
@@ -37,7 +37,7 @@ export function AIProviderSelector({
     queryKey: ['ai-providers', 'enabled'],
     queryFn: async () => {
       const all = await aiProviderApi.listProviders();
-      return all.filter(p => p.is_enabled).sort((a, b) => b.priority - a.priority);
+      return all.filter((p: AIProviderConfig) => p.is_enabled).sort((a: AIProviderConfig, b: AIProviderConfig) => b.priority - a.priority);
     },
   });
 
@@ -113,7 +113,7 @@ export function AIProviderSelector({
           </span>
         </label>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-          {providers.map((provider) => {
+          {providers.map((provider: AIProviderConfig) => {
             const isSelected = selectedProvider === provider.provider_name;
             const isHealthy = provider.is_healthy;
 

@@ -2,7 +2,9 @@
  * AI Model Configuration API Client
  */
 
-import { apiClient } from './client';
+import axios from 'axios';
+
+const API_BASE_URL = '/api';
 
 export interface AIModelConfig {
   id: string;
@@ -88,7 +90,7 @@ export async function listModels(params?: {
   page?: number;
   page_size?: number;
 }): Promise<AIModelConfigListResponse> {
-  const response = await apiClient.get<AIModelConfigListResponse>('/ai-models', {
+  const response = await axios.get<AIModelConfigListResponse>(`${API_BASE_URL}/ai-models`, {
     params,
   });
   return response.data;
@@ -98,7 +100,7 @@ export async function listModels(params?: {
  * Get detailed model configuration
  */
 export async function getModel(modelId: string): Promise<AIModelConfig> {
-  const response = await apiClient.get<AIModelConfig>(`/ai-models/${modelId}`);
+  const response = await axios.get<AIModelConfig>(`${API_BASE_URL}/ai-models/${modelId}`);
   return response.data;
 }
 
@@ -106,7 +108,7 @@ export async function getModel(modelId: string): Promise<AIModelConfig> {
  * Create a new AI model configuration
  */
 export async function createModel(data: AIModelConfigCreate): Promise<AIModelConfig> {
-  const response = await apiClient.post<AIModelConfig>('/ai-models', data);
+  const response = await axios.post<AIModelConfig>(`${API_BASE_URL}/ai-models`, data);
   return response.data;
 }
 
@@ -117,7 +119,7 @@ export async function updateModel(
   modelId: string,
   data: AIModelConfigUpdate
 ): Promise<AIModelConfig> {
-  const response = await apiClient.patch<AIModelConfig>(`/ai-models/${modelId}`, data);
+  const response = await axios.patch<AIModelConfig>(`${API_BASE_URL}/ai-models/${modelId}`, data);
   return response.data;
 }
 
@@ -125,7 +127,7 @@ export async function updateModel(
  * Delete an AI model configuration
  */
 export async function deleteModel(modelId: string): Promise<void> {
-  await apiClient.delete(`/ai-models/${modelId}`);
+  await axios.delete(`${API_BASE_URL}/ai-models/${modelId}`);
 }
 
 /**
@@ -137,8 +139,8 @@ export async function calculatePrice(params: {
   input_tokens: number;
   output_tokens: number;
 }): Promise<PricingCalculation> {
-  const response = await apiClient.post<PricingCalculation>(
-    '/ai-models/calculate-price',
+  const response = await axios.post<PricingCalculation>(
+    `${API_BASE_URL}/ai-models/calculate-price`,
     null,
     { params }
   );

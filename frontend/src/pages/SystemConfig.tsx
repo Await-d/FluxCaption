@@ -87,7 +87,7 @@ export function SystemConfig() {
 
   // Client-side validation
   const validateValue = (
-    key: string,
+    _key: string,
     value: string,
     valueType: string,
     constraints?: { min?: number; max?: number; unit?: string; description_suffix?: string }
