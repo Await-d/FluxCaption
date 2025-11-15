@@ -10,11 +10,15 @@ FROM node:20-alpine AS frontend-builder
 WORKDIR /frontend
 
 # Copy frontend package files
-COPY frontend/package.json frontend/pnpm-lock.yaml* ./
+COPY frontend/package.json frontend/pnpm-lock.yaml ./
 
-# Install pnpm and dependencies
-RUN npm install -g pnpm && \
-    pnpm install --frozen-lockfile
+# Install pnpm and dependencies with retry and better error handling
+RUN set -ex && \
+    npm install -g pnpm@8 && \
+    pnpm config set store-dir /tmp/.pnpm-store && \
+    pnpm config set network-timeout 300000 && \
+    pnpm install --frozen-lockfile --no-optional || \
+    (echo "First install attempt failed, retrying..." && sleep 5 && pnpm install --frozen-lockfile --no-optional)
 
 # Copy frontend source code
 COPY frontend/ .
