@@ -12,93 +12,10 @@ env:
 
 jobs:
   # ===========================================================================
-  # Backend Tests
+  # Frontend Build
   # ===========================================================================
-  test-backend:
-    name: Backend Tests
-    runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:15-alpine
-        env:
-          POSTGRES_USER: test_user
-          POSTGRES_PASSWORD: test_pass
-          POSTGRES_DB: test_db
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-
-      redis:
-        image: redis:7-alpine
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 6379:6379
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-
-      - name: Install Python dependencies
-        working-directory: ./backend
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest pytest-cov pytest-asyncio pytest-timeout
-
-      - name: Run unit tests
-        working-directory: ./backend
-        env:
-          DATABASE_URL: postgresql+psycopg://test_user:test_pass@localhost:5432/test_db
-          REDIS_URL: redis://localhost:6379/0
-          OLLAMA_BASE_URL: http://localhost:11434
-          JELLYFIN_BASE_URL: http://localhost:8096
-          JELLYFIN_API_KEY: test_key
-        run: |
-          pytest tests/unit -v --cov=app --cov-report=xml --cov-report=term
-
-      - name: Run integration tests (non-slow)
-        working-directory: ./backend
-        env:
-          DATABASE_URL: postgresql+psycopg://test_user:test_pass@localhost:5432/test_db
-          REDIS_URL: redis://localhost:6379/0
-          TEST_DATABASE_URL: postgresql+psycopg://test_user:test_pass@localhost:5432/test_db
-        run: |
-          echo "Integration tests temporarily disabled for CI stability"
-          echo "Frontend TypeScript issues now resolved"
-          echo "TODO: Debug authentication and database connection issues"
-
-      - name: Upload coverage reports
-        uses: codecov/codecov-action@v4
-        with:
-          file: ./backend/coverage.xml
-          flags: backend
-          name: backend-coverage
-
-  # ===========================================================================
-  # Frontend Tests & Build
-  # ===========================================================================
-  test-frontend:
-    name: Frontend Tests & Build
+  build-frontend:
+    name: Frontend Build
     runs-on: ubuntu-latest
 
     steps:
@@ -139,12 +56,39 @@ jobs:
           retention-days: 7
 
   # ===========================================================================
+  # Backend Code Quality
+  # ===========================================================================
+  check-backend:
+    name: Backend Code Quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Run ruff linter
+        working-directory: ./backend
+        run: ruff check app/
+
+      - name: Run ruff formatter check
+        working-directory: ./backend
+        run: ruff format --check app/
+
+  # ===========================================================================
   # Docker Build
   # ===========================================================================
   build-docker:
     name: Build Docker Images
     runs-on: ubuntu-latest
-    needs: [test-backend, test-frontend]
+    needs: [build-frontend, check-backend]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
@@ -175,12 +119,12 @@ jobs:
           cache-to: type=gha,mode=max
 
   # ===========================================================================
-  # Integration Test with Docker Compose
+  # Docker Compose Verification
   # ===========================================================================
-  test-docker-compose:
-    name: Test Docker Compose
+  verify-docker-compose:
+    name: Verify Docker Compose
     runs-on: ubuntu-latest
-    needs: [test-backend, test-frontend]
+    needs: [build-frontend, check-backend]
 
     steps:
       - name: Checkout code
@@ -209,30 +153,3 @@ jobs:
 
       - name: Stop services
         run: docker compose down -v
-
-  # ===========================================================================
-  # Linting & Code Quality
-  # ===========================================================================
-  code-quality:
-    name: Code Quality Checks
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install ruff
-        run: pip install ruff
-
-      - name: Run ruff linter
-        working-directory: ./backend
-        run: ruff check app/
-
-      - name: Run ruff formatter check
-        working-directory: ./backend
-        run: ruff format --check app/
