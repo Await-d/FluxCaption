@@ -143,3 +143,46 @@ export function calculateProgress(completed: number, total: number): number {
   if (total === 0) return 0
   return Math.round((completed / total) * 100)
 }
+
+/**
+ * Format timestamp to localized date time string
+ */
+export function formatDateTime(timestamp: string | number | Date): string {
+  const date = new Date(timestamp)
+  if (isNaN(date.getTime())) {
+    return 'Invalid Date'
+  }
+
+  const now = new Date()
+  const diff = now.getTime() - date.getTime()
+  const seconds = Math.floor(diff / 1000)
+  const minutes = Math.floor(seconds / 60)
+  const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
+
+  // If less than 1 minute ago
+  if (seconds < 60) {
+    return '刚刚'
+  }
+  // If less than 1 hour ago
+  if (minutes < 60) {
+    return `${minutes}分钟前`
+  }
+  // If less than 24 hours ago
+  if (hours < 24) {
+    return `${hours}小时前`
+  }
+  // If less than 7 days ago
+  if (days < 7) {
+    return `${days}天前`
+  }
+
+  // Otherwise return formatted date
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
