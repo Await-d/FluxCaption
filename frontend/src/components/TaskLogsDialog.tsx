@@ -93,7 +93,7 @@ export function TaskLogsDialog({ jobId, open, onOpenChange }: TaskLogsDialogProp
             {/* Log Timeline */}
             <div className="h-[400px] pr-4 overflow-y-auto">
               <div className="space-y-3">
-                {data.logs.map((log, index) => (
+                {data.logs.map((log: any, index: number) => (
                   <div
                     key={log.id}
                     className="flex gap-3 p-3 rounded-lg border bg-card hover:bg-accent/30 transition-colors"
