@@ -23,8 +23,9 @@ from app.core.config import settings
 @pytest.fixture(scope="session")
 def test_engine():
     """Create test database engine."""
-    # Use test database URL if available, otherwise use configured URL
-    test_db_url = settings.test_database_url or settings.database_url
+    # Use test database URL if available in environment, otherwise use configured URL
+    import os
+    test_db_url = os.environ.get("TEST_DATABASE_URL") or settings.database_url
     engine = create_engine(test_db_url, pool_pre_ping=True, future=True)
 
     # Create tables
