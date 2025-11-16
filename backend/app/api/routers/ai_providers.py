@@ -19,7 +19,7 @@ from app.services.ai_providers.factory import AIProviderFactory, provider_manage
 from app.services.ai_quota_service import AIQuotaService
 
 logger = get_logger(__name__)
-router = APIRouter(prefix="/ai-providers", tags=["AI Providers"])
+router = APIRouter(prefix="/api/ai-providers", tags=["AI Providers"])
 
 
 # =============================================================================
@@ -133,7 +133,8 @@ async def list_providers(
     stmt = stmt.order_by(AIProviderConfig.priority.desc(), AIProviderConfig.created_at)
 
     providers = db.execute(stmt).scalars().all()
-    return providers
+    # Convert UUID id to string for response
+    return [ProviderConfigResponse(id=str(p.id), **{k: v for k, v in p.__dict__.items() if k != 'id'}) for p in providers]
 
 
 @router.get("/{provider_name}", response_model=ProviderConfigResponse)
@@ -148,7 +149,7 @@ async def get_provider(
     if not provider:
         raise HTTPException(status_code=404, detail=f"Provider '{provider_name}' not found")
 
-    return provider
+    return ProviderConfigResponse(id=str(provider.id), **{k: v for k, v in provider.__dict__.items() if k != 'id'})
 
 
 @router.post("", response_model=ProviderConfigResponse)
@@ -184,7 +185,7 @@ async def create_or_update_provider(
         db.commit()
         db.refresh(existing)
         logger.info(f"Updated provider config: {config.provider_name}")
-        return existing
+        return ProviderConfigResponse(id=str(existing.id), **{k: v for k, v in existing.__dict__.items() if k != 'id'})
     else:
         # Create new
         import json
@@ -197,7 +198,7 @@ async def create_or_update_provider(
         db.commit()
         db.refresh(provider_config)
         logger.info(f"Created provider config: {config.provider_name}")
-        return provider_config
+        return ProviderConfigResponse(id=str(provider_config.id), **{k: v for k, v in provider_config.__dict__.items() if k != 'id'})
 
 
 @router.delete("/{provider_name}")
