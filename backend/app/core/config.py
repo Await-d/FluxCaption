@@ -191,6 +191,13 @@ class Settings(BaseSettings):
     log_file: str = Field(default="/app/logs/fluxcaption.log")
 
     # =============================================================================
+    # Alerting / Notifications
+    # =============================================================================
+    alert_webhook_url: str | None = Field(default=None, description="Webhook URL for system alerts")
+    alert_webhook_token: str | None = Field(default=None, description="Optional bearer token for alert webhook")
+    alert_webhook_timeout: int = Field(default=5, description="Webhook timeout in seconds")
+
+    # =============================================================================
     # Scheduled Tasks Configuration
     # =============================================================================
     task_resume_paused_jobs_interval: int = Field(

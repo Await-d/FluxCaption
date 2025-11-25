@@ -9,7 +9,9 @@ from datetime import UTC
 
 from fastapi import APIRouter, status
 from fastapi.responses import JSONResponse
+from redis import asyncio as aioredis
 
+from app.core.config import settings
 from app.core.db import check_db_health
 from app.core.logging import get_logger
 from app.schemas.health import ComponentStatus, HealthResponse, ReadyResponse
@@ -18,6 +20,23 @@ from app.services.ollama_client import ollama_client
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api", tags=["Health"])
+
+
+async def _redis_health_check() -> tuple[bool, str]:
+    redis = None
+    try:
+        redis = await aioredis.from_url(settings.redis_url)
+        await redis.ping()
+        return True, "Redis connection successful"
+    except Exception as exc:
+        logger.error(f"Redis health check failed: {exc}")
+        return False, f"Redis connection failed: {exc}"
+    finally:
+        if redis:
+            try:
+                await redis.close()
+            except Exception as close_exc:
+                logger.debug(f"Failed to close Redis client: {close_exc}")
 
 
 @router.get(
@@ -44,8 +63,9 @@ async def health_check() -> HealthResponse:
     # Check Ollama
     ollama_status = "ok" if await ollama_client.health_check() else "down"
 
-    # Check Redis (placeholder - always ok for now)
-    redis_status = "ok"
+    # Check Redis
+    redis_healthy, _ = await _redis_health_check()
+    redis_status = "ok" if redis_healthy else "down"
 
     # Check Jellyfin (placeholder - always ok for now)
     jellyfin_status = "ok"
@@ -87,7 +107,7 @@ async def readiness_check() -> ReadyResponse:
     Checks the health of all critical components:
     - Database connection
     - Ollama server
-    - Redis (future)
+    - Redis connection
 
     Returns:
         ReadyResponse: Detailed component health status
@@ -133,7 +153,22 @@ async def readiness_check() -> ReadyResponse:
     if not ollama_healthy:
         all_healthy = False
 
-    # TODO: Add Redis health check
+    # Check Redis
+    start_time = time.time()
+    redis_healthy, redis_message = await _redis_health_check()
+    redis_latency = (time.time() - start_time) * 1000
+
+    components.append(
+        ComponentStatus(
+            name="redis",
+            status="healthy" if redis_healthy else "unhealthy",
+            message=redis_message,
+            latency_ms=redis_latency,
+        )
+    )
+
+    if not redis_healthy:
+        all_healthy = False
 
     response = ReadyResponse(ready=all_healthy, components=components)
 

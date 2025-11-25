@@ -4,7 +4,9 @@ Local media file scanner service.
 Scans local directories for media files and detects subtitle availability.
 """
 
+import json
 import re
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,6 +27,19 @@ class MediaFile:
     audio_languages: list[str]
     subtitle_languages: list[str]
     missing_languages: list[str]
+    subtitle_files: list[str]
+
+    @property
+    def filepath(self) -> str:
+        return self.path
+
+    @property
+    def filename(self) -> str:
+        return self.name
+
+    @property
+    def existing_subtitle_langs(self) -> list[str]:
+        return self.subtitle_languages
 
 
 class LocalMediaScanner:
@@ -155,10 +170,10 @@ class LocalMediaScanner:
         file_stat = video_path.stat()
 
         # Find existing subtitle files
-        subtitle_langs = self._find_subtitle_languages(video_path)
+        subtitle_langs, subtitle_files = self._find_subtitle_languages(video_path)
 
-        # Audio languages (暂时无法从文件名推断，默认为空或待检测)
-        audio_langs = []  # TODO: Could use ffprobe to detect
+        # Detect audio languages via ffprobe (best-effort)
+        audio_langs = self._detect_audio_languages(video_path)
 
         # Detect missing languages
         missing_langs = [lang for lang in required_langs if lang not in subtitle_langs]
@@ -172,9 +187,10 @@ class LocalMediaScanner:
             audio_languages=audio_langs,
             subtitle_languages=subtitle_langs,
             missing_languages=missing_langs,
+            subtitle_files=subtitle_files,
         )
 
-    def _find_subtitle_languages(self, video_path: Path) -> list[str]:
+    def _find_subtitle_languages(self, video_path: Path) -> tuple[list[str], list[str]]:
         """
         Find existing subtitle files for a video and extract language codes.
 
@@ -188,15 +204,17 @@ class LocalMediaScanner:
             video_path: Path to video file
 
         Returns:
-            List of detected language codes
+            Tuple of (language codes, subtitle file paths)
         """
         subtitle_langs: set[str] = set()
+        subtitle_files: list[str] = []
         video_stem = video_path.stem  # filename without extension
         video_dir = video_path.parent
 
         # Check for subtitle files with same base name
         for subtitle_path in video_dir.glob(f"{video_stem}*"):
             if subtitle_path.suffix.lower() in self.SUBTITLE_EXTENSIONS:
+                subtitle_files.append(str(subtitle_path))
                 # Try to extract language code from filename
                 match = self.LANG_PATTERN.search(subtitle_path.name)
                 if match:
@@ -216,7 +234,92 @@ class LocalMediaScanner:
                     elif "kor" in name_lower or name_lower.endswith(".ko"):
                         subtitle_langs.add("ko")
 
-        return sorted(subtitle_langs)
+        return sorted(subtitle_langs), subtitle_files
+
+    def _detect_audio_languages(self, video_path: Path) -> list[str]:
+        """Detect audio languages using ffprobe (best-effort, non-fatal)."""
+        cmd = [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "a",
+            "-show_entries",
+            "stream=index,codec_type:stream_tags=language",
+            "-of",
+            "json",
+            str(video_path),
+        ]
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=15,
+            )
+        except FileNotFoundError:
+            logger.warning("ffprobe not found; audio language detection skipped")
+            return []
+        except subprocess.CalledProcessError as exc:
+            logger.warning(f"ffprobe failed for {video_path}: {exc.stderr or exc}")
+            return []
+        except subprocess.TimeoutExpired:
+            logger.warning(f"ffprobe timed out for {video_path}")
+            return []
+
+        try:
+            data = json.loads(result.stdout or "{}")
+        except json.JSONDecodeError:
+            logger.warning(f"Unable to parse ffprobe output for {video_path}")
+            return []
+
+        languages: set[str] = set()
+        for stream in data.get("streams", []):
+            tags = stream.get("tags") or {}
+            lang = tags.get("language")
+            if lang:
+                normalized = self._normalize_language_code(str(lang))
+                if normalized:
+                    languages.add(normalized)
+
+        return sorted(languages)
+
+    @staticmethod
+    def _normalize_language_code(lang: str) -> str | None:
+        """Normalize ffprobe language codes to BCP-47 style when possible."""
+        code = lang.strip().lower()
+        # ISO 639-2 to 639-1 common mappings
+        mapping = {
+            "eng": "en",
+            "en": "en",
+            "zho": "zh-CN",
+            "chi": "zh-CN",
+            "cmn": "zh-CN",
+            "zh": "zh-CN",
+            "jpn": "ja",
+            "ja": "ja",
+            "kor": "ko",
+            "ko": "ko",
+            "spa": "es",
+            "es": "es",
+            "fra": "fr",
+            "fre": "fr",
+            "fr": "fr",
+            "deu": "de",
+            "ger": "de",
+            "de": "de",
+        }
+
+        if code in mapping:
+            return mapping[code]
+
+        # Already looks like bcp-47 (e.g., en-US)
+        if re.match(r"^[a-z]{2}(-[a-z]{2})?$", code):
+            return code
+
+        return None
 
     def get_directory_stats(self, directory: str, recursive: bool = True) -> dict:
         """

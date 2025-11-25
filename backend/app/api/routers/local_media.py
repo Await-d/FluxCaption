@@ -243,7 +243,7 @@ async def create_local_media_job(
 
         # 检查文件是否存在字幕
         scanner = LocalMediaScanner()
-        subtitle_langs = scanner._find_subtitle_languages(filepath)
+        subtitle_langs, _ = scanner._find_subtitle_languages(filepath)
 
         # 创建任务
         for target_lang in request.target_langs:

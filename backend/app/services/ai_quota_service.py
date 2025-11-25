@@ -8,9 +8,11 @@ import time
 from collections import OrderedDict
 from datetime import UTC, datetime, timedelta
 
+import httpx
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.models.ai_provider_config import AIProviderConfig
 from app.models.ai_provider_usage import AIProviderQuota, AIProviderUsageLog
@@ -698,8 +700,29 @@ class AIQuotaService:
             f"Daily {daily_percent:.1f}%, Monthly {monthly_percent:.1f}%"
         )
 
-        # TODO: Send email/notification
-        # For now, just log
+        if settings.alert_webhook_url:
+            payload = {
+                "provider": quota.provider_name,
+                "daily_percent": daily_percent,
+                "monthly_percent": monthly_percent,
+                "timestamp": now.isoformat(),
+                "message": "AI provider quota threshold reached",
+            }
+            headers = {"Content-Type": "application/json"}
+
+            if settings.alert_webhook_token:
+                headers["Authorization"] = f"Bearer {settings.alert_webhook_token}"
+
+            try:
+                response = httpx.post(
+                    settings.alert_webhook_url,
+                    json=payload,
+                    headers=headers,
+                    timeout=settings.alert_webhook_timeout,
+                )
+                response.raise_for_status()
+            except Exception as exc:
+                logger.error(f"Failed to send quota alert webhook: {exc}")
 
         quota.last_alert_sent_at = now
         self.session.flush()
