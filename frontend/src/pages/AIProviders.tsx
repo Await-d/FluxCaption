@@ -9,14 +9,24 @@ import {
   AlertCircle,
   DollarSign,
   Activity,
+  Edit,
+  Trash2,
+  BarChart3,
+  Plus,
 } from 'lucide-react';
 import { aiProviderApi, AIProviderConfig } from '../api/aiProviders';
 import QuotaDialog from '../components/QuotaDialog';
+import ProviderConfigDialog from '../components/ProviderConfigDialog';
+import UsageStatsDialog from '../components/UsageStatsDialog';
+import AddProviderDialog from '../components/AddProviderDialog';
 
 const AIProvidersPage: React.FC = () => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
+  const [editingProvider, setEditingProvider] = useState<AIProviderConfig | null>(null);
+  const [showUsageStats, setShowUsageStats] = useState<string | null>(null);
+  const [showAddProvider, setShowAddProvider] = useState(false);
 
   // Fetch providers
   const { data: providers, isLoading } = useQuery({
@@ -34,13 +44,48 @@ const AIProvidersPage: React.FC = () => {
 
   // Toggle provider enabled
   const toggleProviderMutation = useMutation({
-    mutationFn: ({ providerName, isEnabled }: { providerName: string; isEnabled: boolean }) =>
+    mutationFn: ({
+      providerName,
+      displayName,
+      isEnabled,
+    }: {
+      providerName: string;
+      displayName: string;
+      isEnabled: boolean;
+    }) =>
       aiProviderApi.createOrUpdateProvider({
         provider_name: providerName,
+        display_name: displayName,
         is_enabled: !isEnabled,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ai-providers'] });
+    },
+  });
+
+  // Delete provider mutation
+  const deleteProviderMutation = useMutation({
+    mutationFn: (providerName: string) => aiProviderApi.deleteProvider(providerName),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ai-providers'] });
+    },
+  });
+
+  // Update provider config mutation
+  const updateConfigMutation = useMutation({
+    mutationFn: (config: Partial<AIProviderConfig>) => aiProviderApi.createOrUpdateProvider(config),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ai-providers'] });
+      setEditingProvider(null);
+    },
+  });
+
+  // Add provider mutation
+  const addProviderMutation = useMutation({
+    mutationFn: (config: Partial<AIProviderConfig>) => aiProviderApi.createOrUpdateProvider(config),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ai-providers'] });
+      setShowAddProvider(false);
     },
   });
 
@@ -85,8 +130,15 @@ const AIProvidersPage: React.FC = () => {
   const handleToggleProvider = (provider: AIProviderConfig) => {
     toggleProviderMutation.mutate({
       providerName: provider.provider_name,
+      displayName: provider.display_name,
       isEnabled: provider.is_enabled,
     });
+  };
+
+  const handleDeleteProvider = (providerName: string) => {
+    if (window.confirm(t('ai_providers.confirm_delete', `Are you sure you want to delete provider "${providerName}"?`))) {
+      deleteProviderMutation.mutate(providerName);
+    }
   };
 
   if (isLoading) {
@@ -111,13 +163,24 @@ const AIProvidersPage: React.FC = () => {
               {t('ai_providers.description', 'Manage AI provider configurations and quotas')}
             </p>
           </div>
-          <button
-            onClick={() => queryClient.invalidateQueries({ queryKey: ['ai-providers'] })}
-            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-2"
-          >
-            <RefreshCw className="w-4 h-4" />
-            {t('common.refresh', 'Refresh')}
-          </button>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => setShowAddProvider(true)}
+              className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              {t('ai_providers.add_provider', 'Add Provider')}
+            </button>
+            <button
+              type="button"
+              onClick={() => queryClient.invalidateQueries({ queryKey: ['ai-providers'] })}
+              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-2"
+            >
+              <RefreshCw className="w-4 h-4" />
+              {t('common.refresh', 'Refresh')}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -198,22 +261,54 @@ const AIProvidersPage: React.FC = () => {
             )}
 
             {/* Actions */}
-            <div className="flex gap-2">
-              <button
-                onClick={() => handleHealthCheck(provider.provider_name)}
-                disabled={healthCheckMutation.isPending}
-                className="flex-1 px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm flex items-center justify-center gap-2 disabled:opacity-50"
-              >
-                <Activity className="w-4 h-4" />
-                {t('ai_providers.health_check', 'Health Check')}
-              </button>
-              <button
-                onClick={() => setSelectedProvider(provider.provider_name)}
-                className="px-3 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors text-sm flex items-center justify-center gap-2"
-              >
-                <DollarSign className="w-4 h-4" />
-                {t('ai_providers.quota', 'Quota')}
-              </button>
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleHealthCheck(provider.provider_name)}
+                  disabled={healthCheckMutation.isPending}
+                  className="flex-1 px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <Activity className="w-4 h-4" />
+                  {t('ai_providers.health_check', 'Health Check')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedProvider(provider.provider_name)}
+                  className="px-3 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors text-sm flex items-center justify-center gap-2"
+                >
+                  <DollarSign className="w-4 h-4" />
+                  {t('ai_providers.quota', 'Quota')}
+                </button>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingProvider(provider)}
+                  className="flex-1 px-3 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors text-sm flex items-center justify-center gap-2"
+                >
+                  <Edit className="w-4 h-4" />
+                  {t('ai_providers.configure', 'Configure')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowUsageStats(provider.provider_name)}
+                  className="flex-1 px-3 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors text-sm flex items-center justify-center gap-2"
+                >
+                  <BarChart3 className="w-4 h-4" />
+                  {t('ai_providers.usage', 'Usage')}
+                </button>
+                {provider.provider_name !== 'ollama' && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteProvider(provider.provider_name)}
+                    disabled={deleteProviderMutation.isPending}
+                    className="px-3 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         ))}
@@ -235,6 +330,33 @@ const AIProvidersPage: React.FC = () => {
       {/* Quota Modal */}
       {selectedProvider && (
         <QuotaDialog providerName={selectedProvider} onClose={() => setSelectedProvider(null)} />
+      )}
+
+      {/* Config Modal */}
+      {editingProvider && (
+        <ProviderConfigDialog
+          provider={editingProvider}
+          onClose={() => setEditingProvider(null)}
+          onSave={(config) => updateConfigMutation.mutate(config)}
+          isSaving={updateConfigMutation.isPending}
+        />
+      )}
+
+      {/* Usage Stats Modal */}
+      {showUsageStats && (
+        <UsageStatsDialog
+          providerName={showUsageStats}
+          onClose={() => setShowUsageStats(null)}
+        />
+      )}
+
+      {/* Add Provider Modal */}
+      {showAddProvider && (
+        <AddProviderDialog
+          onClose={() => setShowAddProvider(false)}
+          onAdd={(config) => addProviderMutation.mutate(config)}
+          isAdding={addProviderMutation.isPending}
+        />
       )}
     </div>
   );

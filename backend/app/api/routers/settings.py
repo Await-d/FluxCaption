@@ -4,7 +4,7 @@ Settings management API endpoints.
 Provides endpoints for retrieving and updating application configuration.
 """
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -81,14 +81,14 @@ def _set_db_setting(
                 category=category,
                 description=description,
                 is_editable=True,
-                updated_at=datetime.now(UTC),
+                updated_at=datetime.now(timezone.utc),
                 updated_by=username,
             )
             session.add(setting)
         else:
             # Update existing setting
             setting.value = str(value)
-            setting.updated_at = datetime.now(UTC)
+            setting.updated_at = datetime.now(timezone.utc)
             setting.updated_by = username
 
         session.commit()
@@ -284,14 +284,17 @@ async def reset_settings_to_defaults(
         # Reload settings from environment
         from app.core.config import Settings
 
-        new_settings = Settings()
+        new_settings = Settings(
+            database_url=settings.database_url,
+            jellyfin_base_url=settings.jellyfin_base_url,
+            jellyfin_api_key=settings.jellyfin_api_key,
+        )
 
-        # Update the global settings instance with fresh values
         for field in new_settings.model_fields:
             if hasattr(settings, field):
                 setattr(settings, field, getattr(new_settings, field))
 
-        return await get_settings()
+        return await get_settings(current_user)
 
     except Exception as e:
         raise HTTPException(

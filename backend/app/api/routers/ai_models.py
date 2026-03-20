@@ -370,12 +370,12 @@ async def delete_model(
     summary="Calculate pricing for token usage",
 )
 async def calculate_price(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
     provider_name: str = Query(..., description="Provider name"),
     model_name: str = Query(..., description="Model name"),
     input_tokens: int = Query(..., ge=0, description="Number of input tokens"),
     output_tokens: int = Query(..., ge=0, description="Number of output tokens"),
-    current_user: Annotated[User, Depends(get_current_user)] = None,
-    db: Session = Depends(get_db),
 ) -> PricingCalculation:
     """
     Calculate the cost for given token usage.

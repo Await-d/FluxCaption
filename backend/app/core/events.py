@@ -7,7 +7,7 @@ Provides event publishing and subscription for job progress streaming.
 import asyncio
 import json
 from collections.abc import AsyncGenerator
-from datetime import UTC
+from datetime import timezone
 
 from redis import asyncio as aioredis
 
@@ -103,7 +103,7 @@ class EventPublisher:
         from datetime import datetime
 
         # Generate timestamp ONCE for both event and database
-        timestamp = datetime.now(UTC)
+        timestamp = datetime.now(timezone.utc)
 
         event_data = {
             "job_id": job_id,
@@ -169,7 +169,7 @@ class EventPublisher:
             "old_value": old_value,
             "new_value": new_value,
             "changed_by": changed_by,
-            "timestamp": datetime.now(UTC).isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
         # Publish to config change channel

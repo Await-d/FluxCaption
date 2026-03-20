@@ -8,10 +8,12 @@ Preserves timing information and ASS formatting tags.
 import json
 import re
 from pathlib import Path
+from typing import Callable, Optional
 
 import pysubs2
 import sqlalchemy as sa
 from pysubs2 import SSAEvent, SSAFile
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -240,7 +242,10 @@ def split_long_line(text: str, max_length: int = 42) -> str:
 
 
 def apply_correction_rules(
-    text: str, source_lang: str | None, target_lang: str | None, db_session: object | None = None
+    text: str,
+    source_lang: str | None,
+    target_lang: str | None,
+    db_session: Optional[Session] = None,
 ) -> str:
     """
     Apply correction rules to translated text.
@@ -400,8 +405,8 @@ class SubtitleService:
         batch_size: int = 10,
         preserve_formatting: bool = True,
         enable_proofreading: bool = True,
-        progress_callback: callable | None = None,
-        db_session: object | None = None,
+        progress_callback: Callable | None = None,
+        db_session: Optional[Session] = None,
         subtitle_id: str | None = None,
         asset_id: str | None = None,
         media_name: str | None = None,

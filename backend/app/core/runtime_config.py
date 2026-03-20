@@ -19,7 +19,7 @@ class RuntimeConfig:
     Runtime configuration that loads from database with environment variable fallback.
     """
 
-    def __init__(self, db: Session = None):
+    def __init__(self, db: Session | None = None):
         """
         Initialize runtime config.
 
@@ -123,7 +123,7 @@ class RuntimeConfig:
 _runtime_config: RuntimeConfig | None = None
 
 
-def get_runtime_config(db: Session = None) -> RuntimeConfig:
+def get_runtime_config(db: Session | None = None) -> RuntimeConfig:
     """
     Get runtime configuration instance.
 

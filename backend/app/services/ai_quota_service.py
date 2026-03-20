@@ -6,7 +6,7 @@ Handles quota checking, usage tracking, and cost calculation.
 
 import time
 from collections import OrderedDict
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import httpx
 import sqlalchemy as sa
@@ -134,7 +134,7 @@ class QuotaCache:
         self._cache.clear()
         logger.info("Quota cache cleared")
 
-    def get_stats(self) -> dict[str, any]:
+    def get_stats(self) -> dict[str, object]:
         """
         Get cache statistics for monitoring.
 
@@ -177,12 +177,13 @@ class QuotaPauseException(Exception):
 class QuotaExceededException(Exception):
     """Exception raised when quota is exceeded."""
 
-    def __init__(self, provider: str, limit_type: str, current: float, limit: float):
+    def __init__(self, provider: str, limit_type: str, current: float, limit: float | None):
         self.provider = provider
         self.limit_type = limit_type
         self.current = current
         self.limit = limit
-        super().__init__(f"{provider} {limit_type} quota exceeded: ${current:.4f} / ${limit:.2f}")
+        limit_str = f"${limit:.2f}" if limit is not None else "N/A"
+        super().__init__(f"{provider} {limit_type} quota exceeded: ${current:.4f} / {limit_str}")
 
 
 class AIQuotaService:
@@ -288,7 +289,7 @@ class AIQuotaService:
             return  # Quota OK (cached)
 
         # Cache miss or expired - perform actual check
-        exception_to_cache = None
+        exception_to_cache: QuotaPauseException | None = None
         can_proceed = True
 
         try:
@@ -305,7 +306,7 @@ class AIQuotaService:
                 )
 
                 # Calculate resume time (next day at same time)
-                resume_at = datetime.now(UTC) + timedelta(days=1)
+                resume_at = datetime.now(timezone.utc) + timedelta(days=1)
 
                 exception_to_cache = QuotaPauseException(
                     provider=provider_name,
@@ -323,7 +324,7 @@ class AIQuotaService:
                 )
 
                 # Calculate resume time (next month on same day)
-                now = datetime.now(UTC)
+                now = datetime.now(timezone.utc)
                 if now.month == 12:
                     resume_at = now.replace(year=now.year + 1, month=1)
                 else:
@@ -344,8 +345,7 @@ class AIQuotaService:
             # Update cache
             _quota_cache.set(provider_name, can_proceed, exception_to_cache)
 
-            # Raise exception if quota exceeded
-            if not can_proceed:
+            if not can_proceed and exception_to_cache is not None:
                 raise exception_to_cache
 
         except QuotaPauseException:
@@ -542,8 +542,8 @@ class AIQuotaService:
         if not quota:
             quota = AIProviderQuota(
                 provider_name=provider_name,
-                daily_reset_at=datetime.now(UTC),
-                monthly_reset_at=datetime.now(UTC),
+                daily_reset_at=datetime.now(timezone.utc),
+                monthly_reset_at=datetime.now(timezone.utc),
             )
             self.session.add(quota)
             self.session.flush()
@@ -552,7 +552,7 @@ class AIQuotaService:
 
     def _reset_quota_if_needed(self, quota: AIProviderQuota) -> None:
         """Reset quota counters if period has elapsed."""
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
         modified = False
 
         # Check daily reset
@@ -684,7 +684,7 @@ class AIQuotaService:
 
     def _send_quota_alert(self, quota: AIProviderQuota) -> None:
         """Send alert when quota threshold reached."""
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
 
         # Don't send alert if one was sent recently (within 1 hour)
         if quota.last_alert_sent_at:

@@ -20,14 +20,14 @@ depends_on = None
 def upgrade() -> None:
     """Upgrade database schema."""
 
-    # Add pause/resume fields to translation_jobs table
-    op.add_column('translation_jobs',
+    # Add pause/resume fields to translation_job table
+    op.add_column('translation_job',
         sa.Column('pause_reason', sa.String(64), nullable=True)
     )
-    op.add_column('translation_jobs',
+    op.add_column('translation_job',
         sa.Column('paused_at', sa.DateTime(timezone=True), nullable=True)
     )
-    op.add_column('translation_jobs',
+    op.add_column('translation_job',
         sa.Column('resume_at', sa.DateTime(timezone=True), nullable=True)
     )
 
@@ -40,7 +40,7 @@ def upgrade() -> None:
         # PostgreSQL supports partial indexes with WHERE clause
         op.create_index(
             'idx_jobs_paused_resume',
-            'translation_jobs',
+            'translation_job',
             ['status', 'resume_at'],
             postgresql_where=sa.text("status = 'paused'")
         )
@@ -49,7 +49,7 @@ def upgrade() -> None:
         # Note: MySQL, SQLite, SQL Server will index all rows
         op.create_index(
             'idx_jobs_paused_resume',
-            'translation_jobs',
+            'translation_job',
             ['status', 'resume_at']
         )
 
@@ -58,9 +58,9 @@ def downgrade() -> None:
     """Downgrade database schema."""
 
     # Drop index
-    op.drop_index('idx_jobs_paused_resume', table_name='translation_jobs')
+    op.drop_index('idx_jobs_paused_resume', table_name='translation_job')
 
     # Remove columns
-    op.drop_column('translation_jobs', 'resume_at')
-    op.drop_column('translation_jobs', 'paused_at')
-    op.drop_column('translation_jobs', 'pause_reason')
+    op.drop_column('translation_job', 'resume_at')
+    op.drop_column('translation_job', 'paused_at')
+    op.drop_column('translation_job', 'pause_reason')

@@ -48,7 +48,7 @@ async def get_current_user(
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    username: str = payload.get("sub")
+    username: str = payload.get("sub") or ""
     if not username:
         raise HTTPException(status_code=401, detail="Invalid token payload")
 
@@ -99,7 +99,7 @@ async def get_current_user_sse(
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    username: str = payload.get("sub")
+    username: str = payload.get("sub") or ""
     if not username:
         raise HTTPException(status_code=401, detail="Invalid token payload")
 

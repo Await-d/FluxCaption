@@ -185,10 +185,9 @@ async def list_library_items(
 
             if media_sources:
                 first_source = media_sources[0]
-                # Duration is in ticks (1 tick = 100 nanoseconds)
-                run_time_ticks = first_source.run_time_ticks
+                run_time_ticks = item.run_time_ticks
                 if run_time_ticks:
-                    duration_seconds = int(run_time_ticks / 10_000_000)  # Convert to seconds
+                    duration_seconds = int(run_time_ticks / 10_000_000)
                 file_size_bytes = first_source.size
 
             # Generate image URLs with API key for authentication
@@ -384,7 +383,7 @@ async def list_series_episodes(
 
             if media_sources:
                 first_source = media_sources[0]
-                run_time_ticks = first_source.run_time_ticks
+                run_time_ticks = item.run_time_ticks
                 if run_time_ticks:
                     duration_seconds = int(run_time_ticks / 10_000_000)
                 file_size_bytes = first_source.size

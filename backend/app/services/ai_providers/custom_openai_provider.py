@@ -38,7 +38,7 @@ class CustomOpenAIProvider(OpenAIProvider):
             raise ValueError("Custom OpenAI provider requires a base_url")
 
         super().__init__(
-            api_key=api_key or "dummy",  # Some endpoints don't require API key
+            api_key=api_key or "no-key-required",
             base_url=base_url,
             timeout=timeout,
             **kwargs,

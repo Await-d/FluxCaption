@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     # Database Configuration
     # =============================================================================
     database_url: str = Field(
-        ...,  # Required field
+        default="",
         description="Database connection URL",
     )
     db_vendor: Literal["postgres", "mysql", "sqlite", "mssql"] = Field(default="postgres")
@@ -68,11 +68,11 @@ class Settings(BaseSettings):
     # Jellyfin Integration
     # =============================================================================
     jellyfin_base_url: str = Field(
-        ...,  # Required field
+        default="",
         description="Jellyfin server base URL",
     )
     jellyfin_api_key: str = Field(
-        ...,  # Required field
+        default="",
         description="Jellyfin API key for authentication",
     )
     jellyfin_timeout: int = Field(default=30)
@@ -194,7 +194,9 @@ class Settings(BaseSettings):
     # Alerting / Notifications
     # =============================================================================
     alert_webhook_url: str | None = Field(default=None, description="Webhook URL for system alerts")
-    alert_webhook_token: str | None = Field(default=None, description="Optional bearer token for alert webhook")
+    alert_webhook_token: str | None = Field(
+        default=None, description="Optional bearer token for alert webhook"
+    )
     alert_webhook_timeout: int = Field(default=5, description="Webhook timeout in seconds")
 
     # =============================================================================
@@ -326,6 +328,9 @@ def load_jellyfin_settings_from_db() -> None:
 
     Database values take precedence over environment variables.
     """
+    from app.core.logging import get_logger
+
+    logger = get_logger(__name__)
     try:
         from sqlalchemy import select
 

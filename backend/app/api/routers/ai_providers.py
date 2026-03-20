@@ -134,7 +134,10 @@ async def list_providers(
 
     providers = db.execute(stmt).scalars().all()
     # Convert UUID id to string for response
-    return [ProviderConfigResponse(id=str(p.id), **{k: v for k, v in p.__dict__.items() if k != 'id'}) for p in providers]
+    return [
+        ProviderConfigResponse(id=str(p.id), **{k: v for k, v in p.__dict__.items() if k != "id"})
+        for p in providers
+    ]
 
 
 @router.get("/{provider_name}", response_model=ProviderConfigResponse)
@@ -149,7 +152,9 @@ async def get_provider(
     if not provider:
         raise HTTPException(status_code=404, detail=f"Provider '{provider_name}' not found")
 
-    return ProviderConfigResponse(id=str(provider.id), **{k: v for k, v in provider.__dict__.items() if k != 'id'})
+    return ProviderConfigResponse(
+        id=str(provider.id), **{k: v for k, v in provider.__dict__.items() if k != "id"}
+    )
 
 
 @router.post("", response_model=ProviderConfigResponse)
@@ -185,7 +190,9 @@ async def create_or_update_provider(
         db.commit()
         db.refresh(existing)
         logger.info(f"Updated provider config: {config.provider_name}")
-        return ProviderConfigResponse(id=str(existing.id), **{k: v for k, v in existing.__dict__.items() if k != 'id'})
+        return ProviderConfigResponse(
+            id=str(existing.id), **{k: v for k, v in existing.__dict__.items() if k != "id"}
+        )
     else:
         # Create new
         import json
@@ -198,7 +205,10 @@ async def create_or_update_provider(
         db.commit()
         db.refresh(provider_config)
         logger.info(f"Created provider config: {config.provider_name}")
-        return ProviderConfigResponse(id=str(provider_config.id), **{k: v for k, v in provider_config.__dict__.items() if k != 'id'})
+        return ProviderConfigResponse(
+            id=str(provider_config.id),
+            **{k: v for k, v in provider_config.__dict__.items() if k != "id"},
+        )
 
 
 @router.delete("/{provider_name}")
@@ -248,8 +258,8 @@ async def check_provider_health(
             try:
                 extra = json.loads(config_record.extra_config)
                 provider_config.update(extra)
-            except:
-                pass
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse extra_config for {provider_name}: {e}")
 
         provider = provider_manager.get_provider(
             provider_name,
@@ -312,8 +322,8 @@ async def list_provider_models(
             try:
                 extra = json.loads(config_record.extra_config)
                 provider_config.update(extra)
-            except:
-                pass
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse extra_config for {provider_name}: {e}")
 
         provider = provider_manager.get_provider(
             provider_name, config=provider_config, use_cache=False
@@ -558,6 +568,12 @@ async def get_usage_summary(
 
     result = db.execute(stmt).first()
 
+    total_requests = result.total_requests if result else 0
+    total_tokens = int(result.total_tokens or 0) if result else 0
+    total_cost = float(result.total_cost or 0.0) if result else 0.0
+    avg_response_time = float(result.avg_response_time or 0.0) if result else 0.0
+    error_count = result.error_count if result else 0
+
     # Per-provider breakdown
     provider_stmt = (
         sa.select(
@@ -576,14 +592,14 @@ async def get_usage_summary(
         "start_date": start_date,
         "end_date": datetime.now(),
         "summary": {
-            "total_requests": result.total_requests or 0,
-            "total_tokens": int(result.total_tokens or 0),
-            "total_cost": float(result.total_cost or 0.0),
-            "avg_response_time_ms": float(result.avg_response_time or 0.0),
-            "error_count": result.error_count or 0,
+            "total_requests": total_requests or 0,
+            "total_tokens": total_tokens,
+            "total_cost": total_cost,
+            "avg_response_time_ms": avg_response_time,
+            "error_count": error_count or 0,
             "success_rate": (
-                ((result.total_requests - result.error_count) / result.total_requests * 100)
-                if result.total_requests > 0
+                ((total_requests - error_count) / total_requests * 100)
+                if total_requests and total_requests > 0
                 else 0.0
             ),
         },

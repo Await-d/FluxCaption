@@ -6,7 +6,7 @@ Defines tasks for translation, ASR, and library scanning.
 
 import asyncio
 import json
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from celery import Task
@@ -32,9 +32,9 @@ def save_task_log_sync(
     phase: str,
     status: str,
     progress: float,
-    completed: int = None,
-    total: int = None,
-    error: str = None,
+    completed: int | None = None,
+    total: int | None = None,
+    error: str | None = None,
 ):
     """
     Synchronously save task log to database and publish to Redis for SSE streaming.
@@ -50,7 +50,7 @@ def save_task_log_sync(
         from app.core.db import SessionLocal
         from app.models.task_log import TaskLog
 
-        timestamp = datetime.now(UTC)
+        timestamp = datetime.now(timezone.utc)
 
         # Save to database
         with SessionLocal() as session:
@@ -164,7 +164,7 @@ def save_checkpoint(session, job_id: str, phase: str, **kwargs):
             job.completed_target_langs = json.dumps(completed_langs)
 
     # Update checkpoint timestamp
-    job.last_checkpoint_at = datetime.now(UTC)
+    job.last_checkpoint_at = datetime.now(timezone.utc)
 
     session.commit()
     logger.info(f"Checkpoint saved for job {job_id}: phase={phase}, data={kwargs}")
@@ -270,7 +270,7 @@ class BaseTask(Task):
                             if not job.error:
                                 job.error = str(exc)
                             if not job.finished_at:
-                                job.finished_at = datetime.now(UTC)
+                                job.finished_at = datetime.now(timezone.utc)
                             session.commit()
                             logger.info(
                                 f"Job {job_id} status updated to failed in on_failure handler"
@@ -615,6 +615,10 @@ def translate_subtitle_task(self, job_id: str) -> dict:
                 job = session.query(TranslationJob).filter(TranslationJob.id == job_id).first()
                 item_id = job.item_id if job else None
 
+            # Initialize writeback counters
+            writeback_success_count = 0
+            writeback_failed_count = 0
+
             if item_id:
                 logger.info(f"Job has item_id {item_id}, performing writeback")
 
@@ -709,6 +713,10 @@ def translate_subtitle_task(self, job_id: str) -> dict:
 
                         # Perform writeback
                         try:
+                            logger.info(
+                                f"Starting writeback for {target_lang} "
+                                f"(subtitle_id={subtitle.id}, path={output_path})"
+                            )
                             result = run_async(
                                 WritebackService.writeback_subtitle(
                                     session=session,
@@ -717,10 +725,20 @@ def translate_subtitle_task(self, job_id: str) -> dict:
                                     force=False,
                                 )
                             )
-                            logger.info(f"Writeback successful for {target_lang}: {result}")
+                            logger.info(
+                                f"Writeback successful for {target_lang}: "
+                                f"mode={result.get('mode')}, dest={result.get('destination')}"
+                            )
+                            writeback_success_count += 1
                         except Exception as e:
-                            logger.error(f"Writeback failed for {target_lang}: {e}", exc_info=True)
+                            logger.error(
+                                f"Writeback failed for {target_lang} "
+                                f"(subtitle_id={subtitle.id}): {e}",
+                                exc_info=True,
+                            )
+                            writeback_failed_count += 1
                             # Continue with other languages even if one fails
+                            # Note: Subtitle record is saved but writeback failed
 
             # === 5. Update job status ===
             with session_scope() as session:
@@ -742,7 +760,15 @@ def translate_subtitle_task(self, job_id: str) -> dict:
                 )
             )
 
-            logger.info(f"Subtitle translation completed for job {job_id}")
+            logger.info(
+                f"Subtitle translation completed for job {job_id}: "
+                f"{len(result_paths)} languages translated"
+                + (
+                    f", writeback: {writeback_success_count} succeeded, {writeback_failed_count} failed"
+                    if item_id
+                    else ""
+                )
+            )
 
             return {
                 "status": "success",
@@ -811,7 +837,7 @@ def asr_then_translate_task(self, job_id: str) -> dict:
 
                 # Update job status
                 job.status = "running"
-                job.started_at = datetime.now(UTC)
+                job.started_at = datetime.now(timezone.utc)
                 job.current_phase = "init"
                 session.commit()
 
@@ -878,10 +904,20 @@ def asr_then_translate_task(self, job_id: str) -> dict:
                 if job.asr_output_path and Path(job.asr_output_path).exists():
                     asr_subtitle_path = Path(job.asr_output_path)
                     if source_lang == "auto":
-                        # Try to load detected language from saved subtitle metadata
-                        # For now, we'll need to re-run ASR if source_lang was auto
-                        # In the future, could save detected language to job metadata
-                        pass
+                        # Load previously detected language from job metadata checkpoint
+                        try:
+                            if job.job_metadata:
+                                meta = json.loads(job.job_metadata)
+                                detected = meta.get("asr_detected_lang")
+                                if detected:
+                                    source_lang = detected
+                                    logger.info(
+                                        f"Restored ASR detected language from checkpoint: {source_lang}"
+                                    )
+                        except (json.JSONDecodeError, KeyError) as e:
+                            logger.warning(
+                                f"Failed to restore detected language from checkpoint: {e}"
+                            )
 
             if not asr_completed:
                 # === 2. Extract audio from media (with checkpoint support) ===
@@ -1306,9 +1342,28 @@ def asr_then_translate_task(self, job_id: str) -> dict:
                     f"language={asr_result['language']}"
                 )
 
-                # Save checkpoint after ASR with output path
+                # Save checkpoint after ASR with output path and detected language
                 with session_scope() as session:
                     save_checkpoint(session, job_id, "asr", asr_output_path=str(asr_subtitle_path))
+                    # Persist detected language into job_metadata for checkpoint resume
+                    detected_lang_for_save = asr_result.get("language")
+                    if detected_lang_for_save and detected_lang_for_save not in ("auto", "unknown"):
+                        job = (
+                            session.query(TranslationJob)
+                            .filter(TranslationJob.id == job_id)
+                            .first()
+                        )
+                        if job:
+                            try:
+                                meta = json.loads(job.job_metadata) if job.job_metadata else {}
+                            except (json.JSONDecodeError, TypeError):
+                                meta = {}
+                            meta["asr_detected_lang"] = detected_lang_for_save
+                            job.job_metadata = json.dumps(meta)
+                            session.commit()
+                            logger.info(
+                                f"Saved ASR detected language '{detected_lang_for_save}' to job checkpoint"
+                            )
 
                 # Clean up audio file after successful ASR
                 if audio_path.exists():
@@ -1322,11 +1377,9 @@ def asr_then_translate_task(self, job_id: str) -> dict:
                     # Count lines in SRT file for segment count
                     try:
                         with open(asr_subtitle_path, encoding="utf-8") as f:
-                            content = f.read()
-                            # Simple count: number of timestamp lines
-                            asr_result["num_segments"] = content.count("-->")
-                    except:
-                        pass
+                            asr_result["num_segments"] = f.read().count("-->")
+                    except OSError as e:
+                        logger.warning(f"Failed to count ASR segments in {asr_subtitle_path}: {e}")
 
             # Update source language if it was auto-detected
             if source_lang == "auto":
@@ -1342,63 +1395,65 @@ def asr_then_translate_task(self, job_id: str) -> dict:
 
                 if not asset:
                     logger.warning(
-                        f"MediaAsset not found for item_id {item_id}, creating placeholder"
+                        f"MediaAsset not found for item_id {item_id}, skipping ASR subtitle DB registration"
                     )
-                    asset = MediaAsset(
-                        item_id=item_id, library_id="", name=f"Item {item_id}", type="Unknown"
-                    )
-                    session.add(asset)
-                    session.flush()
+                    # Do not persist placeholder data — skip subtitle registration
+                    # The ASR output file still exists for downstream translation use
+                    asset = None
 
-                # Calculate word count for ASR subtitle
-                try:
-                    import pysubs2
-
-                    subs = pysubs2.load(str(asr_subtitle_path))
-                    asr_word_count = sum(len(event.text.split()) for event in subs)
-                except Exception as e:
-                    logger.warning(f"Failed to calculate ASR word count: {e}")
-                    asr_word_count = None
-
-                # Check if ASR subtitle already exists (avoid duplicates)
-                existing_asr_subtitle = (
-                    session.query(Subtitle)
-                    .filter(
-                        Subtitle.asset_id == asset.id,
-                        Subtitle.lang == source_lang,
-                        Subtitle.origin == "asr",
-                    )
-                    .first()
-                )
-
-                if existing_asr_subtitle:
-                    logger.info(
-                        f"ASR subtitle already exists for {source_lang}, updating instead of creating duplicate"
-                    )
-                    existing_asr_subtitle.storage_path = str(asr_subtitle_path)
-                    existing_asr_subtitle.line_count = asr_result.get("num_segments", 0)
-                    existing_asr_subtitle.word_count = asr_word_count
-                    existing_asr_subtitle.updated_at = datetime.now(UTC)
-                    asr_source_subtitle = existing_asr_subtitle
+                if asset is None:
+                    logger.info("Skipping ASR subtitle DB registration: no MediaAsset found")
+                    asr_source_subtitle = None
                 else:
-                    # Create subtitle record for ASR source
-                    asr_source_subtitle = Subtitle(
-                        asset_id=asset.id,
-                        lang=source_lang,
-                        format="srt",
-                        storage_path=str(asr_subtitle_path),
-                        origin="asr",
-                        source_lang=None,  # This IS the source, no source_lang
-                        is_uploaded=False,
-                        line_count=asr_result.get("num_segments", 0),
-                        word_count=asr_word_count,
-                    )
-                    session.add(asr_source_subtitle)
+                    # Calculate word count for ASR subtitle
+                    try:
+                        import pysubs2
 
-                session.commit()
-                logger.info(
-                    f"Saved ASR source subtitle to database: {source_lang}, {asr_result.get('num_segments', 0)} segments"
-                )
+                        subs = pysubs2.load(str(asr_subtitle_path))
+                        asr_word_count = sum(len(event.text.split()) for event in subs)
+                    except Exception as e:
+                        logger.warning(f"Failed to calculate ASR word count: {e}")
+                        asr_word_count = None
+
+                    # Check if ASR subtitle already exists (avoid duplicates)
+                    existing_asr_subtitle = (
+                        session.query(Subtitle)
+                        .filter(
+                            Subtitle.asset_id == asset.id,
+                            Subtitle.lang == source_lang,
+                            Subtitle.origin == "asr",
+                        )
+                        .first()
+                    )
+
+                    if existing_asr_subtitle:
+                        logger.info(
+                            f"ASR subtitle already exists for {source_lang}, updating instead of creating duplicate"
+                        )
+                        existing_asr_subtitle.storage_path = str(asr_subtitle_path)
+                        existing_asr_subtitle.line_count = asr_result.get("num_segments", 0)
+                        existing_asr_subtitle.word_count = asr_word_count
+                        existing_asr_subtitle.updated_at = datetime.now(timezone.utc)
+                        asr_source_subtitle = existing_asr_subtitle
+                    else:
+                        # Create subtitle record for ASR source
+                        asr_source_subtitle = Subtitle(
+                            asset_id=asset.id,
+                            lang=source_lang,
+                            format="srt",
+                            storage_path=str(asr_subtitle_path),
+                            origin="asr",
+                            source_lang=None,  # This IS the source, no source_lang
+                            is_uploaded=False,
+                            line_count=asr_result.get("num_segments", 0),
+                            word_count=asr_word_count,
+                        )
+                        session.add(asr_source_subtitle)
+
+                    session.commit()
+                    logger.info(
+                        f"Saved ASR source subtitle to database: {source_lang}, {asr_result.get('num_segments', 0)} segments"
+                    )
 
             # === 4. Translate generated subtitle (with checkpoint support) ===
             from app.services.subtitle_service import SubtitleService
@@ -1482,7 +1537,7 @@ def asr_then_translate_task(self, job_id: str) -> dict:
                             if job:
                                 job.status = "paused"
                                 job.pause_reason = e.reason
-                                job.paused_at = datetime.now(UTC)
+                                job.paused_at = datetime.now(timezone.utc)
                                 job.resume_at = e.resume_at
                                 job.error = f"Paused: {e.limit_type} quota exceeded"
                                 session.commit()
@@ -1586,6 +1641,10 @@ def asr_then_translate_task(self, job_id: str) -> dict:
                         session.commit()
 
             # === 5. Writeback to Jellyfin (if item_id present) ===
+            # Initialize writeback counters
+            writeback_success_count = 0
+            writeback_failed_count = 0
+
             if item_id:
                 logger.info(f"Job has item_id {item_id}, performing writeback")
 
@@ -1657,7 +1716,7 @@ def asr_then_translate_task(self, job_id: str) -> dict:
                             existing_subtitle.storage_path = output_path
                             existing_subtitle.line_count = line_count
                             existing_subtitle.word_count = word_count
-                            existing_subtitle.updated_at = datetime.now(UTC)
+                            existing_subtitle.updated_at = datetime.now(timezone.utc)
                             subtitle = existing_subtitle
                         else:
                             # Create subtitle record with origin="mt" (machine translated)
@@ -1678,6 +1737,10 @@ def asr_then_translate_task(self, job_id: str) -> dict:
 
                         # Perform writeback
                         try:
+                            logger.info(
+                                f"Starting writeback for {target_lang} "
+                                f"(subtitle_id={subtitle.id}, path={output_path})"
+                            )
                             result = run_async(
                                 WritebackService.writeback_subtitle(
                                     session=session,
@@ -1686,9 +1749,20 @@ def asr_then_translate_task(self, job_id: str) -> dict:
                                     force=False,
                                 )
                             )
-                            logger.info(f"Writeback successful for {target_lang}: {result}")
+                            logger.info(
+                                f"Writeback successful for {target_lang}: "
+                                f"mode={result.get('mode')}, dest={result.get('destination')}"
+                            )
+                            writeback_success_count += 1
                         except Exception as e:
-                            logger.error(f"Writeback failed for {target_lang}: {e}", exc_info=True)
+                            logger.error(
+                                f"Writeback failed for {target_lang} "
+                                f"(subtitle_id={subtitle.id}): {e}",
+                                exc_info=True,
+                            )
+                            writeback_failed_count += 1
+                            # Continue with other languages even if one fails
+                            # Note: Subtitle record is saved but writeback failed
 
             # === 6. Update job status ===
             with session_scope() as session:
@@ -1710,7 +1784,16 @@ def asr_then_translate_task(self, job_id: str) -> dict:
                 )
             )
 
-            logger.info(f"ASR + translation completed for job {job_id}")
+            logger.info(
+                f"ASR + translation completed for job {job_id}: "
+                f"{len(result_paths)} languages translated, "
+                f"source_language={source_lang}, asr_segments={asr_result['num_segments']}"
+                + (
+                    f", writeback: {writeback_success_count} succeeded, {writeback_failed_count} failed"
+                    if item_id
+                    else ""
+                )
+            )
 
             return {
                 "status": "success",
@@ -1736,7 +1819,7 @@ def asr_then_translate_task(self, job_id: str) -> dict:
                     if job:
                         job.status = "failed"
                         job.error = str(exc)
-                        job.finished_at = datetime.now(UTC)
+                        job.finished_at = datetime.now(timezone.utc)
                         session.commit()
                         logger.info(f"Job {job_id} marked as failed in database")
             except Exception as db_exc:
@@ -1774,6 +1857,8 @@ def scan_library_task(
     logger.info(f"Starting library scan (library={library_id or 'all'})")
 
     try:
+        from app.core.settings_helper import get_default_mt_model, get_provider_for_model
+        from app.models.auto_translation_rule import AutoTranslationRule
         from app.models.media_asset import MediaAsset, MediaAudioLang, MediaSubtitleLang
         from app.models.translation_job import TranslationJob
         from app.services.detector import LanguageDetector
@@ -1911,8 +1996,10 @@ def scan_library_task(
                                     if missing_lang in target_langs:
                                         job_exists = True
                                         break
-                                except:
-                                    pass
+                                except json.JSONDecodeError as e:
+                                    logger.warning(
+                                        f"Failed to parse target_langs for job {existing_job.id}: {e}"
+                                    )
 
                             if job_exists and not force_rescan:
                                 logger.debug(f"Job already exists for {item.id} → {missing_lang}")
@@ -2005,7 +2092,8 @@ def scan_library_task(
                                     continue
 
                             # Create job
-                            from app.core.settings_helper import get_default_mt_model
+                            default_model = get_default_mt_model()
+                            provider = get_provider_for_model(default_model)
 
                             job = TranslationJob(
                                 item_id=item.id,
@@ -2013,27 +2101,33 @@ def scan_library_task(
                                 source_path=source_path,
                                 source_lang=source_lang,
                                 target_langs=json.dumps([missing_lang]),
-                                model=get_default_mt_model(),
+                                model=default_model,
+                                provider=provider,
                                 status="queued",
                             )
                             session.add(job)
                             session.flush()  # Get job.id without committing
 
                             logger.info(
-                                f"Created job for {item.name}: {source_lang} → {missing_lang}"
+                                f"Created job for {item.name}: {source_lang} → {missing_lang} "
+                                f"(model={default_model}, provider={provider})"
                             )
                             jobs_created += 1
 
-                            # Check auto translation rules
-                            from app.models.auto_translation_rule import AutoTranslationRule
-
+                            # Check auto translation rules (sorted by priority desc)
                             rules = (
                                 session.query(AutoTranslationRule)
                                 .filter(AutoTranslationRule.enabled)
+                                .order_by(AutoTranslationRule.priority.desc())
                                 .all()
                             )
 
                             auto_started = False
+                            logger.debug(
+                                f"Checking {len(rules)} auto-translation rules for job {job.id} "
+                                f"(library={library_id}, source={source_lang}, target={missing_lang})"
+                            )
+
                             for rule in rules:
                                 # Parse JSON fields
                                 library_ids = json.loads(rule.jellyfin_library_ids)
@@ -2042,17 +2136,34 @@ def scan_library_task(
                                 # Check library_id match
                                 if library_ids and len(library_ids) > 0:
                                     if library_id and library_id not in library_ids:
+                                        logger.debug(
+                                            f"Rule '{rule.name}' (priority={rule.priority}) skipped: "
+                                            f"library mismatch (rule requires {library_ids}, got {library_id})"
+                                        )
                                         continue
 
                                 # Check source_lang match
                                 if rule.source_lang and rule.source_lang != source_lang:
+                                    logger.debug(
+                                        f"Rule '{rule.name}' (priority={rule.priority}) skipped: "
+                                        f"source language mismatch (rule requires {rule.source_lang}, got {source_lang})"
+                                    )
                                     continue
 
                                 # Check target_langs match
                                 if missing_lang not in target_langs:
+                                    logger.debug(
+                                        f"Rule '{rule.name}' (priority={rule.priority}) skipped: "
+                                        f"target language mismatch (rule supports {target_langs}, need {missing_lang})"
+                                    )
                                     continue
 
                                 # Rule matched, auto-start if configured
+                                logger.info(
+                                    f"Rule '{rule.name}' (priority={rule.priority}) matched job {job.id} "
+                                    f"(library={library_id}, {source_lang}→{missing_lang})"
+                                )
+
                                 if rule.auto_start:
                                     session.commit()  # Commit before dispatching
 
@@ -2073,13 +2184,27 @@ def scan_library_task(
                                     job.celery_task_id = task.id
                                     session.commit()
 
-                                    logger.info(f"Auto-started job {job.id} by rule '{rule.name}'")
+                                    logger.info(
+                                        f"Auto-started job {job.id} by rule '{rule.name}' "
+                                        f"(priority={rule.priority}, queue={task.queue})"
+                                    )
                                     auto_started = True
+                                    break
+                                else:
+                                    logger.info(
+                                        f"Rule '{rule.name}' matched but auto_start=False, "
+                                        f"job {job.id} will wait for manual trigger"
+                                    )
+                                    session.commit()
+                                    auto_started = True  # Mark as handled by rule
                                     break
 
                             if not auto_started:
                                 session.commit()
-                                logger.debug(f"Job {job.id} created and waiting for manual trigger")
+                                logger.info(
+                                    f"Job {job.id} created but no auto-translation rules matched, "
+                                    f"waiting for manual trigger"
+                                )
 
                 # Move to next page
                 start_index += page_size
@@ -2272,16 +2397,73 @@ def health_check_models() -> dict:
     logger.info("Starting model health check")
 
     try:
-        # TODO: Implement model health check
-        # 1. Query all models from registry
-        # 2. Check if they're still available in Ollama
-        # 3. Update status in database
-        # 4. Return summary
+        from app.models.model_registry import ModelRegistry
+        from app.services.ollama_client import ollama_client
 
-        return {
-            "status": "success",
-            "models_checked": 0,
+        # Pull current model list from Ollama once to avoid repeated requests
+        ollama_models = run_async(ollama_client.list_models())
+        available_models = {
+            model.get("name"): model for model in ollama_models if model.get("name")
         }
+
+        checked = 0
+        available_count = 0
+        missing_count = 0
+        skipped = 0
+        now = datetime.now(timezone.utc)
+
+        with session_scope() as session:
+            models = session.query(ModelRegistry).all()
+
+            for model in models:
+                checked += 1
+
+                # Only Ollama models can be verified locally; mark others as skipped
+                if model.provider and model.provider.lower() != "ollama":
+                    model.last_checked = now
+                    skipped += 1
+                    continue
+
+                model_info = available_models.get(model.name)
+
+                if model_info:
+                    available_count += 1
+                    model.status = "available"
+                    model.error_message = None
+                    model.last_checked = now
+
+                    # Refresh metadata from Ollama response
+                    model.size_bytes = model_info.get("size")
+                    details = model_info.get("details") or {}
+                    model.family = details.get("family")
+                    model.parameter_size = details.get("parameter_size")
+                    model.quantization = details.get("quantization_level")
+                else:
+                    missing_count += 1
+                    model.status = "missing"
+                    model.error_message = "Model not found on Ollama server"
+                    model.last_checked = now
+
+        result = {
+            "status": "success",
+            "models_checked": checked,
+            "available": available_count,
+            "missing": missing_count,
+            "skipped": skipped,
+            "ollama_models_seen": len(available_models),
+        }
+
+        logger.info(
+            "Model health check complete",
+            extra={
+                "models_checked": checked,
+                "available": available_count,
+                "missing": missing_count,
+                "skipped": skipped,
+            },
+        )
+
+        return result
 
     except Exception as exc:
         logger.error(f"Model health check failed: {exc}", exc_info=True)
@@ -2499,7 +2681,7 @@ def resume_paused_jobs_task() -> dict:
 
         with session_scope() as session:
             # Find all paused jobs ready to resume
-            now = datetime.now(UTC)
+            now = datetime.now(timezone.utc)
 
             paused_jobs = (
                 session.query(TranslationJob)
@@ -2616,7 +2798,7 @@ def check_and_pause_quota_limited_jobs() -> dict:
 
         with session_scope() as session:
             # Look for failed jobs from last hour with quota-related errors
-            one_hour_ago = datetime.now(UTC) - timedelta(hours=1)
+            one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
 
             failed_jobs = (
                 session.query(TranslationJob)
@@ -2639,8 +2821,8 @@ def check_and_pause_quota_limited_jobs() -> dict:
                     # Pause the job instead of leaving it as failed
                     job.status = "paused"
                     job.pause_reason = "quota_exceeded"
-                    job.paused_at = datetime.now(UTC)
-                    job.resume_at = datetime.now(UTC) + timedelta(days=1)
+                    job.paused_at = datetime.now(timezone.utc)
+                    job.resume_at = datetime.now(timezone.utc) + timedelta(days=1)
 
                     session.commit()
 

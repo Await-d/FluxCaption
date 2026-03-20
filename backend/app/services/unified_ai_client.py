@@ -6,7 +6,7 @@ Provides a single interface for all AI operations, abstracting provider selectio
 
 import json
 import time
-from datetime import UTC
+from datetime import timezone
 
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
@@ -271,10 +271,10 @@ class UnifiedAIClient:
                         max_tokens=max_tokens,
                         response_time_ms=response_time_ms,
                     )
-                    self.session.commit()
+                    if self.session:
+                        self.session.commit()
                 except Exception as log_error:
                     logger.warning(f"Failed to log usage: {log_error}")
-                    # Don't fail the request if logging fails
                     if self.session:
                         self.session.rollback()
 
@@ -308,7 +308,8 @@ class UnifiedAIClient:
             ) from e
 
     def _update_model_usage(self, provider: str, model_name: str):
-        """Update model usage statistics in database."""
+        if not self.session:
+            return
         try:
             from datetime import datetime
 
@@ -319,7 +320,7 @@ class UnifiedAIClient:
 
             if model_record:
                 model_record.usage_count += 1
-                model_record.last_used = datetime.now(UTC)
+                model_record.last_used = datetime.now(timezone.utc)
                 self.session.commit()
 
         except Exception as e:

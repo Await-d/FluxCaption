@@ -5,8 +5,9 @@ Automatically sync subtitle files to translation memory for building a comprehen
 translation database.
 """
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 from uuid import UUID
 
 import pysubs2
@@ -152,7 +153,7 @@ class SubtitleSyncService:
         subtitle_id: str,
         mode: str = "incremental",
         paired_subtitle_id: str | None = None,
-        progress_callback: callable | None = None,
+        progress_callback: Callable | None = None,
     ) -> SubtitleSyncRecord:
         """
         Sync a subtitle file to translation memory.
@@ -185,7 +186,7 @@ class SubtitleSyncService:
             status="running",
             sync_mode=mode,
             paired_subtitle_id=UUID(paired_subtitle_id) if paired_subtitle_id else None,
-            started_at=datetime.now(UTC),
+            started_at=datetime.now(timezone.utc),
         )
         self.session.add(sync_record)
         self.session.flush()
@@ -214,7 +215,7 @@ class SubtitleSyncService:
                     logger.info(f"Subtitle {subtitle_id} unchanged since last sync, skipping")
                     sync_record.status = "success"
                     sync_record.skipped_lines = sync_record.total_lines
-                    sync_record.finished_at = datetime.now(UTC)
+                    sync_record.finished_at = datetime.now(timezone.utc)
                     self.session.commit()
                     return sync_record
 
@@ -252,8 +253,7 @@ class SubtitleSyncService:
                     # Find target text if paired
                     target_text = None
                     target_lang = None
-                    if paired_subs and matches:
-                        # Find matching target event
+                    if paired_subs and matches and paired_subtitle is not None:
                         for source_ev, target_ev, _confidence in matches:
                             if source_ev == event:
                                 target_text = target_ev.plaintext.strip()
@@ -312,7 +312,7 @@ class SubtitleSyncService:
             sync_record.skipped_lines = skipped
             sync_record.failed_lines = failed
             sync_record.status = "success"
-            sync_record.finished_at = datetime.now(UTC)
+            sync_record.finished_at = datetime.now(timezone.utc)
             self.session.commit()
 
             logger.info(f"Sync completed: {synced} synced, {skipped} skipped, {failed} failed")
@@ -323,7 +323,7 @@ class SubtitleSyncService:
             logger.error(f"Sync failed: {e}", exc_info=True)
             sync_record.status = "failed"
             sync_record.error_message = str(e)
-            sync_record.finished_at = datetime.now(UTC)
+            sync_record.finished_at = datetime.now(timezone.utc)
             self.session.commit()
             raise
 
@@ -357,8 +357,8 @@ class SubtitleSyncService:
         asset_id: str,
         mode: str = "incremental",
         auto_pair: bool = True,
-        progress_callback: callable | None = None,
-    ) -> dict[str, any]:
+        progress_callback: Callable | None = None,
+    ) -> dict[str, object]:
         """
         Sync all subtitles for a media asset.
 

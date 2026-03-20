@@ -5,7 +5,7 @@ Provides basic health check and detailed readiness check.
 """
 
 import time
-from datetime import UTC
+from datetime import timezone
 
 from fastapi import APIRouter, status
 from fastapi.responses import JSONResponse
@@ -88,7 +88,7 @@ async def health_check() -> HealthResponse:
 
     return HealthResponse(
         status=overall_status,
-        timestamp=datetime.now(UTC).isoformat(),
+        timestamp=datetime.now(timezone.utc).isoformat(),
         services=services,
         version="0.1.0",
     )
@@ -100,7 +100,7 @@ async def health_check() -> HealthResponse:
     status_code=status.HTTP_200_OK,
     summary="Readiness check",
 )
-async def readiness_check() -> ReadyResponse:
+async def readiness_check():
     """
     Detailed readiness check endpoint.
 

@@ -656,8 +656,8 @@ class JellyfinClient:
                 return users_response[0]["Id"]
             raise JellyfinError("No users found")
         except Exception as e:
-            logger.warning(f"Could not get user ID, using empty string: {e}")
-            return ""
+            logger.error(f"Could not get user ID from Jellyfin: {e}")
+            raise JellyfinAuthError(f"Failed to resolve Jellyfin user ID: {e}") from e
 
     async def check_connection(self) -> bool:
         """

@@ -5,7 +5,7 @@ Provides endpoints for querying translation memory (sentence-level translation p
 """
 
 import re
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -185,7 +185,7 @@ async def get_translation_memory_stats(
         .all()
     )
 
-    by_language_pair = dict(lang_pair_counts)
+    by_language_pair = {str(row[0]): int(row[1]) for row in lang_pair_counts}
 
     # By model
     model_counts = (
@@ -263,7 +263,7 @@ async def update_translation_pair(
 
     # Update target text and timestamp
     tm.target_text = request.target_text
-    tm.updated_at = datetime.now(UTC)
+    tm.updated_at = datetime.now(timezone.utc)
     tm.word_count_target = len(request.target_text.split())
 
     db.commit()
@@ -387,7 +387,7 @@ async def batch_replace_translation_text(
         # Only update if text changed
         if new_text != original_text:
             pair.target_text = new_text
-            pair.updated_at = datetime.now(UTC)
+            pair.updated_at = datetime.now(timezone.utc)
             pair.word_count_target = len(new_text.split())
             updated_count += 1
 

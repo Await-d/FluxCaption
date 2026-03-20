@@ -266,13 +266,15 @@ async def get_subtitle_stats(
         )
 
         # Uploaded vs not uploaded
-        uploaded = db.query(func.count(Subtitle.id)).filter(Subtitle.is_uploaded).scalar()
-        not_uploaded = db.query(func.count(Subtitle.id)).filter(not Subtitle.is_uploaded).scalar()
+        uploaded = db.query(func.count(Subtitle.id)).filter(Subtitle.is_uploaded == True).scalar()  # noqa: E712
+        not_uploaded = (
+            db.query(func.count(Subtitle.id)).filter(Subtitle.is_uploaded == False).scalar()
+        )  # noqa: E712
 
         return {
             "total": total,
-            "by_language": dict(by_lang),
-            "by_origin": dict(by_origin),
+            "by_language": {row[0]: row[1] for row in by_lang},
+            "by_origin": {row[0]: row[1] for row in by_origin},
             "uploaded": uploaded,
             "not_uploaded": not_uploaded,
         }

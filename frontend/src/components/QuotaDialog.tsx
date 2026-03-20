@@ -149,9 +149,9 @@ const QuotaDialog: React.FC<QuotaDialogProps> = ({ providerName, onClose }) => {
                   </div>
                 )}
                 <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
-                  <span>{quota.current_daily_tokens.toLocaleString()} tokens</span>
+                  <span>{quota.current_daily_tokens.toLocaleString()} {t('quota.tokens', 'tokens')}</span>
                   {quota.daily_remaining !== null && quota.daily_remaining !== undefined && (
-                    <span>${quota.daily_remaining.toFixed(4)} remaining</span>
+                    <span>${quota.daily_remaining.toFixed(4)} {t('quota.remaining', 'remaining')}</span>
                   )}
                 </div>
               </div>
@@ -183,9 +183,9 @@ const QuotaDialog: React.FC<QuotaDialogProps> = ({ providerName, onClose }) => {
                   </div>
                 )}
                 <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
-                  <span>{quota.current_monthly_tokens.toLocaleString()} tokens</span>
+                  <span>{quota.current_monthly_tokens.toLocaleString()} {t('quota.tokens', 'tokens')}</span>
                   {quota.monthly_remaining !== null && quota.monthly_remaining !== undefined && (
-                    <span>${quota.monthly_remaining.toFixed(4)} remaining</span>
+                    <span>${quota.monthly_remaining.toFixed(4)} {t('quota.remaining', 'remaining')}</span>
                   )}
                 </div>
               </div>
@@ -228,7 +228,7 @@ const QuotaDialog: React.FC<QuotaDialogProps> = ({ providerName, onClose }) => {
                 type="number"
                 value={dailyLimit}
                 onChange={(e) => setDailyLimit(e.target.value)}
-                placeholder="e.g., 10.00"
+                placeholder={t('quota.daily_limit_placeholder', 'e.g., 10.00')}
                 step="0.01"
                 min="0"
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -247,7 +247,7 @@ const QuotaDialog: React.FC<QuotaDialogProps> = ({ providerName, onClose }) => {
                 type="number"
                 value={monthlyLimit}
                 onChange={(e) => setMonthlyLimit(e.target.value)}
-                placeholder="e.g., 100.00"
+                placeholder={t('quota.monthly_limit_placeholder', 'e.g., 100.00')}
                 step="0.01"
                 min="0"
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"

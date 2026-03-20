@@ -5,7 +5,7 @@ Provides endpoints for managing system-wide configuration settings.
 """
 
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -22,7 +22,7 @@ from app.models.user import User
 
 logger = get_logger(__name__)
 
-router = APIRouter()
+router = APIRouter(prefix="/api")
 
 
 # =============================================================================
@@ -55,6 +55,16 @@ class SettingResponse(BaseModel):
 
     class Config:
         from_attributes = True
+        json_encoders = {
+            datetime: lambda v: v.isoformat() if v else None
+        }
+
+    @classmethod
+    def model_validate(cls, obj, **kwargs):
+        """Custom validation to handle datetime conversion."""
+        if hasattr(obj, 'updated_at') and isinstance(obj.updated_at, datetime):
+            obj.updated_at = obj.updated_at.isoformat()
+        return super().model_validate(obj, **kwargs)
 
 
 class SettingUpdateRequest(BaseModel):
@@ -77,6 +87,16 @@ class SettingChangeHistoryResponse(BaseModel):
 
     class Config:
         from_attributes = True
+        json_encoders = {
+            datetime: lambda v: v.isoformat() if v else None
+        }
+
+    @classmethod
+    def model_validate(cls, obj, **kwargs):
+        """Custom validation to handle datetime conversion."""
+        if hasattr(obj, 'created_at') and isinstance(obj.created_at, datetime):
+            obj.created_at = obj.created_at.isoformat()
+        return super().model_validate(obj, **kwargs)
 
 
 class SystemConfigCategory(BaseModel):
@@ -340,7 +360,7 @@ async def update_system_config(
         new_value=new_value,
         changed_by=current_user.username,
         change_reason=request.change_reason,
-        created_at=datetime.now(UTC),
+        created_at=datetime.now(timezone.utc),
     )
     db.add(change_history)
 

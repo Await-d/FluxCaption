@@ -214,9 +214,11 @@ export function SystemConfig() {
                     <div className="flex-1 space-y-2">
                       <div className="flex items-center gap-2">
                         <Label htmlFor={setting.key} className="text-base font-medium">
-                          {setting.key.split('_').map(word =>
-                            word.charAt(0).toUpperCase() + word.slice(1)
-                          ).join(' ')}
+                          {t(`systemConfig.settings.${setting.key}.name`, {
+                            defaultValue: setting.key.split('_').map(word =>
+                              word.charAt(0).toUpperCase() + word.slice(1)
+                            ).join(' ')
+                          })}
                         </Label>
                         <Badge variant="outline" className="text-xs">
                           {setting.value_type}
@@ -224,12 +226,14 @@ export function SystemConfig() {
                         {saveSuccess === setting.key && (
                           <Badge variant="default" className="text-xs bg-green-500">
                             <CheckCircle2 className="h-3 w-3 mr-1" />
-                            Saved
+                            {t('systemConfig.saved')}
                           </Badge>
                         )}
                       </div>
                       <p className="text-sm text-muted-foreground">
-                        {setting.description}
+                        {t(`systemConfig.settings.${setting.key}.description`, {
+                          defaultValue: setting.description
+                        })}
                       </p>
                       {setting.constraints && (
                         <p className="text-xs text-blue-600 dark:text-blue-400">
@@ -379,10 +383,10 @@ export function SystemConfig() {
                 <div className="text-center py-8">
                   <AlertTriangle className="h-12 w-12 mx-auto mb-2 text-red-500" />
                   <p className="text-red-600 dark:text-red-400 font-medium mb-2">
-                    Failed to load history
+                    {t('systemConfig.failedToLoadHistory')}
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    {(historyError as any)?.detail || (historyError as Error)?.message || 'Unknown error'}
+                    {(historyError as any)?.detail || (historyError as Error)?.message || t('systemConfig.unknownError')}
                   </p>
                 </div>
               ) : changeHistory && changeHistory.length > 0 ? (

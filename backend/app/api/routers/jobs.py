@@ -5,7 +5,7 @@ Provides API for creating, querying, and monitoring translation jobs.
 """
 
 import json
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID
 
@@ -23,7 +23,7 @@ from app.core.settings_helper import get_default_mt_model
 from app.models.translation_job import TranslationJob
 from app.models.user import User
 from app.schemas.jobs import JobCreate, JobListResponse, JobResponse
-from app.workers.tasks import translate_subtitle_task
+from app.workers.tasks import asr_then_translate_task, translate_subtitle_task
 
 logger = get_logger(__name__)
 
@@ -65,7 +65,7 @@ async def create_translation_job(
 
             try:
                 jellyfin = get_jellyfin_client()
-                item_data = await jellyfin.get_item_details(request.item_id)
+                item_data = await jellyfin.get_item(request.item_id)
                 # Try to get path from item or media sources
                 if hasattr(item_data, "path") and item_data.path:
                     source_path = item_data.path
@@ -404,7 +404,7 @@ async def cancel_job(
         # Update job status
         job.status = "cancelled"
         job.error = "Job cancelled by user request"
-        job.finished_at = datetime.now(UTC)
+        job.finished_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(job)
 
@@ -1309,7 +1309,7 @@ async def resume_paused_job(
         logger.info(f"Resubmitted resumed job {job_id} as Celery task {task.id}")
 
         return JobResponse(
-            id=str(job.id),
+            id=job.id,
             status=job.status,
             progress=job.progress,
             source_type=job.source_type,
@@ -1323,13 +1323,12 @@ async def resume_paused_job(
             started_at=job.started_at,
             finished_at=job.finished_at,
             created_at=job.created_at,
-            updated_at=job.updated_at,
         )
 
     except HTTPException:
         raise
     except Exception as e:
-        db.rollback()  # Rollback on error
+        db.rollback()
         logger.error(f"Failed to resume job {job_id}: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

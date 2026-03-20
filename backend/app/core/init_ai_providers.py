@@ -4,7 +4,7 @@ AI Provider Initialization Service.
 Automatically initializes AI provider configurations from environment variables.
 """
 
-from datetime import UTC
+from datetime import timezone
 
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
@@ -225,8 +225,8 @@ def _init_provider_quota(
             monthly_token_limit=quota_config.get("monthly_token_limit"),
             alert_threshold_percent=80,
             auto_disable_on_limit=True,
-            daily_reset_at=datetime.now(UTC),
-            monthly_reset_at=datetime.now(UTC),
+            daily_reset_at=datetime.now(timezone.utc),
+            monthly_reset_at=datetime.now(timezone.utc),
         )
         session.add(quota)
         logger.info(

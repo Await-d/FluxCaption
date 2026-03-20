@@ -94,6 +94,45 @@
       "unknown": "Unknown Type"
     }
   },
+  "aiModels": {
+    "addTitle": "Add Model Configuration",
+    "editTitle": "Edit Model Configuration",
+    "selectProvider": "Select Provider",
+    "allProviders": "All Providers",
+    "display": "Display",
+    "inputPrice": "Input Price",
+    "outputPrice": "Output Price",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "cancel": "Cancel",
+    "save": "Save",
+    "create": "Create",
+    "description": "Description",
+    "addButton": "Add Model",
+    "contextWindow": "Context Window",
+    "maxOutputTokens": "Max Output Tokens",
+    "tags": "Tags (JSON array)",
+    "modelType": "Model Type",
+    "chat": "Chat",
+    "completion": "Completion",
+    "reasoning": "Reasoning",
+    "translation": "Translation",
+    "descHeader": "Manage available models and pricing for each AI provider",
+    "noModels": "No models configured yet",
+    "clickToCreate": "Click \"Add Model\" to create your first model configuration",
+    "tokens": "tokens",
+    "contextLabel": "Context",
+    "maxOutputLabel": "Max Output",
+    "usedTimes": "Used {{count}} times",
+    "inputPlaceholder": "e.g., 128000",
+    "outputPlaceholder": "e.g., 4096",
+    "inputPricePlaceholder": "e.g., 2.50",
+    "outputPricePlaceholder": "e.g., 10.00",
+    "modelNamePlaceholder": "e.g., gpt-4o",
+    "displayNamePlaceholder": "e.g., GPT-4o",
+    "useRecommended": "Use Recommended",
+    "useCustom": "Use Custom"
+  },
   "models": {
     "title": "Model Management",
     "pullNew": "Pull New Model",
@@ -378,6 +417,7 @@
     "yes": "Yes",
     "no": "No",
     "ok": "OK",
+    "select": "Select",
     "cancel": "Cancel",
     "save": "Save",
     "delete": "Delete",
@@ -401,7 +441,8 @@
     "started": "Started",
     "finished": "Finished",
     "previousPage": "Previous",
-    "nextPage": "Next"
+    "nextPage": "Next",
+    "refresh": "Refresh"
   },
   "languages": {
     "zh-CN": "简体中文",
@@ -974,6 +1015,132 @@
     "newValue": "New Value",
     "reason": "Reason",
     "notSet": "Not set",
-    "noHistory": "No change history yet"
+    "noHistory": "No change history yet",
+    "failedToLoadHistory": "Failed to load history",
+    "unknownError": "Unknown error",
+    "saved": "Saved",
+    "settings": {
+      "asr_auto_segment_threshold": {
+        "name": "ASR Auto Segment Threshold",
+        "description": "Audio duration threshold (seconds). Videos exceeding this length will be segmented for processing. When video length exceeds this value, it will be split into multiple segments for ASR processing."
+      },
+      "task_check_quota_limits_interval": {
+        "name": "Quota Check Interval",
+        "description": "Interval for checking quota limits (seconds, default 2 hours). System will periodically verify quota status and pause tasks if needed."
+      },
+      "task_quota_check_cache_ttl": {
+        "name": "Quota Cache TTL",
+        "description": "Time-to-live for quota check cache (seconds, default 1 minute). Caching reduces database queries in translation loops."
+      },
+      "task_resume_paused_jobs_interval": {
+        "name": "Resume Paused Tasks Interval",
+        "description": "Interval for checking and resuming paused tasks (seconds, default 1 hour). Paused tasks will automatically resume after quota resets."
+      },
+      "translation_batch_size": {
+        "name": "Translation Batch Size",
+        "description": "Number of subtitle lines per batch translation. Larger batches improve efficiency but consume more memory."
+      },
+      "translation_max_line_length": {
+        "name": "Max Line Length",
+        "description": "Maximum character length per subtitle line. Lines exceeding this length will be split."
+      }
+    }
+  },
+  "ai_providers": {
+    "title": "AI Providers",
+    "description": "Manage AI provider configurations and quotas",
+    "status": "Status",
+    "default_model": "Default Model",
+    "last_checked": "Last checked",
+    "health_check": "Health Check",
+    "quota": "Quota",
+    "configure": "Configure",
+    "usage": "Usage",
+    "confirm_delete": "Are you sure you want to delete provider \"{providerName}\"?",
+    "no_providers": "No providers configured",
+    "configure_hint": "Configure environment variables to enable AI providers",
+    "configure_provider": "Configure Provider",
+    "base_url": "Base URL",
+    "base_url_hint": "API endpoint URL for this provider",
+    "timeout": "Timeout (seconds)",
+    "timeout_hint": "Maximum wait time for API requests (1-300 seconds)",
+    "default_model_hint": "Default model to use for this provider",
+    "priority": "Priority",
+    "priority_hint": "Higher priority providers are preferred (0-100)",
+    "usage_statistics": "Usage Statistics",
+    "last_7_days": "Last 7 days",
+    "total_requests": "Total Requests",
+    "total_tokens": "Total Tokens",
+    "total_cost": "Total Cost",
+    "avg_response_time": "Avg Response Time",
+    "error_rate": "Error Rate",
+    "errors_out_of": "errors out of",
+    "requests": "requests",
+    "success_rate": "Success",
+    "no_usage_data": "No usage data available for the selected period",
+    "add_provider": "Add Provider",
+    "add_provider_hint": "Add a new AI provider or restore a deleted one",
+    "quick_add": "Quick Add",
+    "provider_name": "Provider Name",
+    "provider_name_required": "Provider name and display name are required",
+    "display_name": "Display Name",
+    "description": "Description",
+    "adding": "Adding...",
+    "base_url_placeholder": "https://api.example.com/v1",
+    "provider_name_placeholder": "openai, claude, custom_provider",
+    "display_name_placeholder": "OpenAI (GPT)",
+    "default_model_placeholder": "gpt-4, claude-3",
+    "description_placeholder": "Provider description...",
+    "predefined": {
+      "openai": {
+        "name": "OpenAI (GPT)",
+        "desc": "OpenAI GPT models (GPT-4, GPT-3.5, etc.)"
+      },
+      "claude": {
+        "name": "Claude (Anthropic)",
+        "desc": "Anthropic Claude models (Opus, Sonnet, Haiku)"
+      },
+      "deepseek": {
+        "name": "DeepSeek",
+        "desc": "DeepSeek AI models (affordable and powerful)"
+      },
+      "gemini": {
+        "name": "Gemini (Google)",
+        "desc": "Google Gemini models"
+      },
+      "zhipu": {
+        "name": "智谱AI (GLM)",
+        "desc": "智谱AI GLM models - Chinese-optimized"
+      },
+      "moonshot": {
+        "name": "Moonshot AI (Kimi)",
+        "desc": "Moonshot Kimi models - Super long context"
+      },
+      "custom_openai": {
+        "name": "Custom OpenAI Compatible",
+        "desc": "Custom OpenAI-compatible endpoint (OpenRouter, LocalAI, vLLM, etc.)"
+      }
+    }
+  },
+  "quota": {
+    "title": "Quota Management",
+    "current_usage": "Current Usage",
+    "daily": "Daily",
+    "monthly": "Monthly",
+    "tokens": "tokens",
+    "remaining": "remaining",
+    "configuration": "Quota Configuration",
+    "daily_limit": "Daily Limit (USD)",
+    "daily_limit_placeholder": "e.g., 10.00",
+    "daily_limit_hint": "Leave empty for no daily limit",
+    "monthly_limit": "Monthly Limit (USD)",
+    "monthly_limit_placeholder": "e.g., 100.00",
+    "monthly_limit_hint": "Leave empty for no monthly limit",
+    "alert_threshold": "Alert Threshold",
+    "auto_disable": "Auto-disable on limit",
+    "auto_disable_hint": "Automatically disable provider when quota exceeded",
+    "reset_daily": "Reset Daily",
+    "reset_monthly": "Reset Monthly",
+    "confirm_reset": "Reset {period} quota counters?"
   }
 }

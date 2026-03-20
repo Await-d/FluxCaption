@@ -5,7 +5,7 @@ Main application entry point with route registration and lifecycle management.
 """
 
 from contextlib import asynccontextmanager
-from datetime import UTC
+from datetime import timezone
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -222,7 +222,7 @@ async def lifespan(app: FastAPI):
                     for job in stuck_jobs:
                         job.status = "failed"
                         job.error = "任务因服务重启而中断 (Task interrupted by server restart)"
-                        job.finished_at = datetime.now(UTC)
+                        job.finished_at = datetime.now(timezone.utc)
                         logger.info(f"Reset stuck job: {job.id}")
 
                     db.commit()

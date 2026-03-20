@@ -4,7 +4,7 @@ Translation Cache Service
 Manages translation memory to avoid redundant AI translation calls.
 """
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -62,7 +62,7 @@ class TranslationCacheService:
         if cache_entry:
             # Update hit statistics
             cache_entry.hit_count += 1
-            cache_entry.last_used_at = datetime.now(UTC)
+            cache_entry.last_used_at = datetime.now(timezone.utc)
             self.db.commit()
 
             logger.info(
@@ -119,8 +119,8 @@ class TranslationCacheService:
             target_lang=target_lang,
             model=model,
             hit_count=0,
-            created_at=datetime.now(UTC),
-            last_used_at=datetime.now(UTC),
+            created_at=datetime.now(timezone.utc),
+            last_used_at=datetime.now(timezone.utc),
         )
 
         self.db.add(cache_entry)
@@ -265,7 +265,7 @@ class TranslationCacheService:
         """
         from datetime import timedelta
 
-        cutoff_date = datetime.now(UTC) - timedelta(days=days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
 
         # Delete entries with 0 hits older than cutoff date
         stmt = self.db.query(TranslationCache).filter(

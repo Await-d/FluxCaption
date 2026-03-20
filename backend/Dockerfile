@@ -14,11 +14,11 @@ COPY frontend/package.json frontend/pnpm-lock.yaml ./
 
 # Install pnpm and dependencies with retry and better error handling
 RUN set -ex && \
-    npm install -g pnpm@8 && \
+    npm install -g pnpm@9 && \
     pnpm config set store-dir /tmp/.pnpm-store && \
     pnpm config set network-timeout 300000 && \
-    pnpm install --frozen-lockfile --no-optional || \
-    (echo "First install attempt failed, retrying..." && sleep 5 && pnpm install --frozen-lockfile --no-optional)
+    pnpm install --frozen-lockfile || \
+    (echo "First install attempt failed, retrying..." && sleep 5 && pnpm install --frozen-lockfile)
 
 # Copy frontend source code
 COPY frontend/ .
@@ -53,8 +53,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy requirements file
 COPY backend/requirements.txt .
 
-# Install Python dependencies with Tsinghua mirror
-RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
+# Install Python dependencies with timeout
+RUN pip install --no-cache-dir --timeout 600 -r requirements.txt
 
 # Copy application code
 COPY backend/app/ ./app/

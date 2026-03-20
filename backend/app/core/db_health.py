@@ -200,6 +200,8 @@ class DatabaseHealthChecker:
                 issues.append(f"{result} enabled providers without API key")
 
         except Exception as e:
+            # Rollback to clear any failed transaction state
+            self.session.rollback()
             issues.append(f"Integrity check error: {str(e)}")
 
         return {

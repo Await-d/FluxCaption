@@ -113,7 +113,7 @@ class SettingsUpdateRequest(BaseModel):
         default=None, description="Ollama keep alive duration (e.g., '30m', '1h')"
     )
 
-    writeback_mode: list[str] | None = Field(
+    required_langs: list[str] | None = Field(
         default=None, description="Required subtitle languages"
     )
     writeback_mode: Literal["upload", "sidecar"] | None = Field(

@@ -200,7 +200,7 @@ def init_system_settings(db: Session) -> None:
     logger.info(f"System settings initialized: {created_count} created, {updated_count} updated")
 
 
-def get_setting_value(db: Session, key: str, default: str = None) -> str:
+def get_setting_value(db: Session, key: str, default: str | None = None) -> str | None:
     """
     Get setting value from database.
 
@@ -220,7 +220,7 @@ def get_setting_value(db: Session, key: str, default: str = None) -> str:
     return default
 
 
-def get_setting_int(db: Session, key: str, default: int = None) -> int:
+def get_setting_int(db: Session, key: str, default: int | None = None) -> int | None:
     """
     Get integer setting value from database.
 

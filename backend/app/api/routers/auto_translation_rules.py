@@ -53,7 +53,7 @@ async def list_rules(
         rule_responses.append(
             AutoTranslationRuleResponse(
                 id=rule.id,
-                user_id=rule.user_id,
+                user_id=str(rule.user_id),
                 name=rule.name,
                 enabled=rule.enabled,
                 jellyfin_library_ids=json.loads(rule.jellyfin_library_ids),
@@ -101,7 +101,7 @@ async def get_rule(
 
     return AutoTranslationRuleResponse(
         id=rule.id,
-        user_id=rule.user_id,
+        user_id=str(rule.user_id),
         name=rule.name,
         enabled=rule.enabled,
         jellyfin_library_ids=json.loads(rule.jellyfin_library_ids),
@@ -149,7 +149,7 @@ async def create_rule(
 
     return AutoTranslationRuleResponse(
         id=rule.id,
-        user_id=rule.user_id,
+        user_id=str(rule.user_id),
         name=rule.name,
         enabled=rule.enabled,
         jellyfin_library_ids=json.loads(rule.jellyfin_library_ids),
@@ -214,7 +214,7 @@ async def update_rule(
 
     return AutoTranslationRuleResponse(
         id=rule.id,
-        user_id=rule.user_id,
+        user_id=str(rule.user_id),
         name=rule.name,
         enabled=rule.enabled,
         jellyfin_library_ids=json.loads(rule.jellyfin_library_ids),
@@ -296,7 +296,7 @@ async def toggle_rule(
 
     return AutoTranslationRuleResponse(
         id=rule.id,
-        user_id=rule.user_id,
+        user_id=str(rule.user_id),
         name=rule.name,
         enabled=rule.enabled,
         jellyfin_library_ids=json.loads(rule.jellyfin_library_ids),

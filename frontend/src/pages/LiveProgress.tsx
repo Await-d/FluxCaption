@@ -639,7 +639,7 @@ export function LiveProgress() {
               ))}
               {pausedJobs.length > 5 && (
                 <div className="text-center text-xs sm:text-sm text-muted-foreground pt-2">
-                  {pausedJobs.length - 5} more paused tasks...
+                  {t('liveProgress.moreTasksInQueue', { count: pausedJobs.length - 5 })}
                 </div>
               )}
             </div>

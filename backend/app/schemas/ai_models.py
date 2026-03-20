@@ -4,11 +4,13 @@ Pydantic schemas for AI model configuration.
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class AIModelConfigBase(BaseModel):
     """Base schema for AI model configuration."""
+
+    model_config = ConfigDict(protected_namespaces=())
 
     provider_name: str = Field(..., description="Provider name (e.g., 'openai', 'deepseek')")
     model_name: str = Field(
@@ -50,6 +52,8 @@ class AIModelConfigCreate(AIModelConfigBase):
 
 class AIModelConfigUpdate(BaseModel):
     """Schema for updating an AI model configuration."""
+
+    model_config = ConfigDict(protected_namespaces=())
 
     display_name: str | None = None
     is_enabled: bool | None = None
@@ -100,6 +104,8 @@ class AIModelConfigList(BaseModel):
 
 class PricingCalculation(BaseModel):
     """Schema for pricing calculation response."""
+
+    model_config = ConfigDict(protected_namespaces=())
 
     model_name: str
     provider_name: str

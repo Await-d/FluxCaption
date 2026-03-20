@@ -492,7 +492,7 @@ export function Corrections() {
           <Card>
             <CardContent className="py-12 text-center text-muted-foreground">
               <p>{t('corrections.empty')}</p>
-              <p className="text-sm mt-1">{t('corrections.emptyHint')}</p>
+              <p className="text-sm mt-1">{t('corrections.noRulesDesc')}</p>
             </CardContent>
           </Card>
         )}

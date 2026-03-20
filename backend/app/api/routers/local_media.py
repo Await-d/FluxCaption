@@ -18,6 +18,7 @@ from app.models.translation_job import TranslationJob
 from app.models.user import User
 from app.schemas.jobs import JobResponse
 from app.services.local_media_scanner import LocalMediaScanner
+from app.core.settings_helper import get_default_mt_model
 from app.workers.tasks import asr_then_translate_task, translate_subtitle_task
 
 logger = logging.getLogger(__name__)
@@ -245,56 +246,51 @@ async def create_local_media_job(
         scanner = LocalMediaScanner()
         subtitle_langs, _ = scanner._find_subtitle_languages(filepath)
 
-        # 创建任务
+        last_job: TranslationJob | None = None
+
         for target_lang in request.target_langs:
-            # 确定任务类型
             if request.source_lang:
-                # 指定了源语言，直接翻译
                 if request.source_lang not in subtitle_langs:
                     raise HTTPException(
                         status_code=400,
                         detail=f"Source language '{request.source_lang}' subtitle not found",
                     )
 
-                from app.core.settings_helper import get_default_mt_model
-
-                job = TranslationJob(
-                    item_id=str(filepath),  # 使用文件路径作为 item_id
-                    source_type="subtitle",  # 有源语言说明有字幕文件
-                    source_path=str(filepath),  # 媒体文件路径
+                last_job = TranslationJob(
+                    item_id=str(filepath),
+                    source_type="subtitle",
+                    source_path=str(filepath),
                     source_lang=request.source_lang,
                     target_langs=json.dumps([target_lang]),
                     model=get_default_mt_model(),
                     status="pending",
                 )
-                db.add(job)
+                db.add(last_job)
                 db.commit()
-                db.refresh(job)
-
-                # 提交 Celery 任务
-                translate_subtitle_task.apply_async(args=[str(job.id)], queue="translate")
+                db.refresh(last_job)
+                translate_subtitle_task.apply_async(args=[str(last_job.id)], queue="translate")
 
             else:
-                # 未指定源语言，需要先 ASR
-                job = TranslationJob(
+                last_job = TranslationJob(
                     item_id=str(filepath),
-                    source_type="media",  # 需要 ASR 说明是媒体文件
-                    source_path=str(filepath),  # 媒体文件路径
-                    source_lang="auto",  # ASR 会自动检测
+                    source_type="media",
+                    source_path=str(filepath),
+                    source_lang="auto",
                     target_langs=json.dumps([target_lang]),
                     model=get_default_mt_model(),
                     status="pending",
                 )
-                db.add(job)
+                db.add(last_job)
                 db.commit()
-                db.refresh(job)
-
-                # 提交 Celery 任务
-                asr_then_translate_task.apply_async(args=[str(job.id)], queue="asr")
+                db.refresh(last_job)
+                asr_then_translate_task.apply_async(args=[str(last_job.id)], queue="asr")
 
         logger.info(f"Created job for local file {filepath.name}: targets={request.target_langs}")
 
-        return JobResponse.model_validate(job)
+        if last_job is None:
+            raise HTTPException(status_code=400, detail="No target languages specified")
+
+        return JobResponse.model_validate(last_job)
 
     except HTTPException:
         raise
@@ -321,7 +317,7 @@ async def create_batch_local_jobs(
             request = CreateLocalJobRequest(
                 filepath=filepath_str, target_langs=target_langs, source_lang=source_lang
             )
-            job = await create_local_media_job(request, db)
+            job = await create_local_media_job(request, current_user, db)
             jobs.append(job)
         except Exception as e:
             logger.error(f"Failed to create job for {filepath_str}: {str(e)}")

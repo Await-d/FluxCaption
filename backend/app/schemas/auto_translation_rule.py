@@ -50,7 +50,7 @@ class AutoTranslationRuleResponse(BaseModel):
     """Schema for auto translation rule response."""
 
     id: UUID
-    user_id: UUID
+    user_id: str
     name: str
     enabled: bool
     jellyfin_library_ids: list[str]
@@ -63,7 +63,7 @@ class AutoTranslationRuleResponse(BaseModel):
 
     model_config = {"from_attributes": True}
 
-    @field_serializer("id", "user_id")
+    @field_serializer("id")
     def serialize_uuid(self, uuid_val: UUID, _info):
         return str(uuid_val)
 

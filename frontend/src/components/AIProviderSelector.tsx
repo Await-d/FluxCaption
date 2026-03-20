@@ -106,12 +106,12 @@ export function AIProviderSelector({
     <div className="space-y-4">
       {/* Provider Selection */}
       <div>
-        <label className="text-sm font-medium mb-2 block">
+        <p className="text-sm font-medium mb-2 block">
           {t('translate.selectProvider', 'Select AI Provider')}
           <span className="text-muted-foreground ml-2 font-normal">
             (Optional - Auto-selects if not specified)
           </span>
-        </label>
+        </p>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           {providers.map((provider: AIProviderConfig) => {
             const isSelected = selectedProvider === provider.provider_name;
@@ -183,7 +183,7 @@ export function AIProviderSelector({
           {isLoadingModels ? (
             <div className="flex items-center gap-2 px-3 py-2 border rounded-md">
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Loading models...</span>
+              <span className="text-sm text-muted-foreground">{t('common.loading', 'Loading...')}</span>
             </div>
           ) : availableModels.length > 0 ? (
             <>
@@ -201,11 +201,11 @@ export function AIProviderSelector({
                   {availableModels.map(model => (
                     <option key={model.id} value={model.model_name}>
                       {model.display_name}
-                      {model.is_default && ' (Default)'}
+                      {model.is_default && ` (${t('jobs.default')})`}
                       {model.input_price !== null && model.output_price !== null &&
                         ` - $${model.input_price}/$${model.output_price}`
                       }
-                      {model.input_price === 0 && model.output_price === 0 && ' - Free'}
+                      {model.input_price === 0 && model.output_price === 0 && ` - ${t('common.free', 'Free')}`}
                     </option>
                   ))}
                 </select>
@@ -226,7 +226,7 @@ export function AIProviderSelector({
                     </div>
                     {selectedModelData.is_default && (
                       <span className="px-2 py-0.5 text-xs rounded bg-primary/20 text-primary">
-                        Default
+                        {t('jobs.default')}
                       </span>
                     )}
                   </div>
@@ -259,7 +259,9 @@ export function AIProviderSelector({
                           <div>Output: ${selectedModelData.output_price}/1M tokens</div>
                         )}
                         {selectedModelData.input_price === 0 && selectedModelData.output_price === 0 && (
-                          <div className="text-green-600 font-medium">Free (Local Model)</div>
+                          <div className="text-green-600 font-medium">
+                            {t('common.free', 'Free')} ({t('providers.local', 'Local Model')})
+                          </div>
                         )}
                         {selectedModelData.pricing_notes && (
                           <div className="text-muted-foreground italic mt-1">
@@ -295,9 +297,9 @@ export function AIProviderSelector({
             </>
           ) : (
             <div className="px-3 py-2 border border-warning/50 bg-warning/10 rounded-md text-sm">
-              <p className="text-foreground">No models configured for {selectedProvider}</p>
+              <p className="text-foreground">{t('aiModels.noModels')} ({selectedProvider})</p>
               <p className="text-xs text-muted-foreground mt-1">
-                Please add models in AI Models management page
+                {t('aiModels.clickToCreate')}
               </p>
             </div>
           )}

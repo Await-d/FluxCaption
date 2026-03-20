@@ -117,6 +117,7 @@ class AudioExtractor:
         """
         # Check if input is a URL or local file
         is_url = video_path.startswith(("http://", "https://"))
+        video_file: Path | None = None
 
         if not is_url:
             video_file = Path(video_path)
@@ -135,7 +136,7 @@ class AudioExtractor:
         cmd = [
             self.ffmpeg_path,
             "-i",
-            video_path if is_url else str(video_file),
+            video_path if is_url else str(video_file or video_path),
             "-vn",  # No video
             "-acodec",
             audio_codec,
@@ -166,9 +167,9 @@ class AudioExtractor:
                 errors="ignore",  # Ignore encoding errors from media metadata
             )
 
-            # Monitor progress and collect stderr
             stderr_lines = []
-            for line in process.stderr:
+            stderr_stream = process.stderr if process.stderr is not None else []
+            for line in stderr_stream:
                 stderr_lines.append(line)
                 if progress_callback and duration:
                     # Parse time from ffmpeg output
