@@ -332,7 +332,7 @@ export function SubtitlePreviewDialog({
                           </div>
                         )}
                         {isModified && (
-                          <div className="text-xs text-blue-600">{t('components.subtitlePreview.modified2')}</div>
+                          <div className="text-xs text-primary">{t('components.subtitlePreview.modified2')}</div>
                         )}
                       </div>
                     )

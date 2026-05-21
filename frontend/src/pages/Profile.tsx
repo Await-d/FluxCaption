@@ -141,8 +141,8 @@ export function Profile() {
         </CardHeader>
         <CardContent className="space-y-4">
           {usernameSuccess && (
-            <Alert className="text-sm bg-green-50 border-green-200 text-green-800">
-              <Check className="h-4 w-4 text-green-600" />
+            <Alert className="text-sm border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-400">
+              <Check className="h-4 w-4 text-green-600 dark:text-green-400" />
               {t('profile.usernameUpdateSuccess')}
             </Alert>
           )}
@@ -212,12 +212,12 @@ export function Profile() {
               </label>
               <div className="mt-1">
                 {user?.is_active ? (
-                  <span className="inline-flex items-center gap-1 text-green-600">
+                  <span className="inline-flex items-center gap-1 text-green-600 dark:text-green-400">
                     <Shield className="h-4 w-4" />
                     {t('profile.active')}
                   </span>
                 ) : (
-                  <span className="text-red-600">{t('profile.disabled')}</span>
+                  <span className="text-destructive">{t('profile.disabled')}</span>
                 )}
               </div>
             </div>
@@ -228,7 +228,7 @@ export function Profile() {
               </label>
               <p className="text-base mt-1">
                 {user?.is_admin ? (
-                  <span className="text-blue-600 font-medium">{t('profile.admin')}</span>
+                  <span className="text-primary font-medium">{t('profile.admin')}</span>
                 ) : (
                   t('profile.regularUser')
                 )}

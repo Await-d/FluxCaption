@@ -392,7 +392,7 @@ export function AutoTranslation() {
                           })
                         }
                       }}
-                      className="rounded border-gray-300"
+                      className="rounded border-input accent-primary"
                     />
                     <span className="text-sm">{lang.label}</span>
                   </label>
@@ -418,7 +418,7 @@ export function AutoTranslation() {
                 type="checkbox"
                 checked={formData.auto_start}
                 onChange={(e) => setFormData({ ...formData, auto_start: e.target.checked })}
-                className="rounded border-gray-300"
+                className="rounded border-input accent-primary"
               />
               <Label htmlFor="auto_start" className="cursor-pointer">
                 {t('autoTranslation.autoStartLabel')}
@@ -431,7 +431,7 @@ export function AutoTranslation() {
                 type="checkbox"
                 checked={formData.enabled}
                 onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
-                className="rounded border-gray-300"
+                className="rounded border-input accent-primary"
               />
               <Label htmlFor="enabled" className="cursor-pointer">
                 {t('autoTranslation.enableRuleLabel')}

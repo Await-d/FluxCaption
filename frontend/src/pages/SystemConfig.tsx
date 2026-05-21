@@ -224,7 +224,7 @@ export function SystemConfig() {
                           {setting.value_type}
                         </Badge>
                         {saveSuccess === setting.key && (
-                          <Badge variant="default" className="text-xs bg-green-500">
+                          <Badge variant="default" className="text-xs bg-green-500/20 text-green-600 dark:text-green-400 border border-green-500/30">
                             <CheckCircle2 className="h-3 w-3 mr-1" />
                             {t('systemConfig.saved')}
                           </Badge>
@@ -236,13 +236,13 @@ export function SystemConfig() {
                         })}
                       </p>
                       {setting.constraints && (
-                        <p className="text-xs text-blue-600 dark:text-blue-400">
+                        <p className="text-xs text-primary">
                           <Info className="h-3 w-3 inline mr-1" />
                           Range: {setting.constraints.min} - {setting.constraints.max} {setting.constraints.unit}
                         </p>
                       )}
                       {validationErrors[setting.key] && (
-                        <p className="text-xs text-red-600 dark:text-red-400">
+                        <p className="text-xs text-destructive">
                           <AlertTriangle className="h-3 w-3 inline mr-1" />
                           {validationErrors[setting.key]}
                         </p>
@@ -381,8 +381,8 @@ export function SystemConfig() {
                 </div>
               ) : historyError ? (
                 <div className="text-center py-8">
-                  <AlertTriangle className="h-12 w-12 mx-auto mb-2 text-red-500" />
-                  <p className="text-red-600 dark:text-red-400 font-medium mb-2">
+                  <AlertTriangle className="h-12 w-12 mx-auto mb-2 text-destructive" />
+                  <p className="text-destructive font-medium mb-2">
                     {t('systemConfig.failedToLoadHistory')}
                   </p>
                   <p className="text-sm text-muted-foreground">

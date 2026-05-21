@@ -416,15 +416,15 @@ export function Corrections() {
                     <div className="flex items-center gap-2 mb-2">
                       <h3 className="font-semibold">{rule.name}</h3>
                       {rule.is_active ? (
-                        <span className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded">
+                        <span className="text-xs bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/20 px-2 py-0.5 rounded">
                           {t('corrections.enabled2')}
                         </span>
                       ) : (
-                        <span className="text-xs bg-gray-100 text-gray-800 px-2 py-0.5 rounded">
+                        <span className="text-xs bg-muted text-muted-foreground border border-border px-2 py-0.5 rounded">
                           {t('corrections.disabled2')}
                         </span>
                       )}
-                      <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">
+                      <span className="text-xs bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 rounded">
                         {t('corrections.priorityLabel2')}: {rule.priority}
                       </span>
                     </div>

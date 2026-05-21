@@ -605,7 +605,7 @@ export function Library() {
                             <span className="sm:hidden">{t('library.translate')}</span>
                           </Button>
                         ) : (
-                          <div className="flex-1 flex items-center justify-center gap-1 sm:gap-2 text-[10px] sm:text-xs text-green-600">
+                          <div className="flex-1 flex items-center justify-center gap-1 sm:gap-2 text-[10px] sm:text-xs text-green-600 dark:text-green-400">
                             <CheckCircle2 className="h-4 w-4" />
                             {t('library.subtitlesComplete')}
                           </div>
@@ -1113,7 +1113,7 @@ export function Library() {
                                   <span className="hidden sm:inline">{t('library.translate')}</span>
                                 </Button>
                               ) : (
-                                <div className="flex items-center gap-1 text-[10px] sm:text-xs text-green-600">
+                                <div className="flex items-center gap-1 text-[10px] sm:text-xs text-green-600 dark:text-green-400">
                                   <CheckCircle2 className="h-4 w-4" />
                                   <span className="hidden sm:inline">{t('library.complete')}</span>
                                 </div>
