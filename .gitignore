@@ -177,7 +177,6 @@ Desktop.ini
 # Application Specific
 # =============================================================================
 # Ollama models cache (if stored locally)
-models/
 .ollama/
 
 # Celery
