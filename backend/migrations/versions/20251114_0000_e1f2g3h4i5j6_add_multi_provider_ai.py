@@ -21,6 +21,8 @@ depends_on = None
 
 def upgrade() -> None:
     """Upgrade database schema."""
+    bind = op.get_bind()
+    is_sqlite = bind.dialect.name == "sqlite"
 
     # Create AI provider configs table
     op.create_table(
@@ -112,32 +114,58 @@ def upgrade() -> None:
     conn = op.get_bind()
     conn.execute(sa.text("UPDATE model_registry SET provider = 'ollama' WHERE provider IS NULL"))
 
-    # Make provider column NOT NULL
-    op.alter_column("model_registry", "provider", nullable=False)
+    if is_sqlite:
+        with op.batch_alter_table("model_registry") as batch_op:
+            # Make provider column NOT NULL
+            batch_op.alter_column("provider", nullable=False)
 
-    # Check and drop old unique constraint on name (if exists)
-    # Use batch operations to avoid transaction issues
-    from sqlalchemy import inspect
+            # Drop old unique constraint on name (if exists)
+            from sqlalchemy import inspect
 
-    inspector = inspect(conn)
-    constraints = inspector.get_unique_constraints("model_registry")
+            inspector = inspect(conn)
+            constraints = inspector.get_unique_constraints("model_registry")
 
-    for constraint in constraints:
-        if "name" in constraint["column_names"] and len(constraint["column_names"]) == 1:
-            # Found a unique constraint on just the 'name' column
-            constraint_name = constraint.get("name")
-            if constraint_name:
-                op.drop_constraint(constraint_name, "model_registry", type_="unique")
-            break
+            for constraint in constraints:
+                if "name" in constraint["column_names"] and len(constraint["column_names"]) == 1:
+                    constraint_name = constraint.get("name")
+                    if constraint_name:
+                        batch_op.drop_constraint(constraint_name, type_="unique")
+                    break
 
-    # Add new unique constraint on (provider, name)
-    op.create_unique_constraint("uq_provider_model", "model_registry", ["provider", "name"])
+            # Add new unique constraint on (provider, name)
+            batch_op.create_unique_constraint("uq_provider_model", ["provider", "name"])
 
-    # Add new columns for cloud providers
-    op.add_column("model_registry", sa.Column("context_length", sa.BigInteger(), nullable=True))
-    op.add_column("model_registry", sa.Column("cost_input_per_1k", sa.Float(), nullable=True))
-    op.add_column("model_registry", sa.Column("cost_output_per_1k", sa.Float(), nullable=True))
-    op.add_column("model_registry", sa.Column("model_description", sa.Text(), nullable=True))
+            # Add new columns for cloud providers
+            batch_op.add_column(sa.Column("context_length", sa.BigInteger(), nullable=True))
+            batch_op.add_column(sa.Column("cost_input_per_1k", sa.Float(), nullable=True))
+            batch_op.add_column(sa.Column("cost_output_per_1k", sa.Float(), nullable=True))
+            batch_op.add_column(sa.Column("model_description", sa.Text(), nullable=True))
+    else:
+        op.alter_column("model_registry", "provider", nullable=False)
+
+        # Check and drop old unique constraint on name (if exists)
+        # Use batch operations to avoid transaction issues
+        from sqlalchemy import inspect
+
+        inspector = inspect(conn)
+        constraints = inspector.get_unique_constraints("model_registry")
+
+        for constraint in constraints:
+            if "name" in constraint["column_names"] and len(constraint["column_names"]) == 1:
+                # Found a unique constraint on just the 'name' column
+                constraint_name = constraint.get("name")
+                if constraint_name:
+                    op.drop_constraint(constraint_name, "model_registry", type_="unique")
+                break
+
+        # Add new unique constraint on (provider, name)
+        op.create_unique_constraint("uq_provider_model", "model_registry", ["provider", "name"])
+
+        # Add new columns for cloud providers
+        op.add_column("model_registry", sa.Column("context_length", sa.BigInteger(), nullable=True))
+        op.add_column("model_registry", sa.Column("cost_input_per_1k", sa.Float(), nullable=True))
+        op.add_column("model_registry", sa.Column("cost_output_per_1k", sa.Float(), nullable=True))
+        op.add_column("model_registry", sa.Column("model_description", sa.Text(), nullable=True))
 
     # Add new indexes
     op.create_index("idx_model_provider_status", "model_registry", ["provider", "status"])

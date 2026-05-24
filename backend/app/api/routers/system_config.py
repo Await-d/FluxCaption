@@ -5,13 +5,14 @@ Provides endpoints for managing system-wide configuration settings.
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.api.deps import get_current_user
 from app.core.db import get_db
@@ -23,6 +24,82 @@ from app.models.user import User
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api")
+
+
+def _update_system_config_in_db(
+    key: str,
+    request,
+    current_user,
+    db: Session,
+):
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can update system configuration",
+        )
+
+    stmt = select(Setting).where(Setting.key == key)
+    setting = db.scalar(stmt)
+
+    if not setting:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Setting '{key}' not found",
+        )
+
+    if not setting.is_editable:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Setting '{key}' is not editable",
+        )
+
+    new_value = request.value
+    try:
+        if setting.value_type == "int":
+            int(new_value)
+        elif setting.value_type == "float":
+            float(new_value)
+        elif setting.value_type == "bool" and new_value.lower() not in ("true", "false", "0", "1"):
+            raise ValueError("Boolean must be 'true', 'false', '0', or '1'")
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid value for type '{setting.value_type}': {str(e)}",
+        )
+
+    from app.core.init_settings import validate_setting_value
+
+    is_valid, error_message = validate_setting_value(key, new_value)
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_message,
+        )
+
+    old_value = setting.value
+    change_history = SettingChangeHistory(
+        id=str(uuid.uuid4()),
+        setting_key=key,
+        old_value=old_value,
+        new_value=new_value,
+        changed_by=current_user.username,
+        change_reason=request.change_reason,
+        created_at=datetime.now(UTC),
+    )
+    db.add(change_history)
+
+    setting.value = new_value
+    setting.updated_by = current_user.username
+    db.commit()
+    db.refresh(setting)
+
+    logger.info(
+        f"System setting '{key}' updated from '{old_value}' to '{new_value}' "
+        f"by user '{current_user.username}'"
+        + (f" - Reason: {request.change_reason}" if request.change_reason else "")
+    )
+
+    return SettingResponse.model_validate(setting), old_value, new_value
 
 
 # =============================================================================
@@ -43,6 +120,11 @@ class SettingConstraints(BaseModel):
 class SettingResponse(BaseModel):
     """Setting response model."""
 
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_encoders={datetime: lambda v: v.isoformat() if v else None},
+    )
+
     key: str
     value: str
     description: str | None = None
@@ -53,19 +135,12 @@ class SettingResponse(BaseModel):
     updated_by: str | None = None
     constraints: SettingConstraints | None = None
 
-    class Config:
-        from_attributes = True
-        json_encoders = {
-            datetime: lambda v: v.isoformat() if v else None
-        }
-
+    @field_validator("updated_at", mode="before")
     @classmethod
-    def model_validate(cls, obj, **kwargs):
-        """Custom validation to handle datetime conversion."""
-        if hasattr(obj, 'updated_at') and isinstance(obj.updated_at, datetime):
-            obj.updated_at = obj.updated_at.isoformat()
-        return super().model_validate(obj, **kwargs)
-
+    def serialize_updated_at(cls, value):
+        if isinstance(value, datetime):
+            return value.isoformat()
+        return value
 
 class SettingUpdateRequest(BaseModel):
     """Setting update request model."""
@@ -77,6 +152,11 @@ class SettingUpdateRequest(BaseModel):
 class SettingChangeHistoryResponse(BaseModel):
     """Setting change history response model."""
 
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_encoders={datetime: lambda v: v.isoformat() if v else None},
+    )
+
     id: str
     setting_key: str
     old_value: str | None
@@ -85,19 +165,12 @@ class SettingChangeHistoryResponse(BaseModel):
     change_reason: str | None
     created_at: str
 
-    class Config:
-        from_attributes = True
-        json_encoders = {
-            datetime: lambda v: v.isoformat() if v else None
-        }
-
+    @field_validator("created_at", mode="before")
     @classmethod
-    def model_validate(cls, obj, **kwargs):
-        """Custom validation to handle datetime conversion."""
-        if hasattr(obj, 'created_at') and isinstance(obj.created_at, datetime):
-            obj.created_at = obj.created_at.isoformat()
-        return super().model_validate(obj, **kwargs)
-
+    def serialize_created_at(cls, value):
+        if isinstance(value, datetime):
+            return value.isoformat()
+        return value
 
 class SystemConfigCategory(BaseModel):
     """System configuration category."""
@@ -155,7 +228,7 @@ class SystemConfigCategory(BaseModel):
         }
     },
 )
-async def get_system_config(
+def get_system_config(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
 ) -> list[SystemConfigCategory]:
@@ -229,7 +302,7 @@ async def get_system_config(
     description="Returns detailed information about a single configuration setting including "
     "its current value, constraints, and update history metadata.",
 )
-async def get_system_config_by_key(
+def get_system_config_by_key(
     key: str,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -301,79 +374,12 @@ async def update_system_config(
     Returns:
         Updated setting information
     """
-    # Check if user is admin
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only administrators can update system configuration",
-        )
-
-    # Get setting
-    stmt = select(Setting).where(Setting.key == key)
-    setting = db.scalar(stmt)
-
-    if not setting:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Setting '{key}' not found",
-        )
-
-    # Check if setting is editable
-    if not setting.is_editable:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Setting '{key}' is not editable",
-        )
-
-    # Validate value based on type
-    new_value = request.value
-    try:
-        if setting.value_type == "int":
-            int(new_value)  # Validate can be converted to int
-        elif setting.value_type == "float":
-            float(new_value)  # Validate can be converted to float
-        elif setting.value_type == "bool":
-            if new_value.lower() not in ("true", "false", "0", "1"):
-                raise ValueError("Boolean must be 'true', 'false', '0', or '1'")
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid value for type '{setting.value_type}': {str(e)}",
-        )
-
-    # Validate value against constraints
-    from app.core.init_settings import validate_setting_value
-
-    is_valid, error_message = validate_setting_value(key, new_value)
-    if not is_valid:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=error_message,
-        )
-
-    # Record change history
-    old_value = setting.value
-    change_history = SettingChangeHistory(
-        id=str(uuid.uuid4()),
-        setting_key=key,
-        old_value=old_value,
-        new_value=new_value,
-        changed_by=current_user.username,
-        change_reason=request.change_reason,
-        created_at=datetime.now(timezone.utc),
-    )
-    db.add(change_history)
-
-    # Update setting
-    setting.value = new_value
-    setting.updated_by = current_user.username
-    db.commit()
-    db.refresh(setting)
-
-    logger.info(
-        f"System setting '{key}' updated from '{old_value}' to '{new_value}' "
-        f"by user '{current_user.username}'"
-        + (f" - Reason: {request.change_reason}" if request.change_reason else "")
+    setting_response, old_value, new_value = await run_in_threadpool(
+        _update_system_config_in_db,
+        key,
+        request,
+        current_user,
+        db,
     )
 
     # Broadcast configuration change notification (for future worker reload)
@@ -391,7 +397,7 @@ async def update_system_config(
         # Log error but don't fail the request - setting was already updated
         logger.error(f"Failed to publish config change event for '{key}': {e}", exc_info=True)
 
-    return SettingResponse.model_validate(setting)
+    return setting_response
 
 
 @router.post(
@@ -408,7 +414,7 @@ async def update_system_config(
         404: {"description": "Setting not found"},
     },
 )
-async def reset_system_config(
+def reset_system_config(
     key: str,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -453,6 +459,8 @@ async def reset_system_config(
         "task_check_quota_limits_interval": "task_check_quota_limits_interval",
         "task_quota_check_cache_ttl": "task_quota_check_cache_ttl",
         "translation_batch_size": "translation_batch_size",
+        "translation_line_concurrency": "translation_line_concurrency",
+        "ai_provider_max_concurrency": "ai_provider_max_concurrency",
         "translation_max_line_length": "translation_max_line_length",
     }
 
@@ -503,7 +511,7 @@ async def reset_system_config(
         403: {"description": "Not authorized - admin privileges required"},
     },
 )
-async def get_setting_change_history(
+def get_setting_change_history(
     key: str,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -553,7 +561,7 @@ async def get_setting_change_history(
         403: {"description": "Not authorized - admin privileges required"},
     },
 )
-async def get_all_config_changes(
+def get_all_config_changes(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
     limit: int = 100,

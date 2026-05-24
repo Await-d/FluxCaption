@@ -5,13 +5,14 @@ Provides endpoints for querying translation memory (sentence-level translation p
 """
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import desc, func, or_
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.api.routers.auth import get_current_user
 from app.core.db import get_db
@@ -22,12 +23,21 @@ from app.models.user import User
 router = APIRouter(prefix="/api/translation-memory", tags=["translation-memory"])
 
 
+def _get_translation_pair_for_proofread(db: Session, pair_id: str) -> TranslationMemory:
+    tm = db.query(TranslationMemory).filter(TranslationMemory.id == pair_id).first()
+    if not tm:
+        raise HTTPException(status_code=404, detail="Translation pair not found")
+    return tm
+
+
 # =============================================================================
 # Schemas
 # =============================================================================
 
 
 class TranslationPairResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     source_text: str
     target_text: str
@@ -42,10 +52,6 @@ class TranslationPairResponse(BaseModel):
     word_count_target: int | None = None
     translation_model: str | None = None
     created_at: str
-
-    class Config:
-        from_attributes = True
-
 
 class TranslationMemoryListResponse(BaseModel):
     pairs: list[TranslationPairResponse]
@@ -93,7 +99,7 @@ class ReProofreadResponse(BaseModel):
 
 
 @router.get("/", response_model=TranslationMemoryListResponse)
-async def list_translation_pairs(
+def list_translation_pairs(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
     limit: int = Query(default=50, ge=1, le=200),
@@ -164,7 +170,7 @@ async def list_translation_pairs(
 
 
 @router.get("/stats", response_model=TranslationMemoryStatsResponse)
-async def get_translation_memory_stats(
+def get_translation_memory_stats(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
 ):
@@ -207,7 +213,7 @@ async def get_translation_memory_stats(
 
 
 @router.get("/{pair_id}", response_model=TranslationPairResponse)
-async def get_translation_pair(
+def get_translation_pair(
     pair_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -248,7 +254,7 @@ async def get_translation_pair(
 
 
 @router.put("/{pair_id}", response_model=TranslationPairResponse)
-async def update_translation_pair(
+def update_translation_pair(
     pair_id: str,
     request: UpdateTranslationRequest,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -263,7 +269,7 @@ async def update_translation_pair(
 
     # Update target text and timestamp
     tm.target_text = request.target_text
-    tm.updated_at = datetime.now(timezone.utc)
+    tm.updated_at = datetime.now(UTC)
     tm.word_count_target = len(request.target_text.split())
 
     db.commit()
@@ -295,7 +301,7 @@ async def update_translation_pair(
 
 
 @router.delete("/{pair_id}")
-async def delete_translation_pair(
+def delete_translation_pair(
     pair_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -314,7 +320,7 @@ async def delete_translation_pair(
 
 
 @router.post("/batch-delete")
-async def batch_delete_translation_pairs(
+def batch_delete_translation_pairs(
     request: BatchDeleteRequest,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -342,7 +348,7 @@ async def batch_delete_translation_pairs(
 
 
 @router.post("/batch-replace", response_model=BatchReplaceResponse)
-async def batch_replace_translation_text(
+def batch_replace_translation_text(
     request: BatchReplaceRequest,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -387,7 +393,7 @@ async def batch_replace_translation_text(
         # Only update if text changed
         if new_text != original_text:
             pair.target_text = new_text
-            pair.updated_at = datetime.now(timezone.utc)
+            pair.updated_at = datetime.now(UTC)
             pair.word_count_target = len(new_text.split())
             updated_count += 1
 
@@ -404,10 +410,7 @@ async def re_proofread_translation(
 ):
     """Re-proofread a translation using AI."""
 
-    tm = db.query(TranslationMemory).filter(TranslationMemory.id == pair_id).first()
-
-    if not tm:
-        raise HTTPException(status_code=404, detail="Translation pair not found")
+    tm = await run_in_threadpool(_get_translation_pair_for_proofread, db, pair_id)
 
     # Import AI services
     from app.core.config import settings

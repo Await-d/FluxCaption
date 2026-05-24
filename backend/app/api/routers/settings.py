@@ -4,20 +4,55 @@ Settings management API endpoints.
 Provides endpoints for retrieving and updating application configuration.
 """
 
-from datetime import datetime, timezone
+import json
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
+from starlette.concurrency import run_in_threadpool
 
 from app.api.routers.auth import get_current_user
+from app.core.ai_model_catalog_runtime import ensure_catalog_sync_task
 from app.core.config import settings
 from app.core.db import session_scope
+from app.core.settings_helper import get_default_mt_model
 from app.models.setting import Setting
 from app.models.user import User
 from app.schemas.settings import SettingsResponse, SettingsUpdateRequest
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
+
+JELLYFIN_FIELDS = {
+    "jellyfin_base_url": ("string", "Jellyfin server base URL"),
+    "jellyfin_api_key": ("string", "Jellyfin API key for authentication"),
+    "jellyfin_timeout": ("int", "Jellyfin request timeout in seconds"),
+    "jellyfin_max_retries": ("int", "Jellyfin maximum retry attempts"),
+    "jellyfin_rate_limit_per_second": ("int", "Jellyfin API rate limit per second"),
+}
+
+OLLAMA_FIELDS = {
+    "ollama_base_url": ("string", "Ollama API base URL"),
+    "ollama_timeout": ("int", "Ollama request timeout in seconds"),
+    "ollama_keep_alive": ("string", "Ollama model keep alive duration"),
+}
+
+AI_MODEL_CATALOG_FIELDS = {
+    "ai_models_auto_sync_enabled": ("bool", "Enable automatic AI model catalog sync"),
+    "ai_models_auto_sync_interval_seconds": (
+        "int",
+        "AI model catalog automatic sync interval in seconds",
+    ),
+    "ai_models_catalog_url": ("string", "AI model catalog base URL"),
+}
+
+TRANSLATION_FIELDS = {
+    "default_mt_model": ("string", "Default machine translation model"),
+}
+
+LOCAL_MEDIA_FIELDS = {
+    "favorite_media_paths": ("json", "Favorite local media directory paths"),
+}
 
 
 def _get_db_setting(key: str, default: Any = None) -> Any:
@@ -45,8 +80,29 @@ def _get_db_setting(key: str, default: Any = None) -> Any:
             return float(setting.value)
         elif setting.value_type == "bool":
             return setting.value.lower() in ("true", "1", "yes")
+        elif setting.value_type == "json":
+            try:
+                return json.loads(setting.value)
+            except json.JSONDecodeError:
+                return default
         else:
             return setting.value
+
+
+def _serialize_db_setting_value(value: Any, value_type: str) -> str:
+    if value_type == "json":
+        return json.dumps(value)
+    return str(value)
+
+
+def _parse_favorite_media_paths(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [path for path in value if isinstance(path, str) and path.strip()]
+
+    if isinstance(value, str):
+        return [path.strip() for path in value.split(",") if path.strip()]
+
+    return []
 
 
 def _set_db_setting(
@@ -63,7 +119,7 @@ def _set_db_setting(
     Args:
         key: Setting key
         value: Setting value
-        value_type: Type of value (string, int, float, bool)
+        value_type: Type of value (string, int, float, bool, json)
         category: Setting category
         description: Setting description
         username: Username who updated the setting
@@ -74,38 +130,93 @@ def _set_db_setting(
 
         if setting is None:
             # Create new setting
+            serialized_value = _serialize_db_setting_value(value, value_type)
             setting = Setting(
                 key=key,
-                value=str(value),
+                value=serialized_value,
                 value_type=value_type,
                 category=category,
                 description=description,
                 is_editable=True,
-                updated_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(UTC),
                 updated_by=username,
             )
             session.add(setting)
         else:
             # Update existing setting
-            setting.value = str(value)
-            setting.updated_at = datetime.now(timezone.utc)
+            setting.value = _serialize_db_setting_value(value, value_type)
+            setting.value_type = value_type
+            setting.category = category
+            setting.description = description
+            setting.updated_at = datetime.now(UTC)
             setting.updated_by = username
 
         session.commit()
 
 
-@router.get("", response_model=SettingsResponse)
-async def get_settings(
-    current_user: Annotated[User, Depends(get_current_user)],
-) -> SettingsResponse:
-    """
-    Get current application settings.
+def _apply_settings_updates(updated_fields: dict[str, Any], username: str) -> None:
+    for field, value in updated_fields.items():
+        if not hasattr(settings, field):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown setting field: {field}",
+            )
 
-    Returns all user-configurable settings and read-only system information.
+        setattr(settings, field, value)
 
-    Returns:
-        SettingsResponse: Current application settings
-    """
+        if field in JELLYFIN_FIELDS:
+            value_type, description = JELLYFIN_FIELDS[field]
+            _set_db_setting(
+                key=field,
+                value=value,
+                value_type=value_type,
+                category="jellyfin",
+                description=description,
+                username=username,
+            )
+        elif field in OLLAMA_FIELDS:
+            value_type, description = OLLAMA_FIELDS[field]
+            _set_db_setting(
+                key=field,
+                value=value,
+                value_type=value_type,
+                category="ollama",
+                description=description,
+                username=username,
+            )
+        elif field in AI_MODEL_CATALOG_FIELDS:
+            value_type, description = AI_MODEL_CATALOG_FIELDS[field]
+            _set_db_setting(
+                key=field,
+                value=value,
+                value_type=value_type,
+                category="ai_models",
+                description=description,
+                username=username,
+            )
+        elif field in TRANSLATION_FIELDS:
+            value_type, description = TRANSLATION_FIELDS[field]
+            _set_db_setting(
+                key=field,
+                value=value,
+                value_type=value_type,
+                category="translation",
+                description=description,
+                username=username,
+            )
+        elif field in LOCAL_MEDIA_FIELDS:
+            value_type, description = LOCAL_MEDIA_FIELDS[field]
+            _set_db_setting(
+                key=field,
+                value=value,
+                value_type=value_type,
+                category="local_media",
+                description=description,
+                username=username,
+            )
+
+
+def _build_settings_response() -> SettingsResponse:
     # Get Jellyfin settings from database with fallback to env vars
     jellyfin_base_url = _get_db_setting("jellyfin_base_url", settings.jellyfin_base_url)
     jellyfin_api_key = _get_db_setting("jellyfin_api_key", settings.jellyfin_api_key)
@@ -119,6 +230,19 @@ async def get_settings(
     ollama_base_url = _get_db_setting("ollama_base_url", settings.ollama_base_url)
     ollama_timeout = _get_db_setting("ollama_timeout", settings.ollama_timeout)
     ollama_keep_alive = _get_db_setting("ollama_keep_alive", settings.ollama_keep_alive)
+    ai_models_auto_sync_enabled = _get_db_setting(
+        "ai_models_auto_sync_enabled", settings.ai_models_auto_sync_enabled
+    )
+    ai_models_auto_sync_interval_seconds = _get_db_setting(
+        "ai_models_auto_sync_interval_seconds", settings.ai_models_auto_sync_interval_seconds
+    )
+    ai_models_catalog_url = _get_db_setting(
+        "ai_models_catalog_url", settings.ai_models_catalog_url
+    )
+    ai_models_last_catalog_sync_at = _get_db_setting("ai_models_last_catalog_sync_at", None)
+    favorite_media_paths = _parse_favorite_media_paths(
+        _get_db_setting("favorite_media_paths", settings.favorite_media_paths)
+    )
 
     return SettingsResponse(
         # Jellyfin Integration
@@ -136,10 +260,12 @@ async def get_settings(
         default_subtitle_format=settings.default_subtitle_format,
         preserve_ass_styles=settings.preserve_ass_styles,
         translation_batch_size=settings.translation_batch_size,
+        translation_line_concurrency=settings.translation_line_concurrency,
+        ai_provider_max_concurrency=settings.ai_provider_max_concurrency,
         translation_max_line_length=settings.translation_max_line_length,
         translation_preserve_formatting=settings.translation_preserve_formatting,
         # Model Configuration
-        default_mt_model=settings.default_mt_model,
+        default_mt_model=_get_db_setting("default_mt_model", get_default_mt_model()),
         asr_engine=settings.asr_engine,
         asr_model=settings.asr_model,
         funasr_model=settings.funasr_model,
@@ -159,20 +285,37 @@ async def get_settings(
         enable_auto_pull_models=settings.enable_auto_pull_models,
         enable_sidecar_writeback=settings.enable_sidecar_writeback,
         enable_metrics=settings.enable_metrics,
+        ai_models_auto_sync_enabled=ai_models_auto_sync_enabled,
+        ai_models_auto_sync_interval_seconds=ai_models_auto_sync_interval_seconds,
+        ai_models_catalog_url=ai_models_catalog_url,
+        ai_models_last_catalog_sync_at=ai_models_last_catalog_sync_at,
         # Task Timeouts
         scan_task_timeout=settings.scan_task_timeout,
         translate_task_timeout=settings.translate_task_timeout,
         asr_task_timeout=settings.asr_task_timeout,
         # Local Media Configuration
-        favorite_media_paths=settings.favorite_media_paths
-        if isinstance(settings.favorite_media_paths, list)
-        else [],
+        favorite_media_paths=favorite_media_paths,
         # System Info (read-only)
         environment=settings.environment,
         db_vendor=settings.db_vendor,
         storage_backend=settings.storage_backend,
         log_level=settings.log_level,
     )
+
+
+@router.get("", response_model=SettingsResponse)
+def get_settings(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> SettingsResponse:
+    """
+    Get current application settings.
+
+    Returns all user-configurable settings and read-only system information.
+
+    Returns:
+        SettingsResponse: Current application settings
+    """
+    return _build_settings_response()
 
 
 @router.patch("", response_model=SettingsResponse)
@@ -208,61 +351,18 @@ async def update_settings(
             detail="No fields provided for update",
         )
 
-    # Define Jellyfin fields that should be persisted to database
-    jellyfin_fields = {
-        "jellyfin_base_url": ("string", "Jellyfin server base URL"),
-        "jellyfin_api_key": ("string", "Jellyfin API key for authentication"),
-        "jellyfin_timeout": ("int", "Jellyfin request timeout in seconds"),
-        "jellyfin_max_retries": ("int", "Jellyfin maximum retry attempts"),
-        "jellyfin_rate_limit_per_second": ("int", "Jellyfin API rate limit per second"),
-    }
+    await run_in_threadpool(_apply_settings_updates, updated_fields, current_user.username)
 
-    # Define Ollama fields that should be persisted to database
-    ollama_fields = {
-        "ollama_base_url": ("string", "Ollama API base URL"),
-        "ollama_timeout": ("int", "Ollama request timeout in seconds"),
-        "ollama_keep_alive": ("string", "Ollama model keep alive duration"),
-    }
+    if any(field in AI_MODEL_CATALOG_FIELDS for field in updated_fields):
+        from app.main import ai_model_catalog_sync_loop
 
-    # Apply updates to settings instance and persist to database
-    for field, value in updated_fields.items():
-        if hasattr(settings, field):
-            setattr(settings, field, value)
+        await ensure_catalog_sync_task(ai_model_catalog_sync_loop)
 
-            # Persist Jellyfin settings to database
-            if field in jellyfin_fields:
-                value_type, description = jellyfin_fields[field]
-                _set_db_setting(
-                    key=field,
-                    value=value,
-                    value_type=value_type,
-                    category="jellyfin",
-                    description=description,
-                    username=current_user.username,
-                )
-            # Persist Ollama settings to database
-            elif field in ollama_fields:
-                value_type, description = ollama_fields[field]
-                _set_db_setting(
-                    key=field,
-                    value=value,
-                    value_type=value_type,
-                    category="ollama",
-                    description=description,
-                    username=current_user.username,
-                )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unknown setting field: {field}",
-            )
-
-    # Return updated settings
-    return await get_settings(current_user)
+    return await run_in_threadpool(_build_settings_response)
 
 
 @router.post("/reset", response_model=SettingsResponse)
-async def reset_settings_to_defaults(
+def reset_settings_to_defaults(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> SettingsResponse:
     """
@@ -294,7 +394,7 @@ async def reset_settings_to_defaults(
             if hasattr(settings, field):
                 setattr(settings, field, getattr(new_settings, field))
 
-        return await get_settings(current_user)
+        return _build_settings_response()
 
     except Exception as e:
         raise HTTPException(
@@ -304,7 +404,7 @@ async def reset_settings_to_defaults(
 
 
 @router.get("/validate")
-async def validate_settings(
+def validate_settings(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> dict[str, Any]:
     """
@@ -358,6 +458,24 @@ async def validate_settings(
     if settings.translation_batch_size > 100:
         validation_results["warnings"].append(
             "translation_batch_size is very high, may cause memory issues"
+        )
+
+    if settings.translation_line_concurrency < 1:
+        validation_results["errors"].append("translation_line_concurrency must be at least 1")
+        validation_results["valid"] = False
+
+    if settings.translation_line_concurrency > 20:
+        validation_results["warnings"].append(
+            "translation_line_concurrency is very high, may overload upstream AI providers"
+        )
+
+    if settings.ai_provider_max_concurrency < 1:
+        validation_results["errors"].append("ai_provider_max_concurrency must be at least 1")
+        validation_results["valid"] = False
+
+    if settings.ai_provider_max_concurrency > 50:
+        validation_results["warnings"].append(
+            "ai_provider_max_concurrency is very high, may overload upstream AI providers"
         )
 
     # Check max line length is reasonable

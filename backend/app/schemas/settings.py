@@ -4,11 +4,13 @@ Pydantic schemas for settings API endpoints.
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SettingsResponse(BaseModel):
     """Response schema for GET /api/settings endpoint."""
+
+    model_config = ConfigDict(from_attributes=True)
 
     # Jellyfin Integration
     jellyfin_base_url: str = Field(description="Jellyfin server base URL")
@@ -29,6 +31,12 @@ class SettingsResponse(BaseModel):
     )
     preserve_ass_styles: bool = Field(description="Preserve ASS styles when translating")
     translation_batch_size: int = Field(description="Number of lines to translate per batch")
+    translation_line_concurrency: int = Field(
+        description="Maximum concurrent upstream translation requests per batch"
+    )
+    ai_provider_max_concurrency: int = Field(
+        description="Maximum concurrent upstream AI requests per provider in one process"
+    )
     translation_max_line_length: int = Field(description="Maximum line length for subtitles")
     translation_preserve_formatting: bool = Field(
         description="Preserve formatting tags in translation"
@@ -61,6 +69,14 @@ class SettingsResponse(BaseModel):
     enable_auto_pull_models: bool = Field(description="Automatically pull missing Ollama models")
     enable_sidecar_writeback: bool = Field(description="Enable sidecar file writeback")
     enable_metrics: bool = Field(description="Enable metrics collection")
+    ai_models_auto_sync_enabled: bool = Field(description="Enable automatic AI model catalog sync")
+    ai_models_auto_sync_interval_seconds: int = Field(
+        description="AI model catalog automatic sync interval in seconds"
+    )
+    ai_models_catalog_url: str = Field(description="AI model catalog base URL")
+    ai_models_last_catalog_sync_at: str | None = Field(
+        default=None, description="Last successful AI model catalog sync timestamp"
+    )
 
     # Task Timeouts
     scan_task_timeout: int = Field(description="Scan task timeout in seconds")
@@ -83,10 +99,6 @@ class SettingsResponse(BaseModel):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
         description="Log level"
     )
-
-    class Config:
-        from_attributes = True
-
 
 class SettingsUpdateRequest(BaseModel):
     """Request schema for PATCH /api/settings endpoint."""
@@ -125,6 +137,12 @@ class SettingsUpdateRequest(BaseModel):
     preserve_ass_styles: bool | None = Field(default=None, description="Preserve ASS styles")
     translation_batch_size: int | None = Field(
         default=None, ge=1, le=100, description="Translation batch size"
+    )
+    translation_line_concurrency: int | None = Field(
+        default=None, ge=1, le=20, description="Translation line concurrency"
+    )
+    ai_provider_max_concurrency: int | None = Field(
+        default=None, ge=1, le=50, description="Per-provider upstream concurrency"
     )
     translation_max_line_length: int | None = Field(
         default=None, ge=20, le=200, description="Max line length"
@@ -176,6 +194,18 @@ class SettingsUpdateRequest(BaseModel):
         default=None, description="Enable sidecar writeback"
     )
     enable_metrics: bool | None = Field(default=None, description="Enable metrics")
+    ai_models_auto_sync_enabled: bool | None = Field(
+        default=None, description="Enable automatic AI model catalog sync"
+    )
+    ai_models_auto_sync_interval_seconds: int | None = Field(
+        default=None,
+        ge=300,
+        le=86400,
+        description="AI model catalog automatic sync interval in seconds",
+    )
+    ai_models_catalog_url: str | None = Field(
+        default=None, description="AI model catalog base URL"
+    )
 
     # Task Timeouts
     scan_task_timeout: int | None = Field(default=None, ge=60, le=3600, description="Scan timeout")

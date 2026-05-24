@@ -30,7 +30,7 @@ router = APIRouter(prefix="/api/cache", tags=["Cache"])
     response_model=CacheStatsResponse,
     summary="Get cache statistics",
 )
-async def get_cache_stats(
+def get_cache_stats(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
 ):
@@ -61,7 +61,7 @@ async def get_cache_stats(
     response_model=CacheListResponse,
     summary="Get cache entries",
 )
-async def get_cache_entries(
+def get_cache_entries(
     current_user: Annotated[User, Depends(get_current_user)],
     limit: int = Query(default=50, ge=1, le=200, description="Number of entries to return"),
     offset: int = Query(default=0, ge=0, description="Number of entries to skip"),
@@ -123,7 +123,7 @@ async def get_cache_entries(
     response_model=ClearEntriesResponse,
     summary="Clear old unused cache entries",
 )
-async def clear_old_entries(
+def clear_old_entries(
     request: ClearOldEntriesRequest,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -163,7 +163,7 @@ async def clear_old_entries(
     response_model=ClearEntriesResponse,
     summary="Clear all cache entries",
 )
-async def clear_all_entries(
+def clear_all_entries(
     request: ClearAllEntriesRequest,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -209,7 +209,7 @@ async def clear_all_entries(
     "/cleanup-temp",
     summary="清理临时文件",
 )
-async def cleanup_temp_files(
+def cleanup_temp_files(
     current_user: Annotated[User, Depends(get_current_user)],
 ):
     """
@@ -320,7 +320,7 @@ async def cleanup_temp_files(
     "/temp-stats",
     summary="获取临时文件统计",
 )
-async def get_temp_stats(
+def get_temp_stats(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
 ):
