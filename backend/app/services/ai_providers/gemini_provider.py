@@ -14,8 +14,16 @@ from app.services.ai_providers.base import (
     AIModelInfo,
     BaseAIProvider,
 )
+from app.services.ai_response_cleaner import ReasoningBlockFilter, extract_visible_text
 
 logger = get_logger(__name__)
+
+
+def _log_http_error(message: str, error: httpx.HTTPError) -> None:
+    if hasattr(error, "response") and error.response:
+        logger.error(f"{message} with status {error.response.status_code}")
+    else:
+        logger.error(f"{message}: {type(error).__name__}")
 
 
 class GeminiProvider(BaseAIProvider):
@@ -43,6 +51,13 @@ class GeminiProvider(BaseAIProvider):
     @property
     def supports_model_pulling(self) -> bool:
         return False
+
+    def _get_headers(self) -> dict:
+        """Get headers for Gemini API requests."""
+        return {
+            "Content-Type": "application/json",
+            "x-goog-api-key": self.api_key,
+        }
 
     async def list_models(self) -> list[AIModelInfo]:
         """List available Gemini models."""
@@ -122,39 +137,28 @@ class GeminiProvider(BaseAIProvider):
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             try:
                 response = await client.post(
-                    f"{self.base_url}/models/{model}:generateContent?key={self.api_key}",
+                    f"{self.base_url}/models/{model}:generateContent",
+                    headers=self._get_headers(),
                     json=payload,
                 )
                 response.raise_for_status()
                 data = response.json()
 
-                # Extract text from response
-                text = ""
-                if "candidates" in data and len(data["candidates"]) > 0:
-                    candidate = data["candidates"][0]
-                    if "content" in candidate and "parts" in candidate["content"]:
-                        for part in candidate["content"]["parts"]:
-                            if "text" in part:
-                                text += part["text"]
-
                 # Extract token counts
                 usage = data.get("usageMetadata", {})
+                candidates = data.get("candidates") or []
 
                 return AIGenerateResponse(
-                    text=text,
+                    text=extract_visible_text(data),
                     model=model,
                     provider=self.provider_name,
                     input_tokens=usage.get("promptTokenCount"),
                     output_tokens=usage.get("candidatesTokenCount"),
-                    finish_reason=data["candidates"][0].get("finishReason")
-                    if "candidates" in data
-                    else None,
+                    finish_reason=candidates[0].get("finishReason") if candidates else None,
                 )
 
             except httpx.HTTPError as e:
-                logger.error(f"Gemini generation failed: {e}")
-                if hasattr(e, "response") and e.response:
-                    logger.error(f"Response: {e.response.text}")
+                _log_http_error("Gemini generation failed", e)
                 raise
 
     async def generate_stream(
@@ -181,11 +185,14 @@ class GeminiProvider(BaseAIProvider):
         if max_tokens:
             payload["generationConfig"]["maxOutputTokens"] = max_tokens
 
+        reasoning_filter = ReasoningBlockFilter()
+
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             try:
                 async with client.stream(
                     "POST",
-                    f"{self.base_url}/models/{model}:streamGenerateContent?key={self.api_key}",
+                    f"{self.base_url}/models/{model}:streamGenerateContent",
+                    headers=self._get_headers(),
                     json=payload,
                 ) as response:
                     response.raise_for_status()
@@ -199,18 +206,19 @@ class GeminiProvider(BaseAIProvider):
 
                             data = json.loads(line)
 
-                            if "candidates" in data and len(data["candidates"]) > 0:
-                                candidate = data["candidates"][0]
-                                if "content" in candidate and "parts" in candidate["content"]:
-                                    for part in candidate["content"]["parts"]:
-                                        if "text" in part:
-                                            yield part["text"]
+                            visible_text = reasoning_filter.filter(extract_visible_text(data))
+                            if visible_text:
+                                yield visible_text
 
                         except (json.JSONDecodeError, KeyError) as e:
                             logger.warning(f"Failed to parse Gemini stream chunk: {e}")
 
+                    pending_text = reasoning_filter.flush()
+                    if pending_text:
+                        yield pending_text
+
             except httpx.HTTPError as e:
-                logger.error(f"Gemini streaming generation failed: {e}")
+                _log_http_error("Gemini streaming generation failed", e)
                 raise
 
     async def health_check(self) -> bool:
@@ -219,5 +227,5 @@ class GeminiProvider(BaseAIProvider):
             models = await self.list_models()
             return len(models) > 0
         except Exception as e:
-            logger.error(f"Gemini health check failed: {e}")
+            logger.error(f"Gemini health check failed: {type(e).__name__}")
             return False

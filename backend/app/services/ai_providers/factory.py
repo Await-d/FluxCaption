@@ -8,6 +8,7 @@ from app.core.logging import get_logger
 from app.services.ai_providers.base import BaseAIProvider
 from app.services.ai_providers.claude_provider import ClaudeProvider
 from app.services.ai_providers.custom_openai_provider import CustomOpenAIProvider
+from app.services.ai_providers.deeplx_provider import DeepLXProvider
 from app.services.ai_providers.deepseek_provider import DeepSeekProvider
 from app.services.ai_providers.gemini_provider import GeminiProvider
 from app.services.ai_providers.moonshot_provider import MoonshotProvider
@@ -30,6 +31,7 @@ class AIProviderFactory:
         "ollama": OllamaProvider,
         "openai": OpenAIProvider,
         "deepseek": DeepSeekProvider,
+        "deeplx": DeepLXProvider,
         "claude": ClaudeProvider,
         "gemini": GeminiProvider,
         "zhipu": ZhipuProvider,

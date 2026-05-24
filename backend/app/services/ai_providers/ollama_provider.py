@@ -15,8 +15,16 @@ from app.services.ai_providers.base import (
     AIModelInfo,
     BaseAIProvider,
 )
+from app.services.ai_response_cleaner import ReasoningBlockFilter, extract_visible_text
 
 logger = get_logger(__name__)
+
+
+def _log_http_error(message: str, error: httpx.HTTPError) -> None:
+    if hasattr(error, "response") and error.response:
+        logger.error(f"{message} with status {error.response.status_code}")
+    else:
+        logger.error(f"{message}: {type(error).__name__}")
 
 
 class OllamaProvider(BaseAIProvider):
@@ -57,7 +65,7 @@ class OllamaProvider(BaseAIProvider):
                 return models
 
             except httpx.HTTPError as e:
-                logger.error(f"Failed to list Ollama models: {e}")
+                _log_http_error("Failed to list Ollama models", e)
                 raise
 
     async def check_model_exists(self, model_name: str) -> bool:
@@ -66,7 +74,7 @@ class OllamaProvider(BaseAIProvider):
             models = await self.list_models()
             return any(model.id == model_name for model in models)
         except Exception as e:
-            logger.error(f"Error checking Ollama model existence: {e}")
+            logger.error(f"Error checking Ollama model existence: {type(e).__name__}")
             return False
 
     async def generate(
@@ -108,7 +116,7 @@ class OllamaProvider(BaseAIProvider):
                 data = response.json()
 
                 return AIGenerateResponse(
-                    text=data.get("response", ""),
+                    text=extract_visible_text(data),
                     model=model,
                     provider=self.provider_name,
                     input_tokens=data.get("prompt_eval_count"),
@@ -117,7 +125,7 @@ class OllamaProvider(BaseAIProvider):
                 )
 
             except httpx.HTTPError as e:
-                logger.error(f"Ollama generation failed: {e}")
+                _log_http_error("Ollama generation failed", e)
                 raise
 
     async def generate_stream(
@@ -145,6 +153,8 @@ class OllamaProvider(BaseAIProvider):
         if max_tokens:
             payload["options"]["num_predict"] = max_tokens
 
+        reasoning_filter = ReasoningBlockFilter()
+
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             try:
                 async with client.stream(
@@ -158,9 +168,9 @@ class OllamaProvider(BaseAIProvider):
                         if line:
                             try:
                                 data = json.loads(line)
-                                chunk = data.get("response", "")
-                                if chunk:
-                                    yield chunk
+                                visible_chunk = reasoning_filter.filter(extract_visible_text(data))
+                                if visible_chunk:
+                                    yield visible_chunk
 
                                 if data.get("done", False):
                                     break
@@ -168,8 +178,12 @@ class OllamaProvider(BaseAIProvider):
                             except json.JSONDecodeError:
                                 logger.warning(f"Failed to parse Ollama stream line: {line}")
 
+                    pending_chunk = reasoning_filter.flush()
+                    if pending_chunk:
+                        yield pending_chunk
+
             except httpx.HTTPError as e:
-                logger.error(f"Ollama streaming generation failed: {e}")
+                _log_http_error("Ollama streaming generation failed", e)
                 raise
 
     async def pull_model(
@@ -207,7 +221,7 @@ class OllamaProvider(BaseAIProvider):
                 logger.info(f"Successfully pulled Ollama model: {model_name}")
 
             except httpx.HTTPError as e:
-                logger.error(f"Failed to pull Ollama model {model_name}: {e}")
+                _log_http_error(f"Failed to pull Ollama model {model_name}", e)
                 raise
 
     async def delete_model(self, model_name: str) -> None:
@@ -224,7 +238,7 @@ class OllamaProvider(BaseAIProvider):
                 logger.info(f"Successfully deleted Ollama model: {model_name}")
 
             except httpx.HTTPError as e:
-                logger.error(f"Failed to delete Ollama model {model_name}: {e}")
+                _log_http_error(f"Failed to delete Ollama model {model_name}", e)
                 raise
 
     async def health_check(self) -> bool:
@@ -234,5 +248,5 @@ class OllamaProvider(BaseAIProvider):
                 response = await client.get(f"{self.base_url}/")
                 return response.status_code == 200
         except Exception as e:
-            logger.error(f"Ollama health check failed: {e}")
+            logger.error(f"Ollama health check failed: {type(e).__name__}")
             return False

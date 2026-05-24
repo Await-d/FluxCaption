@@ -8,18 +8,25 @@ from datetime import datetime, timedelta
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.core.db import get_db
 from app.core.logging import get_logger
 from app.models.ai_provider_config import AIProviderConfig
 from app.models.ai_provider_usage import AIProviderUsageLog
+from app.schemas.models import ModelPullRequest
 from app.services.ai_providers.factory import AIProviderFactory, provider_manager
 from app.services.ai_quota_service import AIQuotaService
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/ai-providers", tags=["AI Providers"])
+
+
+PROVIDER_DEFAULT_MODELS = {
+    "deeplx": "translate",
+}
 
 
 # =============================================================================
@@ -45,10 +52,13 @@ class ProviderConfigCreate(BaseModel):
 class ProviderConfigResponse(BaseModel):
     """Schema for provider config response."""
 
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     provider_name: str
     display_name: str
     is_enabled: bool
+    has_api_key: bool
     base_url: str | None
     timeout: int
     default_model: str | None
@@ -59,10 +69,6 @@ class ProviderConfigResponse(BaseModel):
     description: str | None
     created_at: datetime
     updated_at: datetime
-
-    class Config:
-        from_attributes = True
-
 
 class QuotaConfigUpdate(BaseModel):
     """Schema for updating quota configuration."""
@@ -82,6 +88,8 @@ class QuotaConfigUpdate(BaseModel):
 class QuotaResponse(BaseModel):
     """Schema for quota response."""
 
+    model_config = ConfigDict(from_attributes=True)
+
     provider_name: str
     daily_limit: float | None
     monthly_limit: float | None
@@ -98,10 +106,6 @@ class QuotaResponse(BaseModel):
     daily_reset_at: datetime | None
     monthly_reset_at: datetime | None
 
-    class Config:
-        from_attributes = True
-
-
 class UsageStatsResponse(BaseModel):
     """Schema for usage statistics response."""
 
@@ -114,13 +118,118 @@ class UsageStatsResponse(BaseModel):
     success_rate: float
 
 
+class ProviderTestRequest(BaseModel):
+    """Schema for testing provider generation."""
+
+    prompt: str = Field(
+        default="Reply with a short confirmation that this provider is working.",
+        min_length=1,
+        max_length=2000,
+        description="Prompt to send to the provider",
+    )
+    model: str | None = Field(default=None, max_length=100, description="Model to test")
+    system: str | None = Field(default=None, max_length=1000, description="Optional system prompt")
+    temperature: float = Field(default=0.2, ge=0.0, le=2.0)
+    max_tokens: int | None = Field(default=128, ge=1, le=2048)
+    source_lang: str | None = Field(default=None, max_length=16)
+    target_lang: str | None = Field(default=None, max_length=16)
+
+
+class ProviderTestResponse(BaseModel):
+    """Schema for provider test generation results."""
+
+    provider: str
+    model: str | None
+    success: bool
+    response_text: str | None = None
+    error: str | None = None
+
+
+def _normalize_optional_string(value: str | None) -> str | None:
+    if value is None:
+        return None
+
+    trimmed = value.strip()
+    return trimmed or None
+
+
+def _build_provider_config(config_record: AIProviderConfig, provider_name: str) -> dict:
+    provider_config = {
+        "api_key": config_record.api_key,
+        "base_url": config_record.base_url,
+        "timeout": config_record.timeout,
+    }
+
+    if config_record.extra_config:
+        import json
+
+        try:
+            extra = json.loads(config_record.extra_config)
+            provider_config.update(extra)
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to parse extra_config for {provider_name}: {e}")
+
+    return provider_config
+
+
+def _get_provider_config_record(provider_name: str, db: Session) -> AIProviderConfig:
+    stmt = sa.select(AIProviderConfig).where(AIProviderConfig.provider_name == provider_name)
+    config_record = db.execute(stmt).scalar_one_or_none()
+
+    if not config_record:
+        raise HTTPException(status_code=404, detail=f"Provider '{provider_name}' not found")
+
+    return config_record
+
+
+def _get_runtime_provider(provider_name: str, config_record: AIProviderConfig):
+    provider_config = _build_provider_config(config_record, provider_name)
+    return provider_manager.get_provider(provider_name, config=provider_config, use_cache=False)
+
+
+def _get_test_model(provider_name: str, config_record: AIProviderConfig, requested_model: str | None) -> str | None:
+    model = requested_model.strip() if requested_model else None
+    if model:
+        return model
+
+    default_model = config_record.default_model.strip() if config_record.default_model else None
+    if default_model:
+        return default_model
+
+    return PROVIDER_DEFAULT_MODELS.get(provider_name)
+
+
+def _ensure_model_lifecycle_supported(provider_name: str, provider) -> None:
+    if not provider.supports_model_pulling:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Provider '{provider_name}' does not support model pulling or deletion",
+        )
+
+
+def _update_provider_health_record(
+    db: Session,
+    provider_name: str,
+    *,
+    is_healthy: bool,
+    health_error: str | None,
+) -> datetime:
+    config_record = _get_provider_config_record(provider_name, db)
+    checked_at = datetime.now()
+    config_record.is_healthy = is_healthy
+    config_record.last_health_check = checked_at
+    config_record.health_error = health_error
+    db.commit()
+    return checked_at
+
+
 # =============================================================================
 # Provider Configuration Endpoints
 # =============================================================================
 
 
 @router.get("", response_model=list[ProviderConfigResponse])
-async def list_providers(
+def list_providers(
     enabled_only: bool = Query(default=False, description="Only return enabled providers"),
     db: Session = Depends(get_db),
 ):
@@ -135,13 +244,17 @@ async def list_providers(
     providers = db.execute(stmt).scalars().all()
     # Convert UUID id to string for response
     return [
-        ProviderConfigResponse(id=str(p.id), **{k: v for k, v in p.__dict__.items() if k != "id"})
+        ProviderConfigResponse(
+            id=str(p.id),
+            has_api_key=bool(p.api_key),
+            **{k: v for k, v in p.__dict__.items() if k not in {"id", "api_key"}},
+        )
         for p in providers
     ]
 
 
 @router.get("/{provider_name}", response_model=ProviderConfigResponse)
-async def get_provider(
+def get_provider(
     provider_name: str,
     db: Session = Depends(get_db),
 ):
@@ -153,16 +266,36 @@ async def get_provider(
         raise HTTPException(status_code=404, detail=f"Provider '{provider_name}' not found")
 
     return ProviderConfigResponse(
-        id=str(provider.id), **{k: v for k, v in provider.__dict__.items() if k != "id"}
+        id=str(provider.id),
+        has_api_key=bool(provider.api_key),
+        **{k: v for k, v in provider.__dict__.items() if k not in {"id", "api_key"}},
     )
 
 
 @router.post("", response_model=ProviderConfigResponse)
-async def create_or_update_provider(
+def create_or_update_provider(
     config: ProviderConfigCreate,
     db: Session = Depends(get_db),
 ):
     """Create or update a provider configuration."""
+
+    config_data = config.model_dump(exclude_unset=True)
+    if "api_key" in config_data:
+        normalized_api_key = _normalize_optional_string(config_data.get("api_key"))
+        if normalized_api_key is None:
+            del config_data["api_key"]
+        else:
+            config_data["api_key"] = normalized_api_key
+
+    if "base_url" in config_data:
+        config_data["base_url"] = _normalize_optional_string(config_data.get("base_url"))
+
+    if "default_model" in config_data:
+        config_data["default_model"] = _normalize_optional_string(config_data.get("default_model"))
+
+    default_model = config_data.get("default_model")
+    if (default_model is None or not str(default_model).strip()) and config.provider_name in PROVIDER_DEFAULT_MODELS:
+        config_data["default_model"] = PROVIDER_DEFAULT_MODELS[config.provider_name]
 
     # Check if provider name is valid
     available_providers = AIProviderFactory.get_available_providers()
@@ -179,7 +312,7 @@ async def create_or_update_provider(
 
     if existing:
         # Update existing
-        for field, value in config.model_dump(exclude_unset=True).items():
+        for field, value in config_data.items():
             if field == "extra_config" and value is not None:
                 import json
 
@@ -189,30 +322,35 @@ async def create_or_update_provider(
 
         db.commit()
         db.refresh(existing)
+        provider_manager.clear_cache()
         logger.info(f"Updated provider config: {config.provider_name}")
         return ProviderConfigResponse(
-            id=str(existing.id), **{k: v for k, v in existing.__dict__.items() if k != "id"}
+            id=str(existing.id),
+            has_api_key=bool(existing.api_key),
+            **{k: v for k, v in existing.__dict__.items() if k not in {"id", "api_key"}},
         )
     else:
         # Create new
         import json
 
         provider_config = AIProviderConfig(
-            **config.model_dump(exclude={"extra_config"}),
-            extra_config=json.dumps(config.extra_config) if config.extra_config else None,
+            **{k: v for k, v in config_data.items() if k != "extra_config"},
+            extra_config=json.dumps(config_data.get("extra_config")) if config_data.get("extra_config") else None,
         )
         db.add(provider_config)
         db.commit()
         db.refresh(provider_config)
+        provider_manager.clear_cache()
         logger.info(f"Created provider config: {config.provider_name}")
         return ProviderConfigResponse(
             id=str(provider_config.id),
-            **{k: v for k, v in provider_config.__dict__.items() if k != "id"},
+            has_api_key=bool(provider_config.api_key),
+            **{k: v for k, v in provider_config.__dict__.items() if k not in {"id", "api_key"}},
         )
 
 
 @router.delete("/{provider_name}")
-async def delete_provider(
+def delete_provider(
     provider_name: str,
     db: Session = Depends(get_db),
 ):
@@ -225,6 +363,7 @@ async def delete_provider(
 
     db.delete(provider)
     db.commit()
+    provider_manager.clear_cache()
     logger.info(f"Deleted provider config: {provider_name}")
 
     return {"message": f"Provider '{provider_name}' deleted successfully"}
@@ -237,61 +376,92 @@ async def check_provider_health(
 ):
     """Check provider health and update status."""
 
-    # Get provider config
-    stmt = sa.select(AIProviderConfig).where(AIProviderConfig.provider_name == provider_name)
-    config_record = db.execute(stmt).scalar_one_or_none()
-
-    if not config_record:
-        raise HTTPException(status_code=404, detail=f"Provider '{provider_name}' not found")
+    config_record = await run_in_threadpool(_get_provider_config_record, provider_name, db)
 
     try:
-        # Get provider instance
-        import json
-
-        provider_config = {
-            "api_key": config_record.api_key,
-            "base_url": config_record.base_url,
-            "timeout": config_record.timeout,
-        }
-
-        if config_record.extra_config:
-            try:
-                extra = json.loads(config_record.extra_config)
-                provider_config.update(extra)
-            except json.JSONDecodeError as e:
-                logger.warning(f"Failed to parse extra_config for {provider_name}: {e}")
-
-        provider = provider_manager.get_provider(
-            provider_name,
-            config=provider_config,
-            use_cache=False,  # Don't use cache for health check
-        )
+        provider = _get_runtime_provider(provider_name, config_record)
 
         # Perform health check
         is_healthy = await provider.health_check()
 
-        # Update database
-        config_record.is_healthy = is_healthy
-        config_record.last_health_check = datetime.now()
-        config_record.health_error = None if is_healthy else "Health check failed"
-
-        db.commit()
+        checked_at = await run_in_threadpool(
+            _update_provider_health_record,
+            db,
+            provider_name,
+            is_healthy=is_healthy,
+            health_error=None if is_healthy else "Health check failed",
+        )
 
         return {
             "provider": provider_name,
             "is_healthy": is_healthy,
-            "checked_at": config_record.last_health_check,
+            "checked_at": checked_at,
         }
 
     except Exception as e:
-        # Update error status
-        config_record.is_healthy = False
-        config_record.last_health_check = datetime.now()
-        config_record.health_error = str(e)[:500]
-        db.commit()
+        await run_in_threadpool(
+            _update_provider_health_record,
+            db,
+            provider_name,
+            is_healthy=False,
+            health_error=str(e)[:500],
+        )
 
         logger.error(f"Health check failed for {provider_name}: {e}")
         raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")
+
+
+@router.post("/{provider_name}/test", response_model=ProviderTestResponse)
+async def test_provider_generation(
+    provider_name: str,
+    request: ProviderTestRequest,
+    db: Session = Depends(get_db),
+):
+    """Send a small prompt through a configured provider and return the result."""
+
+    config_record = await run_in_threadpool(_get_provider_config_record, provider_name, db)
+    model = _get_test_model(provider_name, config_record, request.model)
+    if not model:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Provider '{provider_name}' has no default model. Select a model before testing.",
+        )
+
+    prompt = request.prompt.strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Test prompt cannot be empty")
+
+    try:
+        provider = _get_runtime_provider(provider_name, config_record)
+        generate_kwargs = {}
+        if provider_name == "deeplx":
+            generate_kwargs["target_lang"] = request.target_lang or "EN"
+            if request.source_lang:
+                generate_kwargs["source_lang"] = request.source_lang
+
+        response = await provider.generate(
+            model=model,
+            prompt=prompt,
+            system=request.system,
+            temperature=request.temperature,
+            max_tokens=request.max_tokens,
+            **generate_kwargs,
+        )
+
+        return ProviderTestResponse(
+            provider=provider_name,
+            model=getattr(response, "model", model),
+            success=True,
+            response_text=response.text if hasattr(response, "text") else str(response),
+        )
+    except Exception as e:
+        logger.error(f"Provider test failed for {provider_name}: {e}", exc_info=True)
+        return ProviderTestResponse(
+            provider=provider_name,
+            model=model,
+            success=False,
+            error=str(e),
+        )
 
 
 @router.get("/{provider_name}/models")
@@ -301,33 +471,10 @@ async def list_provider_models(
 ):
     """List available models for a provider."""
 
-    # Get provider config
-    stmt = sa.select(AIProviderConfig).where(AIProviderConfig.provider_name == provider_name)
-    config_record = db.execute(stmt).scalar_one_or_none()
-
-    if not config_record:
-        raise HTTPException(status_code=404, detail=f"Provider '{provider_name}' not found")
+    config_record = await run_in_threadpool(_get_provider_config_record, provider_name, db)
 
     try:
-        # Get provider instance
-        import json
-
-        provider_config = {
-            "api_key": config_record.api_key,
-            "base_url": config_record.base_url,
-            "timeout": config_record.timeout,
-        }
-
-        if config_record.extra_config:
-            try:
-                extra = json.loads(config_record.extra_config)
-                provider_config.update(extra)
-            except json.JSONDecodeError as e:
-                logger.warning(f"Failed to parse extra_config for {provider_name}: {e}")
-
-        provider = provider_manager.get_provider(
-            provider_name, config=provider_config, use_cache=False
-        )
+        provider = _get_runtime_provider(provider_name, config_record)
 
         # List models
         models = await provider.list_models()
@@ -354,13 +501,73 @@ async def list_provider_models(
         raise HTTPException(status_code=500, detail=f"Failed to list models: {str(e)}")
 
 
+@router.post("/{provider_name}/models/pull")
+async def pull_provider_model(
+    provider_name: str,
+    request: ModelPullRequest,
+    db: Session = Depends(get_db),
+):
+    """Pull a model for a provider that supports runtime model lifecycle operations."""
+
+    config_record = await run_in_threadpool(_get_provider_config_record, provider_name, db)
+
+    try:
+        provider = _get_runtime_provider(provider_name, config_record)
+        _ensure_model_lifecycle_supported(provider_name, provider)
+        await provider.pull_model(request.name)
+
+        return {
+            "provider": provider_name,
+            "model": request.name,
+            "status": "pulled",
+            "message": f"Model '{request.name}' pulled successfully for provider '{provider_name}'",
+        }
+    except HTTPException:
+        raise
+    except NotImplementedError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.error(f"Failed to pull model {request.name} for {provider_name}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to pull model: {str(e)}")
+
+
+@router.delete("/{provider_name}/models/{model_name}")
+async def delete_provider_model(
+    provider_name: str,
+    model_name: str,
+    db: Session = Depends(get_db),
+):
+    """Delete a model for a provider that supports runtime model lifecycle operations."""
+
+    config_record = await run_in_threadpool(_get_provider_config_record, provider_name, db)
+
+    try:
+        provider = _get_runtime_provider(provider_name, config_record)
+        _ensure_model_lifecycle_supported(provider_name, provider)
+        await provider.delete_model(model_name)
+
+        return {
+            "provider": provider_name,
+            "model": model_name,
+            "status": "deleted",
+            "message": f"Model '{model_name}' deleted successfully for provider '{provider_name}'",
+        }
+    except HTTPException:
+        raise
+    except NotImplementedError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.error(f"Failed to delete model {model_name} for {provider_name}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to delete model: {str(e)}")
+
+
 # =============================================================================
 # Quota Management Endpoints
 # =============================================================================
 
 
 @router.get("/{provider_name}/quota", response_model=QuotaResponse)
-async def get_provider_quota(
+def get_provider_quota(
     provider_name: str,
     db: Session = Depends(get_db),
 ):
@@ -391,7 +598,7 @@ async def get_provider_quota(
 
 
 @router.put("/{provider_name}/quota")
-async def update_provider_quota(
+def update_provider_quota(
     provider_name: str,
     quota_update: QuotaConfigUpdate,
     db: Session = Depends(get_db),
@@ -432,9 +639,9 @@ async def update_provider_quota(
 
 
 @router.post("/{provider_name}/quota/reset")
-async def reset_provider_quota(
+def reset_provider_quota(
     provider_name: str,
-    period: str = Query(..., regex="^(daily|monthly|both)$"),
+    period: str = Query(..., pattern="^(daily|monthly|both)$"),
     db: Session = Depends(get_db),
 ):
     """Manually reset quota counters."""
@@ -469,7 +676,7 @@ async def reset_provider_quota(
 
 
 @router.get("/{provider_name}/usage-stats", response_model=list[UsageStatsResponse])
-async def get_usage_stats(
+def get_usage_stats(
     provider_name: str | None = None,
     days: int = Query(default=7, ge=1, le=90, description="Number of days to look back"),
     db: Session = Depends(get_db),
@@ -488,7 +695,7 @@ async def get_usage_stats(
 
 
 @router.get("/{provider_name}/usage-logs")
-async def get_usage_logs(
+def get_usage_logs(
     provider_name: str,
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
@@ -549,7 +756,7 @@ async def get_usage_logs(
 
 
 @router.get("/usage-report/summary")
-async def get_usage_summary(
+def get_usage_summary(
     days: int = Query(default=30, ge=1, le=365),
     db: Session = Depends(get_db),
 ):

@@ -4,13 +4,14 @@ AI Provider Initialization Service.
 Automatically initializes AI provider configurations from environment variables.
 """
 
-from datetime import timezone
+from datetime import UTC, datetime
 
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.models.ai_model_config import AIModelConfig
 from app.models.ai_provider_config import AIProviderConfig
 from app.models.ai_provider_usage import AIProviderQuota
 
@@ -68,6 +69,18 @@ def init_ai_providers(session: Session) -> None:
             "quota": {"daily_limit": 5.0, "monthly_limit": 50.0},
         },
         {
+            "provider_name": "deeplx",
+            "display_name": "DeepLX",
+            "is_enabled": bool(settings.deeplx_base_url),
+            "api_key": settings.deeplx_api_key,
+            "base_url": settings.deeplx_base_url or "http://localhost:1188",
+            "timeout": 300,
+            "default_model": "translate",
+            "priority": 4,
+            "description": "DeepLX translation service - DeepL-compatible self-hosted translator",
+            "quota": None,
+        },
+        {
             "provider_name": "claude",
             "display_name": "Claude (Anthropic)",
             "is_enabled": bool(settings.claude_api_key),
@@ -75,7 +88,7 @@ def init_ai_providers(session: Session) -> None:
             "base_url": "https://api.anthropic.com/v1",
             "timeout": 300,
             "default_model": "claude-3-5-sonnet-20241022",
-            "priority": 4,
+            "priority": 5,
             "description": "Anthropic Claude models (Opus, Sonnet, Haiku)",
             "quota": {"daily_limit": 20.0, "monthly_limit": 200.0},
         },
@@ -87,7 +100,7 @@ def init_ai_providers(session: Session) -> None:
             "base_url": "https://generativelanguage.googleapis.com/v1beta",
             "timeout": 300,
             "default_model": "gemini-pro",
-            "priority": 5,
+            "priority": 6,
             "description": "Google Gemini models",
             "quota": {"daily_limit": 10.0, "monthly_limit": 100.0},
         },
@@ -99,7 +112,7 @@ def init_ai_providers(session: Session) -> None:
             "base_url": "https://open.bigmodel.cn/api/paas/v4",
             "timeout": 300,
             "default_model": "glm-4",
-            "priority": 6,
+            "priority": 7,
             "description": "智谱AI GLM models - Chinese-optimized",
             "quota": {"daily_limit": 5.0, "monthly_limit": 50.0},
         },
@@ -111,7 +124,7 @@ def init_ai_providers(session: Session) -> None:
             "base_url": "https://api.moonshot.cn/v1",
             "timeout": 300,
             "default_model": "moonshot-v1-32k",
-            "priority": 7,
+            "priority": 8,
             "description": "Moonshot Kimi models - Super long context",
             "quota": {"daily_limit": 10.0, "monthly_limit": 100.0},
         },
@@ -123,7 +136,7 @@ def init_ai_providers(session: Session) -> None:
             "base_url": settings.custom_openai_base_url,
             "timeout": 300,
             "default_model": None,
-            "priority": 8,
+            "priority": 9,
             "description": "Custom OpenAI-compatible endpoint (OpenRouter, LocalAI, vLLM, etc.)",
             "quota": {"daily_limit": 10.0, "monthly_limit": 100.0},
         },
@@ -188,6 +201,9 @@ def init_ai_providers(session: Session) -> None:
         if provider_data["quota"] and provider_name != "ollama":
             _init_provider_quota(session, provider_name, provider_data["quota"])
 
+        if provider_name == "deeplx":
+            _ensure_deeplx_model(session)
+
     session.commit()
 
     logger.info(
@@ -209,8 +225,6 @@ def _init_provider_quota(
         provider_name: Provider name
         quota_config: Quota configuration dict
     """
-    from datetime import datetime
-
     # Check if quota exists
     stmt = sa.select(AIProviderQuota).where(AIProviderQuota.provider_name == provider_name)
     existing_quota = session.execute(stmt).scalar_one_or_none()
@@ -225,8 +239,8 @@ def _init_provider_quota(
             monthly_token_limit=quota_config.get("monthly_token_limit"),
             alert_threshold_percent=80,
             auto_disable_on_limit=True,
-            daily_reset_at=datetime.now(timezone.utc),
-            monthly_reset_at=datetime.now(timezone.utc),
+            daily_reset_at=datetime.now(UTC),
+            monthly_reset_at=datetime.now(UTC),
         )
         session.add(quota)
         logger.info(
@@ -234,3 +248,41 @@ def _init_provider_quota(
             f"${quota_config.get('daily_limit')}/day, "
             f"${quota_config.get('monthly_limit')}/month"
         )
+
+
+def _ensure_deeplx_model(session: Session) -> None:
+    stmt = sa.select(AIModelConfig).where(
+        AIModelConfig.provider_name == "deeplx",
+        AIModelConfig.model_name == "translate",
+    )
+    existing = session.execute(stmt).scalar_one_or_none()
+
+    if existing:
+        existing.display_name = "DeepLX Translate"
+        existing.is_enabled = True
+        existing.model_type = "translation"
+        existing.input_price = 0.0
+        existing.output_price = 0.0
+        existing.description = "Built-in DeepLX translation endpoint"
+        existing.tags = '["builtin", "translation"]'
+        existing.is_default = True
+        existing.is_available = True
+        existing.priority = max(existing.priority, 100)
+        return
+
+    session.add(
+        AIModelConfig(
+            provider_name="deeplx",
+            model_name="translate",
+            display_name="DeepLX Translate",
+            is_enabled=True,
+            model_type="translation",
+            input_price=0.0,
+            output_price=0.0,
+            description="Built-in DeepLX translation endpoint",
+            tags='["builtin", "translation"]',
+            is_default=True,
+            priority=100,
+            is_available=True,
+        )
+    )

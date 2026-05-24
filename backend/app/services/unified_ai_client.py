@@ -4,13 +4,15 @@ Unified AI Client Service.
 Provides a single interface for all AI operations, abstracting provider selection.
 """
 
+import asyncio
 import json
 import time
-from datetime import timezone
+from datetime import UTC
 
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.models.ai_provider_config import AIProviderConfig
 from app.models.model_registry import ModelRegistry
@@ -19,6 +21,23 @@ from app.services.ai_providers.factory import provider_manager
 from app.services.ai_quota_service import AIQuotaService, QuotaExceededException
 
 logger = get_logger(__name__)
+
+NO_QUOTA_PROVIDERS = {"ollama", "deeplx"}
+_provider_limiters: dict[str, asyncio.Semaphore] = {}
+_provider_limiter_sizes: dict[str, int] = {}
+
+
+def _get_provider_limiter(provider_name: str) -> asyncio.Semaphore:
+    limit = max(1, settings.ai_provider_max_concurrency)
+    current_limiter = _provider_limiters.get(provider_name)
+    current_limit = _provider_limiter_sizes.get(provider_name)
+
+    if current_limiter is None or current_limit != limit:
+        current_limiter = asyncio.Semaphore(limit)
+        _provider_limiters[provider_name] = current_limiter
+        _provider_limiter_sizes[provider_name] = limit
+
+    return current_limiter
 
 
 class UnifiedAIClient:
@@ -159,6 +178,9 @@ class UnifiedAIClient:
         if model_record:
             return model_record.provider
 
+        if model_name.lower() == "translate":
+            return "deeplx"
+
         # Fallback: try to guess based on model name patterns
         if model_name.startswith("gpt-") or model_name.startswith("o1-"):
             return "openai"
@@ -217,7 +239,7 @@ class UnifiedAIClient:
             provider_instance, model_name = self.get_provider_from_model(model)
 
         # Check quota before making request (for cloud providers only)
-        if self.quota_service and provider_instance.provider_name != "ollama":
+        if self.quota_service and provider_instance.provider_name not in NO_QUOTA_PROVIDERS:
             try:
                 self.quota_service.check_quota(provider_instance.provider_name)
             except QuotaExceededException as e:
@@ -240,23 +262,26 @@ class UnifiedAIClient:
             f"(temp={temperature}, max_tokens={max_tokens})"
         )
 
+        limiter = _get_provider_limiter(provider_instance.provider_name)
+
         # Track response time
         start_time = time.time()
 
         try:
-            response = await provider_instance.generate(
-                model=model_name,
-                prompt=prompt,
-                system=system,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                **kwargs,
-            )
+            async with limiter:
+                response = await provider_instance.generate(
+                    model=model_name,
+                    prompt=prompt,
+                    system=system,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    **kwargs,
+                )
 
             response_time_ms = int((time.time() - start_time) * 1000)
 
             # Log usage for cloud providers
-            if self.quota_service and provider_instance.provider_name != "ollama":
+            if self.quota_service and provider_instance.provider_name not in NO_QUOTA_PROVIDERS:
                 try:
                     self.quota_service.log_usage(
                         provider_name=provider_instance.provider_name,
@@ -288,7 +313,7 @@ class UnifiedAIClient:
             )
 
             # Log the error if quota service is available
-            if self.quota_service and provider_instance.provider_name != "ollama":
+            if self.quota_service and provider_instance.provider_name not in NO_QUOTA_PROVIDERS:
                 try:
                     self.quota_service.log_error(
                         provider_name=provider_instance.provider_name,
@@ -320,7 +345,7 @@ class UnifiedAIClient:
 
             if model_record:
                 model_record.usage_count += 1
-                model_record.last_used = datetime.now(timezone.utc)
+                model_record.last_used = datetime.now(UTC)
                 self.session.commit()
 
         except Exception as e:
