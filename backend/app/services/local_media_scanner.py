@@ -64,10 +64,12 @@ class LocalMediaScanner:
     }
 
     # Supported subtitle extensions
-    SUBTITLE_EXTENSIONS = {".srt", ".ass", ".ssa", ".vtt", ".sub", ".idx"}
+    SUBTITLE_EXTENSIONS = {".srt", ".ass", ".ssa", ".vtt", ".sup", ".sub", ".idx"}
 
     # Language code patterns in filenames (e.g., .zh-CN.srt, .en.srt)
-    LANG_PATTERN = re.compile(r"\.([a-z]{2}(-[A-Z]{2})?)\.(srt|ass|ssa|vtt|sub)$", re.IGNORECASE)
+    LANG_PATTERN = re.compile(
+        r"\.([a-z]{2}(-[A-Z]{2})?)\.(srt|ass|ssa|vtt|sup|sub)$", re.IGNORECASE
+    )
 
     def __init__(self):
         """Initialize the local media scanner."""
@@ -107,10 +109,12 @@ class LocalMediaScanner:
         else:
             video_files = self._scan_single_directory(directory_path)
 
+        subtitle_index = self._build_subtitle_index(video_files)
+
         # Analyze each video file
         for video_path in video_files:
             try:
-                media_file = self._analyze_media_file(video_path, required_langs)
+                media_file = self._analyze_media_file(video_path, required_langs, subtitle_index)
                 media_files.append(media_file)
             except Exception as e:
                 logger.warning(f"Failed to analyze {video_path}: {e}")
@@ -155,7 +159,12 @@ class LocalMediaScanner:
 
         return video_files
 
-    def _analyze_media_file(self, video_path: Path, required_langs: list[str]) -> MediaFile:
+    def _analyze_media_file(
+        self,
+        video_path: Path,
+        required_langs: list[str],
+        subtitle_index: dict[Path, list[Path]] | None = None,
+    ) -> MediaFile:
         """
         Analyze a media file and detect existing subtitles.
 
@@ -170,13 +179,14 @@ class LocalMediaScanner:
         file_stat = video_path.stat()
 
         # Find existing subtitle files
-        subtitle_langs, subtitle_files = self._find_subtitle_languages(video_path)
+        subtitle_langs, subtitle_files = self._find_subtitle_languages(video_path, subtitle_index)
 
-        # Detect audio languages via ffprobe (best-effort)
-        audio_langs = self._detect_audio_languages(video_path)
+        # Local media scan responses do not expose audio languages, so avoid a per-file ffprobe.
+        audio_langs: list[str] = []
 
         # Detect missing languages
-        missing_langs = [lang for lang in required_langs if lang not in subtitle_langs]
+        subtitle_langs_normalized = {lang.lower() for lang in subtitle_langs}
+        missing_langs = [lang for lang in required_langs if lang.lower() not in subtitle_langs_normalized]
 
         return MediaFile(
             path=str(video_path),
@@ -190,7 +200,9 @@ class LocalMediaScanner:
             subtitle_files=subtitle_files,
         )
 
-    def _find_subtitle_languages(self, video_path: Path) -> tuple[list[str], list[str]]:
+    def _find_subtitle_languages(
+        self, video_path: Path, subtitle_index: dict[Path, list[Path]] | None = None
+    ) -> tuple[list[str], list[str]]:
         """
         Find existing subtitle files for a video and extract language codes.
 
@@ -211,30 +223,86 @@ class LocalMediaScanner:
         video_stem = video_path.stem  # filename without extension
         video_dir = video_path.parent
 
+        subtitle_candidates = (
+            subtitle_index.get(video_dir, []) if subtitle_index is not None else video_dir.glob(f"{video_stem}*")
+        )
+
         # Check for subtitle files with same base name
-        for subtitle_path in video_dir.glob(f"{video_stem}*"):
-            if subtitle_path.suffix.lower() in self.SUBTITLE_EXTENSIONS:
-                subtitle_files.append(str(subtitle_path))
-                # Try to extract language code from filename
-                match = self.LANG_PATTERN.search(subtitle_path.name)
-                if match:
-                    lang_code = match.group(1)
-                    subtitle_langs.add(lang_code)
-                else:
-                    # Check for common abbreviations
-                    name_lower = subtitle_path.stem.lower()
-                    if "chs" in name_lower or "chi" in name_lower or "sc" in name_lower:
-                        subtitle_langs.add("zh-CN")
-                    elif "cht" in name_lower or "tc" in name_lower:
-                        subtitle_langs.add("zh-TW")
-                    elif "eng" in name_lower or name_lower.endswith(".en"):
-                        subtitle_langs.add("en")
-                    elif "jpn" in name_lower or "jap" in name_lower or name_lower.endswith(".ja"):
-                        subtitle_langs.add("ja")
-                    elif "kor" in name_lower or name_lower.endswith(".ko"):
-                        subtitle_langs.add("ko")
+        for subtitle_path in subtitle_candidates:
+            if not subtitle_path.name.lower().startswith(video_stem.lower()):
+                continue
+            if subtitle_path.suffix.lower() not in self.SUBTITLE_EXTENSIONS:
+                continue
+
+            subtitle_files.append(str(subtitle_path))
+            lang_code = self._extract_subtitle_language(subtitle_path)
+            if lang_code:
+                subtitle_langs.add(lang_code)
 
         return sorted(subtitle_langs), subtitle_files
+
+    def _build_subtitle_index(self, video_files: list[Path]) -> dict[Path, list[Path]]:
+        """Index subtitle sidecars once per directory for a scan."""
+        index: dict[Path, list[Path]] = {}
+        for directory in {video_path.parent for video_path in video_files}:
+            try:
+                index[directory] = [
+                    item
+                    for item in directory.iterdir()
+                    if item.is_file() and item.suffix.lower() in self.SUBTITLE_EXTENSIONS
+                ]
+            except PermissionError as e:
+                logger.warning(f"Permission denied accessing subtitles in {directory}: {e}")
+                index[directory] = []
+        return index
+
+    def _extract_subtitle_language(self, subtitle_path: Path) -> str | None:
+        """Extract a language code from a subtitle sidecar filename."""
+        match = self.LANG_PATTERN.search(subtitle_path.name)
+        if match:
+            return match.group(1)
+
+        name_lower = subtitle_path.stem.lower()
+        if "chs" in name_lower or "chi" in name_lower or "sc" in name_lower:
+            return "zh-CN"
+        if "cht" in name_lower or "tc" in name_lower:
+            return "zh-TW"
+        if "eng" in name_lower or name_lower.endswith(".en"):
+            return "en"
+        if "jpn" in name_lower or "jap" in name_lower or name_lower.endswith(".ja"):
+            return "ja"
+        if "kor" in name_lower or name_lower.endswith(".ko"):
+            return "ko"
+
+        return None
+
+    def find_best_subtitle_file(self, video_path: Path, source_lang: str | None = None) -> str | None:
+        """Find the best matching subtitle sidecar for a media file."""
+        _langs, subtitle_files = self._find_subtitle_languages(video_path)
+        if not subtitle_files:
+            return None
+
+        preferred_extensions = [".srt", ".ass", ".ssa", ".vtt", ".sup", ".sub", ".idx"]
+        normalized_source_lang = (source_lang or "").lower()
+
+        def score(candidate: str) -> tuple[int, int]:
+            path = Path(candidate)
+            name = path.name.lower()
+            lang_match = 0
+            if normalized_source_lang:
+                if normalized_source_lang in name:
+                    lang_match = 2
+                elif normalized_source_lang.split("-")[0] in name:
+                    lang_match = 1
+
+            try:
+                ext_rank = preferred_extensions.index(path.suffix.lower())
+            except ValueError:
+                ext_rank = len(preferred_extensions)
+
+            return (lang_match, -ext_rank)
+
+        return max(subtitle_files, key=score)
 
     def _detect_audio_languages(self, video_path: Path) -> list[str]:
         """Detect audio languages using ffprobe (best-effort, non-fatal)."""
