@@ -1,22 +1,38 @@
 import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { Save, FolderOpen, Plus, X } from 'lucide-react'
+import { Save, FolderOpen, Plus, X, Bot, ArrowRight, CheckCircle2, AlertCircle, RefreshCw, Clock3, Link2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
+import { Checkbox } from '../components/ui/Checkbox'
 import { Input } from '../components/ui/Input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/Select'
 import api from '../lib/api'
 import type { AppSettings } from '../types/api'
 import { useTranslation } from 'react-i18next'
+import { aiProviderApi } from '../api/aiProviders'
+import * as aiModelsApi from '../api/aiModels'
+import { useNavigate } from 'react-router-dom'
+import { PageHero } from '../components/ui/PageHero'
 
 export function Settings() {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const [newPath, setNewPath] = useState('')
   
   // Fetch settings
   const { data: settings, isLoading, refetch } = useQuery<AppSettings>({
     queryKey: ['settings'],
     queryFn: () => api.getSettings(),
+  })
+
+  const { data: providers } = useQuery({
+    queryKey: ['ai-providers'],
+    queryFn: () => aiProviderApi.listProviders(false),
+  })
+
+  const { data: availableModels } = useQuery({
+    queryKey: ['ai-models', 'settings-default-mt'],
+    queryFn: () => aiModelsApi.listModels({ enabled_only: true, page: 1, page_size: 100 }),
   })
 
   // Update settings mutation
@@ -29,9 +45,30 @@ export function Settings() {
     return <div className="text-muted-foreground">{t('settings.loading')}</div>
   }
 
+  const defaultMtModel = settings?.default_mt_model || ''
+  const defaultMtModels = availableModels?.models ?? []
+  const hasDefaultMtModel = defaultMtModels.some((model) => model.model_name === defaultMtModel)
+
   return (
-    <div className="max-w-4xl space-y-4 sm:space-y-6">
-      <Card>
+    <div className="max-w-6xl space-y-4 sm:space-y-6 lg:space-y-8">
+      <PageHero
+        eyebrow={t('pageHero.settings.eyebrow')}
+        title={t('settings.settings', 'Settings')}
+        description={t('pageHero.settings.description')}
+        actions={
+          <Button onClick={() => refetch()} disabled={updateMutation.isPending}>
+            <Save className="mr-2 h-4 w-4" />
+            {updateMutation.isPending ? t('settings.saving') : t('settings.refresh')}
+          </Button>
+        }
+        metrics={[
+          { label: t('pageHero.settings.metrics.providers.label'), value: String(providers?.length ?? 0), detail: t('pageHero.settings.metrics.providers.detail') },
+          { label: t('pageHero.settings.metrics.models.label'), value: String(defaultMtModels.length), detail: t('pageHero.settings.metrics.models.detail') },
+          { label: t('pageHero.settings.metrics.catalog.label'), value: settings?.ai_models_auto_sync_enabled ? t('common.enabled') : t('common.disabled'), detail: settings?.ai_models_last_catalog_sync_at ? new Date(settings.ai_models_last_catalog_sync_at).toLocaleDateString() : t('settings.neverSynced') },
+        ]}
+      />
+
+      <Card className="rounded-[30px]">
         <CardHeader>
           <CardTitle>{t('settings.jellyfinIntegration')}</CardTitle>
           <CardDescription>{t('settings.jellyfinDesc')}</CardDescription>
@@ -94,7 +131,7 @@ export function Settings() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="rounded-[30px]">
         <CardHeader>
           <CardTitle>{t('settings.ollamaConfig')}</CardTitle>
           <CardDescription>{t('settings.ollamaConfigDesc')}</CardDescription>
@@ -140,7 +177,247 @@ export function Settings() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="rounded-[30px]">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Bot className="h-5 w-5" />
+            {t('settings.aiProviders')}
+          </CardTitle>
+          <CardDescription>
+            {t('settings.aiProvidersDesc')}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="rounded-[22px] border border-border/70 bg-muted/30 p-3">
+              <p className="text-xs text-muted-foreground">{t('settings.providersTotal')}</p>
+              <p className="text-lg font-semibold">{providers?.length ?? 0}</p>
+            </div>
+            <div className="rounded-[22px] border border-border/70 bg-muted/30 p-3">
+              <p className="text-xs text-muted-foreground">{t('settings.providersConfigured')}</p>
+              <p className="text-lg font-semibold">{providers?.filter((p) => p.has_api_key).length ?? 0}</p>
+            </div>
+            <div className="rounded-[22px] border border-border/70 bg-muted/30 p-3">
+              <p className="text-xs text-muted-foreground">{t('settings.providersEnabled')}</p>
+              <p className="text-lg font-semibold">{providers?.filter((p) => p.is_enabled).length ?? 0}</p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {(providers ?? []).slice(0, 4).map((provider) => (
+              <div
+                key={provider.id}
+                className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs"
+              >
+                {provider.is_enabled ? (
+                  <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                ) : (
+                  <AlertCircle className="h-3.5 w-3.5 text-muted-foreground" />
+                )}
+                <span>{provider.display_name}</span>
+                <span className="text-muted-foreground">{provider.has_api_key ? t('settings.apiKeySet') : t('settings.apiKeyMissing')}</span>
+              </div>
+            ))}
+          </div>
+
+          <Button onClick={() => navigate('/ai-providers')}>
+            <ArrowRight className="mr-2 h-4 w-4" />
+            {t('settings.openAiProviders')}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-[30px]">
+        <CardHeader>
+          <CardTitle>{t('settings.automation')}</CardTitle>
+          <CardDescription>
+            {t('settings.automationDesc')}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {[
+              {
+                key: 'enable_auto_scan' as const,
+                title: t('settings.enableAutoScan'),
+                desc: t('settings.enableAutoScanDesc'),
+              },
+              {
+                key: 'enable_auto_pull_models' as const,
+                title: t('settings.enableAutoPullModels'),
+                desc: t('settings.enableAutoPullModelsDesc'),
+              },
+              {
+                key: 'enable_sidecar_writeback' as const,
+                title: t('settings.enableSidecarWriteback'),
+                desc: t('settings.enableSidecarWritebackDesc'),
+              },
+              {
+                key: 'enable_metrics' as const,
+                title: t('settings.enableMetrics'),
+                desc: t('settings.enableMetricsDesc'),
+              },
+            ].map((item) => (
+              <label key={item.key} className="flex cursor-pointer items-start gap-3 rounded-[22px] border border-border/70 p-4 transition-colors hover:bg-muted/30">
+                <Checkbox
+                  checked={settings?.[item.key] ?? false}
+                  onCheckedChange={(checked) => updateMutation.mutate({ [item.key]: !!checked } as Partial<AppSettings>)}
+                  className="mt-0.5"
+                />
+                <div className="space-y-1">
+                  <p className="text-sm font-medium leading-none">{item.title}</p>
+                  <p className="text-xs text-muted-foreground">{item.desc}</p>
+                </div>
+              </label>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 border-t pt-4">
+            <div>
+              <label className="text-xs sm:text-sm font-medium mb-2 block">{t('settings.writebackMode')}</label>
+              <Select
+                defaultValue={settings?.writeback_mode}
+                onValueChange={(value) => updateMutation.mutate({ writeback_mode: value as 'upload' | 'sidecar' })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="upload">{t('settings.uploadMode')}</SelectItem>
+                  <SelectItem value="sidecar">{t('settings.sidecarMode')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="text-xs sm:text-sm font-medium mb-2 block">{t('settings.defaultFormat')}</label>
+              <Select
+                defaultValue={settings?.default_subtitle_format}
+                onValueChange={(value) =>
+                  updateMutation.mutate({ default_subtitle_format: value as 'srt' | 'ass' | 'vtt' })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="srt">SRT</SelectItem>
+                  <SelectItem value="ass">ASS</SelectItem>
+                  <SelectItem value="vtt">VTT</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="text-xs sm:text-sm font-medium mb-2 block">{t('settings.translationBatchSize')}</label>
+              <Input
+                type="number"
+                defaultValue={settings?.translation_batch_size}
+                onBlur={(e) => updateMutation.mutate({ translation_batch_size: parseInt(e.target.value) })}
+                placeholder="10"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs sm:text-sm font-medium mb-2 block">{t('settings.translationLineConcurrency')}</label>
+              <Input
+                type="number"
+                defaultValue={settings?.translation_line_concurrency}
+                onBlur={(e) => updateMutation.mutate({ translation_line_concurrency: parseInt(e.target.value, 10) })}
+                placeholder="3"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs sm:text-sm font-medium mb-2 block">{t('settings.aiProviderMaxConcurrency')}</label>
+              <Input
+                type="number"
+                defaultValue={settings?.ai_provider_max_concurrency}
+                onBlur={(e) => updateMutation.mutate({ ai_provider_max_concurrency: parseInt(e.target.value, 10) })}
+                placeholder="6"
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-[30px]">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <RefreshCw className="h-5 w-5" />
+            {t('settings.aiModelCatalog')}
+          </CardTitle>
+          <CardDescription>{t('settings.aiModelCatalogDesc')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="rounded-[22px] border border-border/70 bg-muted/30 p-3">
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <RefreshCw className="h-3.5 w-3.5" />
+                {t('settings.autoSyncStatus')}
+              </p>
+              <p className="text-lg font-semibold">
+                {settings?.ai_models_auto_sync_enabled ? t('common.enabled') : t('common.disabled')}
+              </p>
+            </div>
+            <div className="rounded-[22px] border border-border/70 bg-muted/30 p-3">
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <Clock3 className="h-3.5 w-3.5" />
+                {t('settings.autoSyncInterval')}
+              </p>
+              <p className="text-lg font-semibold">{Math.round((settings?.ai_models_auto_sync_interval_seconds ?? 3600) / 60)} {t('common.minutes')}</p>
+            </div>
+            <div className="rounded-[22px] border border-border/70 bg-muted/30 p-3">
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <Link2 className="h-3.5 w-3.5" />
+                {t('settings.lastCatalogSync')}
+              </p>
+              <p className="text-sm font-medium break-all">
+                {settings?.ai_models_last_catalog_sync_at
+                  ? new Date(settings.ai_models_last_catalog_sync_at).toLocaleString()
+                  : t('settings.neverSynced')}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label className="flex cursor-pointer items-start gap-3 rounded-[22px] border border-border/70 p-4 transition-colors hover:bg-muted/30">
+              <Checkbox
+                checked={settings?.ai_models_auto_sync_enabled ?? false}
+                onCheckedChange={(checked) => updateMutation.mutate({ ai_models_auto_sync_enabled: !!checked })}
+                className="mt-0.5"
+              />
+              <div className="space-y-1">
+                <p className="text-sm font-medium leading-none">{t('settings.aiModelAutoSync')}</p>
+                <p className="text-xs text-muted-foreground">{t('settings.aiModelAutoSyncDesc')}</p>
+              </div>
+            </label>
+
+            <div className="space-y-2 rounded-[22px] border border-border/70 p-4">
+              <label className="text-xs sm:text-sm font-medium block">{t('settings.autoSyncIntervalSeconds')}</label>
+              <Input
+                type="number"
+                defaultValue={settings?.ai_models_auto_sync_interval_seconds}
+                onBlur={(e) => updateMutation.mutate({ ai_models_auto_sync_interval_seconds: parseInt(e.target.value, 10) })}
+                placeholder="3600"
+              />
+              <p className="text-xs text-muted-foreground">{t('settings.autoSyncIntervalDesc')}</p>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs sm:text-sm font-medium mb-2 block">{t('settings.catalogSourceUrl')}</label>
+            <Input
+              defaultValue={settings?.ai_models_catalog_url}
+              onBlur={(e) => updateMutation.mutate({ ai_models_catalog_url: e.target.value })}
+              placeholder="https://models.dev"
+            />
+            <p className="text-xs text-muted-foreground mt-1">{t('settings.catalogSourceUrlDesc')}</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-[30px]">
         <CardHeader>
           <CardTitle>{t('settings.translationSettings')}</CardTitle>
           <CardDescription>{t('settings.translationDesc')}</CardDescription>
@@ -148,43 +425,51 @@ export function Settings() {
         <CardContent className="space-y-3 sm:space-y-4">
           <div>
             <label className="text-xs sm:text-sm font-medium mb-2 block">{t('settings.defaultMtModel')}</label>
+            <Select
+              value={defaultMtModel}
+              onValueChange={(value) => updateMutation.mutate({ default_mt_model: value })}
+            >
+              <SelectTrigger>
+                  <SelectValue placeholder={t('common.select')} />
+              </SelectTrigger>
+              <SelectContent>
+                {defaultMtModel && !hasDefaultMtModel && (
+                  <SelectItem value={defaultMtModel}>{defaultMtModel}</SelectItem>
+                )}
+                {defaultMtModels.map((model) => (
+                  <SelectItem key={model.id} value={model.model_name}>
+                    {model.display_name || model.model_name} ({model.provider_name})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground mt-1">
+              {t('settings.selectDefaultMtModel')}
+            </p>
+          </div>
+
+          <div>
+            <label className="text-xs sm:text-sm font-medium mb-2 block">{t('settings.translationMaxLineLength')}</label>
             <Input
-              defaultValue={settings?.default_mt_model}
-              onBlur={(e) => updateMutation.mutate({ default_mt_model: e.target.value })}
+              type="number"
+              defaultValue={settings?.translation_max_line_length}
+              onBlur={(e) => updateMutation.mutate({ translation_max_line_length: parseInt(e.target.value) })}
+              placeholder="42"
             />
           </div>
 
           <div>
-            <label className="text-xs sm:text-sm font-medium mb-2 block">{t('settings.writebackMode')}</label>
+            <label className="text-xs sm:text-sm font-medium mb-2 block">{t('settings.translationPreserveFormatting')}</label>
             <Select
-              defaultValue={settings?.writeback_mode}
-              onValueChange={(value) => updateMutation.mutate({ writeback_mode: value as 'upload' | 'sidecar' })}
+              defaultValue={settings?.translation_preserve_formatting ? 'true' : 'false'}
+              onValueChange={(value) => updateMutation.mutate({ translation_preserve_formatting: value === 'true' })}
             >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="upload">{t('settings.uploadMode')}</SelectItem>
-                <SelectItem value="sidecar">{t('settings.sidecarMode')}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <label className="text-xs sm:text-sm font-medium mb-2 block">{t('settings.defaultFormat')}</label>
-            <Select
-              defaultValue={settings?.default_subtitle_format}
-              onValueChange={(value) =>
-                updateMutation.mutate({ default_subtitle_format: value as 'srt' | 'ass' | 'vtt' })
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="srt">SRT</SelectItem>
-                <SelectItem value="ass">ASS</SelectItem>
-                <SelectItem value="vtt">VTT</SelectItem>
+                <SelectItem value="true">{t('common.enabled')}</SelectItem>
+                <SelectItem value="false">{t('common.disabled')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -271,9 +556,9 @@ export function Settings() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="rounded-[30px]">
         <CardHeader>
-          <CardTitle>{t('settings.performance')}</CardTitle>
+          <CardTitle>{t('settings.processingLimits', 'Processing Limits')}</CardTitle>
           <CardDescription>{t('settings.performanceDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 sm:space-y-4">
@@ -303,11 +588,41 @@ export function Settings() {
               />
             </div>
           </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 border-t pt-4">
+            <div>
+              <label className="text-xs sm:text-sm font-medium mb-2 block">{t('settings.scanTaskTimeout')}</label>
+              <Input
+                type="number"
+                defaultValue={settings?.scan_task_timeout}
+                onBlur={(e) => updateMutation.mutate({ scan_task_timeout: parseInt(e.target.value) })}
+                placeholder="300"
+              />
+            </div>
+            <div>
+              <label className="text-xs sm:text-sm font-medium mb-2 block">{t('settings.translateTaskTimeout')}</label>
+              <Input
+                type="number"
+                defaultValue={settings?.translate_task_timeout}
+                onBlur={(e) => updateMutation.mutate({ translate_task_timeout: parseInt(e.target.value) })}
+                placeholder="1800"
+              />
+            </div>
+            <div>
+              <label className="text-xs sm:text-sm font-medium mb-2 block">{t('settings.asrTaskTimeout')}</label>
+              <Input
+                type="number"
+                defaultValue={settings?.asr_task_timeout}
+                onBlur={(e) => updateMutation.mutate({ asr_task_timeout: parseInt(e.target.value) })}
+                placeholder="3600"
+              />
+            </div>
+          </div>
         </CardContent>
       </Card>
 
       {/* Local Media Paths Management */}
-      <Card>
+      <Card className="rounded-[30px]">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
             <FolderOpen className="h-4 w-4 sm:h-5 sm:w-5" />
@@ -363,7 +678,7 @@ export function Settings() {
               settings.favorite_media_paths.map((path, index) => (
                 <div
                   key={index}
-                  className="flex items-center justify-between p-2 sm:p-3 bg-muted rounded-lg"
+                 className="flex items-center justify-between rounded-[18px] bg-muted/45 p-2 sm:p-3"
                 >
                   <div className="flex items-center gap-2 flex-1 min-w-0">
                     <FolderOpen className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground shrink-0" />
@@ -394,12 +709,6 @@ export function Settings() {
         </CardContent>
       </Card>
 
-      <div className="flex justify-end">
-        <Button onClick={() => refetch()} disabled={updateMutation.isPending}>
-          <Save className="mr-2 h-4 w-4" />
-          {updateMutation.isPending ? t('settings.saving') : t('settings.refresh')}
-        </Button>
-      </div>
     </div>
   )
 }

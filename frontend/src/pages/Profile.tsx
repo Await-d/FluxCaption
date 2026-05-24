@@ -9,6 +9,7 @@ import { Alert } from '../components/ui/Alert'
 import authApi from '../lib/authApi'
 import { useAuthStore } from '../stores/authStore'
 import { useNavigate } from 'react-router-dom'
+import { PageHero } from '../components/ui/PageHero'
 
 export function Profile() {
   const { t, i18n } = useTranslation()
@@ -122,16 +123,20 @@ export function Profile() {
   }
 
   return (
-    <div className="max-w-4xl space-y-6">
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-bold">{t('profile.title')}</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          {t('profile.subtitle')}
-        </p>
-      </div>
+    <div className="max-w-5xl space-y-6 lg:space-y-8">
+      <PageHero
+        eyebrow={t('pageHero.profile.eyebrow')}
+        title={t('profile.title')}
+        description={t('profile.subtitle')}
+        metrics={[
+          { label: t('pageHero.profile.metrics.username.label'), value: user?.username || '-', detail: user?.is_admin ? t('profile.admin') : t('profile.regularUser') },
+          { label: t('pageHero.profile.metrics.status.label'), value: user?.is_active ? t('profile.active') : t('profile.disabled'), detail: user?.email || t('profile.emailNotSet') },
+          { label: t('pageHero.profile.metrics.lastLogin.label'), value: user?.last_login_at ? new Date(user.last_login_at).toLocaleDateString(i18n.language) : '-', detail: user?.created_at ? new Date(user.created_at).toLocaleDateString(i18n.language) : '' },
+        ]}
+      />
 
       {/* User Info */}
-      <Card>
+      <Card className="rounded-[30px]">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <UserIcon className="h-5 w-5" />
@@ -141,8 +146,8 @@ export function Profile() {
         </CardHeader>
         <CardContent className="space-y-4">
           {usernameSuccess && (
-            <Alert className="text-sm border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-400">
-              <Check className="h-4 w-4 text-green-600 dark:text-green-400" />
+            <Alert className="border-primary/30 bg-primary/10 text-sm text-foreground">
+              <Check className="h-4 w-4 text-primary" />
               {t('profile.usernameUpdateSuccess')}
             </Alert>
           )}

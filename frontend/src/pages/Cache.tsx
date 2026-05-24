@@ -26,6 +26,7 @@ import {
 import api from '../lib/api'
 import type { CacheEntry } from '../types/api'
 import { useTranslation } from 'react-i18next'
+import { PageHero } from '../components/ui/PageHero'
 
 export function Cache() {
   const { t } = useTranslation()
@@ -132,10 +133,20 @@ export function Cache() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 lg:space-y-8">
+      <PageHero
+        eyebrow={t('pageHero.cache.eyebrow')}
+        title={t('cache.translationCache')}
+        description={t('pageHero.cache.description')}
+        metrics={[
+          { label: t('pageHero.cache.metrics.entries.label'), value: statsLoading ? '-' : String(stats?.total_entries ?? 0), detail: t('pageHero.cache.metrics.entries.detail') },
+          { label: t('pageHero.cache.metrics.hitRate.label'), value: statsLoading ? '-' : `${stats?.hit_rate.toFixed(1) ?? 0}%`, detail: t('pageHero.cache.metrics.hitRate.detail') },
+          { label: t('pageHero.cache.metrics.tempSpace.label'), value: tempStatsLoading ? '-' : `${tempStats?.total_size_mb?.toFixed(1) ?? '0.0'} MB`, detail: t('pageHero.cache.metrics.tempSpace.detail') },
+        ]}
+      />
       {/* Stats Cards */}
       <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
-        <Card>
+        <Card className="rounded-[28px]">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-xs sm:text-sm font-medium">{t('cache.totalEntries')}</CardTitle>
             <Database className="h-4 w-4 text-muted-foreground" />
@@ -147,7 +158,7 @@ export function Cache() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="rounded-[28px]">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-xs sm:text-sm font-medium">{t('cache.totalHits')}</CardTitle>
             <Database className="h-4 w-4 text-muted-foreground" />
@@ -159,7 +170,7 @@ export function Cache() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="rounded-[28px]">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-xs sm:text-sm font-medium">{t('cache.hitRate')}</CardTitle>
             <Database className="h-4 w-4 text-muted-foreground" />

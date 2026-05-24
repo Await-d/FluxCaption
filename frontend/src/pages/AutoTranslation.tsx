@@ -12,6 +12,7 @@ import api from '../lib/api'
 import { getLanguageName } from '../lib/utils'
 import type { AutoTranslationRule, AutoTranslationRuleCreate, AutoTranslationRuleUpdate, JellyfinLibrary } from '../types/api'
 import { useTranslation } from 'react-i18next'
+import { PageHero } from '../components/ui/PageHero'
 
 export function AutoTranslation() {
   const { t } = useTranslation()
@@ -180,24 +181,23 @@ export function AutoTranslation() {
   ]
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>{t('autoTranslation.title')}</CardTitle>
-              <p className="text-sm text-muted-foreground mt-2">
-                {t('autoTranslation.subtitle')}
-              </p>
-            </div>
-            <Button onClick={handleCreateClick}>
-              <Plus className="h-4 w-4 mr-2" />
-              {t('autoTranslation.addRule')}
-            </Button>
-          </div>
-        </CardHeader>
-      </Card>
+    <div className="space-y-6 lg:space-y-8">
+      <PageHero
+        eyebrow={t('pageHero.autoTranslation.eyebrow')}
+        title={t('autoTranslation.title')}
+        description={t('autoTranslation.subtitle')}
+        actions={
+          <Button onClick={handleCreateClick}>
+            <Plus className="mr-2 h-4 w-4" />
+            {t('autoTranslation.addRule')}
+          </Button>
+        }
+        metrics={[
+          { label: t('pageHero.autoTranslation.metrics.rules.label'), value: String(rulesData?.rules.length ?? 0), detail: t('pageHero.autoTranslation.metrics.rules.detail') },
+          { label: t('pageHero.autoTranslation.metrics.enabled.label'), value: String(rulesData?.rules.filter((rule) => rule.enabled).length ?? 0), detail: t('pageHero.autoTranslation.metrics.enabled.detail') },
+          { label: t('pageHero.autoTranslation.metrics.libraries.label'), value: String(librariesData?.length ?? 0), detail: t('pageHero.autoTranslation.metrics.libraries.detail') },
+        ]}
+      />
 
       {/* Rules List */}
       {isLoading ? (
@@ -215,7 +215,7 @@ export function AutoTranslation() {
       ) : (
         <div className="grid gap-4">
           {rulesData?.rules.map((rule) => (
-            <Card key={rule.id}>
+            <Card key={rule.id} className="rounded-[30px]">
               <CardContent className="p-6">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">

@@ -1,7 +1,139 @@
 {
   "app": {
     "title": "FluxCaption",
-    "subtitle": "AI 字幕翻译系统"
+    "subtitle": "AI 字幕翻译系统",
+    "commandDeck": "FluxCaption 控制台",
+    "operator": "当前操作员"
+  },
+  "login": {
+    "heroEyebrow": "字幕自动化",
+    "heroTitle": "让字幕处理流程更清晰、更易掌控。",
+    "heroDescription": "在同一套操作界面中集中查看 AI 提供商、翻译吞吐与媒体处理状态，避免登录页文案混乱。",
+    "welcomeBack": "欢迎回来"
+  },
+  "sidebar": {
+    "tagline": "媒体 AI 运维",
+    "collapse": "收起侧边栏",
+    "expand": "展开侧边栏"
+  },
+  "common": {
+    "yes": "是",
+    "no": "否",
+    "ok": "确定",
+    "select": "选择",
+    "cancel": "取消",
+    "save": "保存",
+    "delete": "删除",
+    "edit": "编辑",
+    "close": "关闭",
+    "loading": "加载中...",
+    "error": "错误",
+    "success": "成功",
+    "failed": "失败",
+    "pending": "待处理",
+    "running": "运行中",
+    "line": "行",
+    "lines": "行",
+    "word": "词",
+    "words": "词",
+    "completedAt": "完成于",
+    "completed": "已完成",
+    "executing": "执行中",
+    "inProgress": "进行中",
+    "model": "模型",
+    "started": "开始于",
+    "finished": "完成于",
+    "previousPage": "上一页",
+    "nextPage": "下一页",
+    "refresh": "刷新",
+    "enabled": "启用",
+    "disabled": "禁用",
+    "configured": "已配置",
+    "not_set": "未设置",
+    "free": "免费",
+    "minutes": "分钟",
+    "notifications": "通知",
+    "closeNotification": "关闭通知",
+    "saving": "保存中..."
+  },
+  "components": {
+    "header": {
+      "commandDeck": "FluxCaption 控制台",
+      "operator": "当前操作员",
+      "switchToEnglish": "切换到英文",
+      "switchToChinese": "切换到中文",
+      "switchTheme": "切换主题到 {{theme}}",
+      "logout": "退出登录"
+    },
+    "liveTranslation": {
+      "ocrPhase": "OCR 阶段",
+      "completed": "已完成",
+      "connecting": "正在连接...",
+      "error": "错误",
+      "lines": "行",
+      "title": "实时翻译预览",
+      "translating": "翻译中...",
+      "waitingTranslation": "等待翻译..."
+    },
+    "subtitlePreview": {
+      "asrRecognized": "?ASR ???",
+      "asrTaskInfo": "???? ASR ??????????????????????",
+      "asrTaskInfo2": "ASR ??????????????????????",
+      "asrTaskInfo3": "???????????",
+      "cancel": "取消",
+      "download": "下载",
+      "edit": "编辑",
+      "editable": "?????",
+      "enterTranslation": "输入翻译内容...",
+      "items": "项",
+      "lines": "行",
+      "linesRemaining": "行剩余",
+      "loadFailed": "加载失败?{{message}}",
+      "loadMore": "加载更多",
+      "loading": "加载中...",
+      "modified": "已修改",
+      "modified2": "已修改",
+      "noSubtitles": "无字幕内容",
+      "save": "保存",
+      "saving": "保存中...",
+      "showing": "显示",
+      "sourceSubtitle": "源字幕",
+      "title": "字幕对照预览",
+      "total": "共",
+      "translatedSubtitle": "翻译字幕"
+    },
+    "taskLogs": {
+      "entries": "条记录",
+      "errorMessage": "错误信息",
+      "jobId": "任务 ID",
+      "jobStatus": "任务状态",
+      "loadFailed": "加载日志失败",
+      "loadingLogs": "正在加载日志...",
+      "logEntries": "日志条目",
+      "noLogs": "还没有日志",
+      "title": "任务执行日志",
+      "unknownError": "未知错误"
+    }
+  },
+  "aiProviderSelector": {
+    "loading": "正在加载 AI 提供商...",
+    "emptyTitle": "暂无可用 AI 提供商",
+    "emptyDescription": "请先在“系统设置 → AI 提供商”中启用至少一个提供商。",
+    "providerOptionalHint": "（可选，未指定时自动选择）",
+    "modelOptionalHint": "（可选，未指定时使用默认模型）",
+    "healthy": "健康",
+    "unhealthy": "异常",
+    "contextWindow": "上下文：{{count}} tokens",
+    "maxOutput": "最大输出：{{count}} tokens",
+    "inputPrice": "输入：${{value}} / 1M tokens",
+    "outputPrice": "输出：${{value}} / 1M tokens",
+    "summaryTitle": "当前选择",
+    "summaryProvider": "提供商：{{provider}}",
+    "summaryModel": "模型：{{model}}",
+    "summaryAuto": "自动选择当前最佳提供商和模型"
+  },
+  "providers": {
+    "local": "本地模型"
   },
   "auth": {
     "login": "登录",
@@ -94,6 +226,304 @@
       "unknown": "未知类型"
     }
   },
+  "pageHero": {
+    "common": {
+      "auto": "自动",
+      "ready": "就绪",
+      "open": "已打开",
+      "syncing": "同步中"
+    },
+    "dashboard": {
+      "eyebrow": "运行总览",
+      "title": "让字幕自动化界面更清晰可控。",
+      "description": "将系统健康、任务吞吐、语言需求与最新执行状态集中展示，避免首页信息杂乱。",
+      "unknown": "未知",
+      "metrics": {
+        "health": {
+          "label": "管线健康度",
+          "detail": "{{healthy}} / {{total}} 个服务在线"
+        },
+        "today": {
+          "label": "今日任务",
+          "detail": "还有 {{count}} 个任务在运行或排队"
+        },
+        "activity": {
+          "label": "最新活动",
+          "empty": "暂无最近任务",
+          "detail": "已完成 {{progress}}%",
+          "waiting": "等待新的翻译任务"
+        },
+        "successRate": {
+          "label": "成功率",
+          "detail": "基于历史完成与失败任务计算。"
+        },
+        "queue": {
+          "label": "队列快照",
+          "completed": "完成"
+        }
+      }
+    },
+    "translate": {
+      "eyebrow": "翻译工作台",
+      "description": "上传字幕、选择目标语言，并在同一页面内完成 AI 提供商与模型路由。",
+      "metrics": {
+        "formats": {
+          "label": "支持格式",
+          "detail": "SUP 会先经过 OCR 再进入翻译流程"
+        },
+        "targets": {
+          "label": "目标语言",
+          "detail": "按任务独立选择"
+        },
+        "provider": {
+          "label": "提供商模式",
+          "detail": "使用默认模型回退"
+        }
+      }
+    },
+    "aiProviders": {
+      "eyebrow": "提供商矩阵",
+      "metrics": {
+        "providers": {
+          "label": "提供商",
+          "detail": "已配置后端"
+        },
+        "healthy": {
+          "label": "健康",
+          "detail": "最近健康检查通过"
+        },
+        "enabled": {
+          "label": "启用中",
+          "detail": "可参与任务路由"
+        }
+      }
+    },
+    "settings": {
+      "eyebrow": "系统编排",
+      "description": "集中调整集成连接、自动化策略、默认模型与处理上限，避免设置说明分散。",
+      "metrics": {
+        "providers": {
+          "label": "提供商",
+          "detail": "已接入 AI 后端"
+        },
+        "models": {
+          "label": "模型",
+          "detail": "已启用 MT 候选项"
+        },
+        "catalog": {
+          "label": "目录同步"
+        }
+      }
+    },
+    "jobs": {
+      "eyebrow": "执行队列",
+      "description": "集中查看运行任务、批量控制排队任务，并在一致的队列视图里追踪结果。",
+      "metrics": {
+        "visible": {
+          "label": "当前显示",
+          "detail": "当前页结果数"
+        },
+        "running": {
+          "label": "运行中",
+          "detail": "已连接实时进度流"
+        },
+        "selected": {
+          "label": "已选中",
+          "detail": "可进行批量操作"
+        }
+      }
+    },
+    "library": {
+      "eyebrow": "媒体发现",
+      "description": "浏览 Jellyfin 媒体库、检查字幕缺口，并从一致的目录视图发起翻译任务。",
+      "metrics": {
+        "libraries": {
+          "label": "媒体库",
+          "detail": "已发现 Jellyfin 集合"
+        },
+        "loaded": {
+          "label": "已加载项目",
+          "detailSelected": "当前媒体库内容",
+          "detailEmpty": "请选择要检查的媒体库"
+        },
+        "filtered": {
+          "label": "筛选结果",
+          "detail": "当前可见项目数"
+        }
+      }
+    },
+    "localMedia": {
+      "eyebrow": "文件系统扫描",
+      "metrics": {
+        "favorites": {
+          "label": "收藏路径",
+          "detail": "已保存根目录"
+        },
+        "scanned": {
+          "label": "已扫描",
+          "detail": "尚未选择目录"
+        },
+        "missing": {
+          "label": "缺失字幕",
+          "detail": "需要翻译的文件数"
+        }
+      }
+    },
+    "profile": {
+      "eyebrow": "账号信息",
+      "metrics": {
+        "username": {
+          "label": "用户名"
+        },
+        "status": {
+          "label": "状态"
+        },
+        "lastLogin": {
+          "label": "最近登录"
+        }
+      }
+    },
+    "aiModels": {
+      "eyebrow": "模型注册表",
+      "metrics": {
+        "visible": {
+          "label": "当前模型",
+          "detail": "所有提供商"
+        },
+        "providers": {
+          "label": "提供商",
+          "detail": "可用模型来源"
+        },
+        "catalog": {
+          "label": "目录同步",
+          "detail": "远程模型元数据"
+        }
+      }
+    },
+    "autoTranslation": {
+      "eyebrow": "自动化规则",
+      "metrics": {
+        "rules": {
+          "label": "规则",
+          "detail": "自动化策略数量"
+        },
+        "enabled": {
+          "label": "启用中",
+          "detail": "当前监听规则"
+        },
+        "libraries": {
+          "label": "媒体库",
+          "detail": "Jellyfin 来源数量"
+        }
+      }
+    },
+    "cache": {
+      "eyebrow": "缓存控制",
+      "description": "查看翻译缓存命中情况、清理临时空间，并以统一方式筛选热点缓存条目。",
+      "metrics": {
+        "entries": {
+          "label": "缓存条目",
+          "detail": "已存储翻译结果"
+        },
+        "hitRate": {
+          "label": "命中率",
+          "detail": "缓存复用效率"
+        },
+        "tempSpace": {
+          "label": "临时空间",
+          "detail": "工作目录占用"
+        }
+      }
+    },
+    "subtitles": {
+      "eyebrow": "字幕归档",
+      "description": "统一浏览字幕记录、同步到翻译记忆，并清理陈旧资源，避免页面说明混乱。",
+      "metrics": {
+        "total": {
+          "label": "总数",
+          "detail": "字幕记录总量"
+        },
+        "uploaded": {
+          "label": "已上传",
+          "detail": "已外部存储"
+        },
+        "languages": {
+          "label": "语言",
+          "detail": "已检测目标语言"
+        }
+      }
+    },
+    "systemConfig": {
+      "eyebrow": "运行时控制",
+      "metrics": {
+        "categories": {
+          "label": "分类",
+          "detail": "配置分组数量"
+        },
+        "edited": {
+          "label": "已修改",
+          "detail": "本地待保存项"
+        },
+        "history": {
+          "label": "变更历史",
+          "detail": "可查看审计记录"
+        }
+      }
+    },
+    "taskCenter": {
+      "eyebrow": "任务中枢",
+      "metrics": {
+        "totalJobs": {
+          "label": "总任务",
+          "detail": "所有已跟踪任务"
+        },
+        "queued": {
+          "label": "排队中",
+          "detail": "等待启动"
+        },
+        "workers": {
+          "label": "工作进程",
+          "detail": "当前活跃执行器"
+        }
+      }
+    },
+    "translationMemory": {
+      "eyebrow": "翻译记忆",
+      "description": "统一搜索、编辑、批量替换与校对复用语料，避免页面说明风格不一致。",
+      "metrics": {
+        "entries": {
+          "label": "条目",
+          "detail": "已存储翻译对"
+        },
+        "pairs": {
+          "label": "语种对",
+          "detail": "已覆盖语言组合"
+        },
+        "models": {
+          "label": "模型",
+          "detail": "贡献翻译引擎"
+        }
+      }
+    },
+    "liveProgress": {
+      "eyebrow": "实时遥测",
+      "description": "集中监控管线阶段、吞吐、队列压力和最近结果，避免信息展示杂乱。",
+      "metrics": {
+        "running": {
+          "label": "运行中",
+          "detail": "已连接实时进度流"
+        },
+        "queued": {
+          "label": "排队中",
+          "detail": "等待处理任务"
+        },
+        "completed": {
+          "label": "最近完成",
+          "detail": "最近成功任务数"
+        }
+      }
+    }
+  },
   "aiModels": {
     "addTitle": "添加模型配置",
     "editTitle": "编辑模型配置",
@@ -131,7 +561,11 @@
     "modelNamePlaceholder": "例如 gpt-4o",
     "displayNamePlaceholder": "例如 GPT-4o",
     "useRecommended": "使用推荐",
-    "useCustom": "自定义输入"
+    "useCustom": "自定义输入",
+    "syncCatalog": "同步最新模型",
+    "syncHint": "兼容 opencode/models.dev 模型目录。手动配置的模型会保留，并优先于自动同步默认值。",
+    "syncSuccess": "目录同步已加入队列。Worker 完成后刷新列表即可看到更新。",
+    "syncFailed": "同步最新模型目录失败"
   },
   "models": {
     "title": "模型管理",
@@ -177,8 +611,11 @@
     "usageCount": "使用次数",
     "pullingStatus": "拉取中",
     "default": "默认",
-    "syncSuccess": "同步成功！共 {{count}} 个模型",
-    "syncFailed": "同步失败: {{error}}"
+    "syncSuccess": "模型同步已加入队列。Worker 完成后刷新即可看到更新。",
+    "syncFailed": "同步失败: {{error}}",
+    "deleteFailed": "删除模型失败：{{error}}",
+    "pullFailed": "拉取模型失败：{{error}}",
+    "pullSuccess": "模型拉取已加入队列，状态会在已安装模型列表中更新。"
   },
   "library": {
     "title": "媒体库",
@@ -200,7 +637,103 @@
     "missing": "缺失",
     "duration": "时长",
     "size": "大小",
-    "scanning": "扫描中..."
+    "scanning": "扫描中...",
+    "selected": "已选中",
+    "uncategorized": "未分类",
+    "showing": "显示",
+    "totalItems": "共",
+    "searchPlaceholder": "搜索媒体...",
+    "mediaType": "媒体类型",
+    "allTypes": "全部类型",
+    "year": "年份",
+    "allYears": "全部年份",
+    "clearFilters": "清除筛选",
+    "clear": "清除",
+    "noMatchingItems": "没有匹配的媒体项目",
+    "movieType": "电影",
+    "episodeType": "剧集",
+    "seriesType": "剧集系列",
+    "seriesCount": "剧集系列 {{count}} 集",
+    "episodes": "{{count}} 集",
+    "totalEpisodes": "共 {{count}} 集",
+    "missingCount": "缺失 {{count}}",
+    "quickTranslate": "快速翻译",
+    "translate": "翻译",
+    "subtitleComplete": "字幕完整",
+    "complete": "完整",
+    "viewSeriesList": "查看剧集列表",
+    "viewDetails": "查看详情",
+    "audioLabel": "音频：",
+    "subtitlesLabel": "字幕：",
+    "missingLabel": "缺失：",
+    "externalFile": "外部文件",
+    "embeddedSubtitle": "内嵌字幕",
+    "createTranslationTask": "创建翻译任务",
+    "createSubtitleTask": "创建字幕翻译任务",
+    "createTaskFor": "为",
+    "batchCreateFor": "批量为",
+    "of": "的",
+    "batchCreateTask": "批量创建翻译任务",
+    "type": "类型",
+    "movie": "电影",
+    "episode": "剧集",
+    "series": "系列",
+    "existingAudio": "现有音频",
+    "existingSubtitles": "现有字幕",
+    "none": "无",
+    "batchTranslateInfo": "批量翻译说明",
+    "batchTranslateDesc1": "将为所有缺失字幕的剧集创建翻译任务",
+    "batchTranslateDesc2": "每集会根据缺失语言创建独立任务",
+    "batchTranslateDesc3": "共 {{count}} 集需要翻译",
+    "selectTargetLanguages": "选择翻译目标语言",
+    "selectTargetLangs": "选择翻译目标语言：",
+    "selectAtLeastOne": "请至少选择一种目标语言",
+    "taskInfo1": "如果媒体没有字幕，系统会先执行 ASR 生成字幕",
+    "taskInfo2": "翻译任务将在后台队列中执行",
+    "taskInfo3": "可在任务列表页面查看进度",
+    "taskInfoNoSubtitle": "• 如果媒体没有字幕，系统会先执行 ASR 生成字幕",
+    "taskInfoBackground": "• 翻译任务将在后台队列中执行",
+    "taskInfoProgress": "• 可在任务列表页面查看进度",
+    "cancel": "取消",
+    "createTask": "创建任务",
+    "batchCreateTasks": "批量创建任务",
+    "batchCreateCount": "批量创建 {{count}} 个任务",
+    "totalEpisodesNeedTranslation": "共 {{count}} 集需要翻译",
+    "totalEpisodesCount": "共 {{count}} 集",
+    "mediaDetails": "媒体详情",
+    "viewMediaDetails": "查看 <1>{{name}}</1> 完整信息",
+    "rating": "评分",
+    "classification": "分级",
+    "genreTags": "类型标签",
+    "overview": "简介",
+    "languageInfo": "语言信息",
+    "audioLanguages": "音频语言",
+    "subtitleDetails": "字幕详情",
+    "default": "默认",
+    "forced": "强制",
+    "missingLanguages": "缺失语言",
+    "filePath": "文件路径",
+    "close": "关闭",
+    "episodesList": "剧集列表",
+    "episodeList": "剧集列表",
+    "episodesMissingSubtitles": "• {{count}} 集缺失字幕",
+    "batchTranslateAll": "批量翻译全部",
+    "season": "第 {{number}} 季",
+    "episodeNumber": "第 {{number}} 集",
+    "page": "第 {{current}} / {{total}} 页",
+    "pageRange": "显示 {{from}}-{{to}} / 共 {{total}} 项",
+    "previousPage": "上一页",
+    "nextPage": "下一页",
+    "missingLang": "(缺失)",
+    "embedded": "内嵌",
+    "ext": "外部",
+    "fullInfo": "的详细信息",
+    "pages": "页",
+    "score": "评分",
+    "subtitlesComplete": "字幕已完整",
+    "total": "总计",
+    "translateAll": "全部翻译",
+    "viewDetailsFor": "以下是"
   },
   "jobs": {
     "title": "任务列表",
@@ -235,22 +768,43 @@
     "scan": "扫描",
     "translate": "翻译",
     "asrTranslate": "ASR + 翻译",
-    "autoDetect": "自动检测"
+    "autoDetect": "自动检测",
+    "firstPage": "首页",
+    "lastPage": "末页",
+    "pagination": "第 {{current}} / {{total_pages}} 页（共 {{total}} 条）",
+    "batchCancel": "批量取消",
+    "batchStart": "批量启动",
+    "clearSelection": "清除选择",
+    "currentlyRunningTasksCount": "当前正在运行的任务（{{count}}）",
+    "delete": "删除",
+    "logs": "日志",
+    "noMoreJobs": "此列表中已没有更多任务",
+    "preview": "预览",
+    "resume": "继续",
+    "selectAll": "全选",
+    "selectedCount": "已选 {{count}} 项",
+    "start": "启动",
+    "success": "成功",
+    "translationProgress": "翻译进度"
   },
   "translate": {
     "title": "上传字幕文件",
     "dropzone": "拖放字幕文件到此处",
     "dropzoneActive": "松开以上传",
-    "formats": "支持 .srt, .ass, .vtt 格式",
+    "formats": "支持 .srt, .ass, .vtt, .sup 格式",
     "sourceLanguage": "源语言",
     "autoDetect": "自动检测",
     "targetLanguages": "目标语言",
     "model": "翻译模型 (可选)",
     "useDefault": "使用默认模型",
     "defaultModel": "默认",
+    "autoProvider": "自动选择提供商",
+    "providerSelectionHint": "所选提供商会过滤可用模型，并会随翻译请求一起发送。",
     "translate": "翻译",
     "uploading": "上传中...",
-    "backToUpload": "返回上传"
+    "backToUpload": "返回上传",
+    "ocrHint": "PGS/SUP 图片字幕会先执行 OCR，再进入翻译流程。",
+    "selectProvider": "选择 AI 提供商"
   },
   "settings": {
     "title": "系统设置",
@@ -271,8 +825,41 @@
     "ollamaTimeoutDesc": "模型推理请求的最大等待时间",
     "ollamaKeepAlive": "模型保活时长",
     "ollamaKeepAliveDesc": "模型在内存中保持的时长（例如：30m、1h，0 表示立即卸载）",
+    "aiProviders": "AI 提供商",
+    "aiProvidersDesc": "集中管理提供商 API 密钥、基础地址、健康检查和配额。",
+    "providersTotal": "提供商数量",
+    "providersConfigured": "已设置密钥",
+    "providersEnabled": "已启用",
+    "apiKeySet": "已配置密钥",
+    "apiKeyMissing": "未设置",
+    "openAiProviders": "打开 AI 提供商",
+    "automation": "自动化与开关",
+    "automationDesc": "控制自动扫描、模型拉取行为和字幕回写模式。",
+    "enableAutoScan": "自动扫描 Jellyfin",
+    "enableAutoScanDesc": "自动扫描媒体库中的缺失字幕。",
+    "enableAutoPullModels": "自动拉取模型",
+    "enableAutoPullModelsDesc": "自动下载缺失的 Ollama 模型。",
+    "enableSidecarWriteback": "允许侧载回写",
+    "enableSidecarWritebackDesc": "启用将字幕写为 sidecar 文件。",
+    "enableMetrics": "启用指标",
+    "enableMetricsDesc": "暴露运行时指标用于监控。",
+    "aiModelCatalog": "AI 模型目录",
+    "aiModelCatalogDesc": "控制 opencode 兼容模型目录的自动同步，并查看当前同步源状态。",
+    "autoSyncStatus": "自动同步",
+    "autoSyncInterval": "同步间隔",
+    "lastCatalogSync": "最后同步",
+    "neverSynced": "从未同步",
+    "aiModelAutoSync": "启用模型目录自动同步",
+    "aiModelAutoSyncDesc": "在服务启动时和后续后台周期中刷新最新模型元数据。",
+    "autoSyncIntervalSeconds": "同步间隔（秒）",
+    "autoSyncIntervalDesc": "后端刷新远程模型目录的频率，最小 300 秒。",
+    "catalogSourceUrl": "目录源地址",
+    "catalogSourceUrlDesc": "远程模型目录的基础地址。默认使用 models.dev，通常无需修改。",
     "translationSettings": "翻译设置",
     "translationDesc": "配置默认翻译行为",
+    "selectDefaultMtModel": "选择默认机器翻译模型",
+    "translationMaxLineLength": "最大行长度",
+    "translationPreserveFormatting": "保留格式",
     "asrSettings": "ASR 设置",
     "asrDesc": "配置语音识别",
     "performance": "性能设置",
@@ -283,6 +870,9 @@
     "uploadMode": "上传到 Jellyfin",
     "sidecarMode": "侧载文件",
     "defaultFormat": "默认字幕格式",
+    "translationBatchSize": "批处理大小",
+    "translationLineConcurrency": "行并发数",
+    "aiProviderMaxConcurrency": "提供商并发上限",
     "asrModel": "ASR 模型",
     "asrLanguage": "ASR 语言",
     "asrLanguagePlaceholder": "auto",
@@ -304,7 +894,12 @@
     "favoriteMediaPathsDesc": "管理常用的本地媒体文件夹路径以便快速访问",
     "pathPlaceholder": "/path/to/media/directory（例如：/media/movies）",
     "addPath": "添加",
-    "noFavoritePaths": "还没有收藏路径，添加常用媒体文件夹以便快速访问"
+    "noFavoritePaths": "还没有收藏路径，添加常用媒体文件夹以便快速访问",
+    "asrTaskTimeout": "ASR 任务超时",
+    "processingLimits": "处理限制",
+    "scanTaskTimeout": "扫描任务超时",
+    "settings": "系统设置",
+    "translateTaskTimeout": "翻译任务超时"
   },
   "taskCenter": {
     "title": "任务中心",
@@ -439,7 +1034,8 @@
     "isRegex": "使用正则表达式模式",
     "isCaseSensitive": "大小写敏感匹配",
     "isActive": "启用此规则",
-    "empty": "还没有纠正规则"
+    "empty": "还没有纠正规则",
+    "confirmDelete": "确定要删除这条纠正规则吗？"
   },
   "profile": {
     "title": "个人中心",
@@ -484,42 +1080,12 @@
     "translationFailed": "翻译失败",
     "connectionLost": "连接已断开"
   },
-  "common": {
-    "yes": "是",
-    "no": "否",
-    "ok": "确定",
-    "select": "选择",
-    "cancel": "取消",
-    "save": "保存",
-    "delete": "删除",
-    "edit": "编辑",
-    "close": "关闭",
-    "loading": "加载中...",
-    "error": "错误",
-    "success": "成功",
-    "failed": "失败",
-    "pending": "待处理",
-    "running": "运行中",
-    "line": "行",
-    "lines": "行",
-    "word": "词",
-    "words": "词",
-    "completedAt": "完成于",
-    "completed": "已完成",
-    "executing": "执行中",
-    "inProgress": "进行中",
-    "model": "模型",
-    "started": "开始于",
-    "finished": "完成于",
-    "previousPage": "上一页",
-    "nextPage": "下一页",
-    "refresh": "刷新"
-  },
   "languages": {
     "zh-CN": "简体中文",
     "en": "English",
     "ja": "日本語",
-    "ko": "한국어"
+    "ko": "한국어",
+    "zh-TW": "繁體中文"
   },
   "cache": {
     "totalEntries": "总缓存条目",
@@ -573,7 +1139,10 @@
     "nextPage": "下一页",
     "directories": "目录",
     "files": "文件",
-    "cancel": "取消"
+    "cancel": "取消",
+    "sortByPlaceholder": "排序方式",
+    "sourceLangPlaceholder": "源语言",
+    "targetLangPlaceholder": "目标语言"
   },
   "liveProgress": {
     "running": "正在执行",
@@ -664,7 +1233,9 @@
     "deleteConfirm": "确认删除",
     "deleteConfirmDesc": "确定要删除规则 \"{{name}}\" 吗？此操作不可撤销。",
     "deleting": "删除中...",
-    "delete": "删除"
+    "delete": "删除",
+    "selectLibraryPlaceholder": "选择媒体库",
+    "selectSourceLangPlaceholder": "选择源语言"
   },
   "translationMemory": {
     "title": "翻译记忆",
@@ -746,7 +1317,30 @@
     "proofreadSuccess": "校对完成",
     "proofreadFailed": "校对失败",
     "previousPage": "上一页",
-    "nextPage": "下一页"
+    "nextPage": "下一页",
+    "aiProofreadError": "AI 校对出错",
+    "aiProofreadFailed": "AI 校对失败",
+    "batchDeleteError": "批量删除失败",
+    "batchReplaceError": "批量替换失败",
+    "deleteError": "删除失败",
+    "deleted": "删除成功",
+    "deletedCount": "已删除 {{count}} 条记录",
+    "updateError": "更新失败",
+    "updated": "更新成功",
+    "updatedCount": "已更新 {{updated}} / {{total}} 条记录",
+    "aiProofreadInProgress": "AI 校对中...",
+    "aiProofreadResult": "AI 校对结果",
+    "changed": "已改动",
+    "confirmDeleteMessage": "确定要删除这条翻译记录吗？",
+    "currentTranslation": "当前翻译",
+    "editDescription": "更新该条记录的目标翻译内容。",
+    "editTranslation": "编辑翻译",
+    "empty": "还没有翻译记录",
+    "languagePairDistribution": "语種对分布",
+    "proofreadTranslation": "校对后的翻译",
+    "selectedCount": "已选 {{count}} 项",
+    "sourceLanguage": "源语言",
+    "targetLanguage": "目标语言"
   },
   "localMedia": {
     "scanDirectory": "扫描本地目录",
@@ -757,6 +1351,12 @@
     "scanning": "扫描中...",
     "scan": "扫描",
     "scanDirectory_btn": "扫描目录",
+    "refreshScan": "刷新扫描",
+    "cachedResult": "缓存结果",
+    "lastScanned": "最后扫描",
+    "cacheRestoredHint": "已从本地缓存恢复上次扫描结果（{{time}}），如需检查文件变化请点击刷新扫描。",
+    "cacheSavedHint": "本次扫描结果已缓存（{{time}}），刷新页面或重新进入本地文件页会自动恢复。",
+    "cacheSaveFailedHint": "本次扫描已完成，但结果过大或浏览器存储空间不足，未能写入本地缓存。刷新页面后可能需要重新扫描。",
     "scanFailed": "扫描失败: {{error}}",
     "directoryStats": "目录统计",
     "mediaFiles": "媒体文件",
@@ -882,10 +1482,24 @@
         "name": "翻译批量大小",
         "description": "单次批量翻译的字幕行数。较大的批次可提高效率,但会占用更多内存。"
       },
+      "translation_line_concurrency": {
+        "name": "翻译并发数",
+        "description": "单个字幕批次内同时发起的上游翻译请求数。值越高越快,但更容易压垮上游提供商。"
+      },
+      "ai_provider_max_concurrency": {
+        "name": "提供商并发上限",
+        "description": "单个后端进程内,每个上游 AI 提供商允许同时处理的最大请求数。"
+      },
       "translation_max_line_length": {
         "name": "最大行长度",
         "description": "每行字幕的最大字符长度。超过此长度的行将被分割。"
       }
+    },
+    "validation": {
+      "integer": "值必须是有效整数",
+      "max": "值不能超过 {{max}} {{unit}}",
+      "min": "值不能低于 {{min}} {{unit}}",
+      "range": "范围：{{min}} - {{max}} {{unit}}"
     }
   },
   "ai_providers": {
@@ -907,6 +1521,18 @@
     "timeout": "超时时间（秒）",
     "timeout_hint": "API请求的最大等待时间（1-300秒）",
     "default_model_hint": "此提供商使用的默认模型",
+    "test_conversation": "测试对话",
+    "test_conversation_hint": "使用当前已保存配置向该提供商发送一条简短测试请求。",
+    "test_model": "测试模型",
+    "use_configured_default_model": "使用已配置的默认模型",
+    "target_language": "目标语言",
+    "test_prompt": "测试提示词",
+    "test_failed": "提供商测试失败",
+    "test_succeeded": "提供商已返回响应",
+    "testing": "测试中",
+    "test_provider": "测试提供商",
+    "default_test_prompt_deeplx": "你好，这是一条 FluxCaption 提供商测试消息。",
+    "default_test_prompt_generic": "请简短确认当前提供商工作正常。",
     "priority": "优先级",
     "priority_hint": "优先级更高的提供商优先使用（0-100）",
     "usage_statistics": "使用统计",
@@ -926,12 +1552,21 @@
     "provider_name": "提供商名称",
     "provider_name_required": "提供商名称和显示名称为必填项",
     "display_name": "显示名称",
-    "description": "描述",
     "adding": "添加中...",
+    "api_key": "API Key",
+    "api_key_hint": "仅在保存时存储；留空则保留当前值",
+    "api_key_placeholder": "输入 API Key",
+    "api_key_set": "已设置 - 留空则保持不变",
     "base_url_placeholder": "https://api.example.com/v1",
     "provider_name_placeholder": "openai, claude, custom_provider",
     "display_name_placeholder": "OpenAI (GPT)",
     "default_model_placeholder": "gpt-4, claude-3",
+    "no_default_model": "不设置默认模型",
+    "deeplx_api_key_placeholder": "可选；当 Base URL 使用 {{apiKey}} 时填写令牌",
+    "deeplx_api_key_hint": "如果 DeepLX 地址里已经包含令牌，可以留空 API Key；如果在 Base URL 中使用 {{apiKey}}，请把令牌填在这里。",
+    "deeplx_base_url_placeholder": "https://host/translate?token={{apiKey}}",
+    "deeplx_base_url_hint": "DeepLX 支持完整 endpoint URL 和 {{apiKey}} 占位符，例如：https://host/translate、https://host/translate?token={{apiKey}} 或 https://{{apiKey}}.host/translate",
+    "deeplx_default_model_hint": "内置默认模型为 translate，可以留空。",
     "description_placeholder": "提供商描述...",
     "predefined": {
       "openai": {
@@ -945,6 +1580,10 @@
       "deepseek": {
         "name": "DeepSeek",
         "desc": "DeepSeek AI 模型（经济实惠且强大）"
+      },
+      "deeplx": {
+        "name": "DeepLX",
+        "desc": "自托管 DeepLX 翻译服务"
       },
       "gemini": {
         "name": "Gemini (Google)",
