@@ -1,15 +1,16 @@
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Upload, FileText, ArrowLeft } from 'lucide-react'
 import { useDropzone } from 'react-dropzone'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/Select'
 import { Badge } from '../components/ui/Badge'
+import { PageHero } from '../components/ui/PageHero'
 import { LiveTranslationPreview } from '../components/translation/LiveTranslationPreview'
+import { AIProviderSelector } from '../components/AIProviderSelector'
 import api from '../lib/api'
 import { cn } from '../lib/utils'
-import type { OllamaModelListResponse } from '../types/api'
 import { useTranslation } from 'react-i18next'
 
 const LANGUAGES = [
@@ -23,22 +24,17 @@ export function Translate() {
   const [file, setFile] = useState<File | null>(null)
   const [sourceLang, setSourceLang] = useState<string>('auto')
   const [targetLangs, setTargetLangs] = useState<string[]>(['zh-CN'])
-  const [selectedModel, setSelectedModel] = useState<string>('default')
+  const [aiSelection, setAiSelection] = useState<{ provider?: string; model?: string }>({})
   const [activeJobId, setActiveJobId] = useState<string | null>(null)
   const [showLivePreview, setShowLivePreview] = useState(false)
   const queryClient = useQueryClient()
   const { t } = useTranslation()
 
-  // Fetch available models
-  const { data: modelsData } = useQuery<OllamaModelListResponse>({
-    queryKey: ['ollama-models'],
-    queryFn: () => api.getOllamaModels(),
-  })
-
   // File upload dropzone
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: {
-      'text/plain': ['.srt', '.ass', '.vtt'],
+      'text/plain': ['.srt', '.ass', '.vtt', '.sup'],
+      'application/octet-stream': ['.sup'],
     },
     maxFiles: 1,
     onDrop: (acceptedFiles) => {
@@ -60,7 +56,8 @@ export function Translate() {
         source_path: uploadResult.path,
         source_lang: sourceLang,
         target_langs: targetLangs,
-        model: selectedModel === 'default' ? undefined : selectedModel,
+        model: aiSelection.model,
+        provider: aiSelection.provider,
       })
 
       return { uploadResult, jobId: jobResult.id }
@@ -79,7 +76,7 @@ export function Translate() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="mx-auto max-w-6xl space-y-6 lg:space-y-8">
       {showLivePreview && activeJobId ? (
         <>
           <Button
@@ -102,23 +99,34 @@ export function Translate() {
             }}
             onError={(error) => {
               console.error('Translation error:', error)
-              setShowLivePreview(false)
-              setActiveJobId(null)
             }}
           />
         </>
       ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('translate.title')}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
+        <>
+          <PageHero
+            eyebrow={t('pageHero.translate.eyebrow')}
+            title={t('translate.title')}
+            description={t('pageHero.translate.description')}
+            metrics={[
+              { label: t('pageHero.translate.metrics.formats.label'), value: 'SRT / ASS / VTT', detail: t('pageHero.translate.metrics.formats.detail') },
+              { label: t('pageHero.translate.metrics.targets.label'), value: String(targetLangs.length), detail: t('pageHero.translate.metrics.targets.detail') },
+              { label: t('pageHero.translate.metrics.provider.label'), value: aiSelection.provider || t('pageHero.common.auto'), detail: aiSelection.model || t('pageHero.translate.metrics.provider.detail') },
+            ]}
+          />
+          <Card className="rounded-[30px]">
+            <CardHeader>
+              <CardTitle>{t('translate.title')}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-8">
             {/* File Dropzone */}
             <div
               {...getRootProps()}
               className={cn(
-                'border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-colors',
-                isDragActive ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'
+                'cursor-pointer rounded-[30px] border-2 border-dashed p-12 text-center transition-all duration-200',
+                isDragActive
+                  ? 'border-primary bg-primary/10 shadow-[0_24px_48px_-30px_hsl(var(--primary)/0.8)]'
+                  : 'border-border bg-background/35 hover:border-primary/50 hover:bg-background/55'
               )}
             >
               <input {...getInputProps()} />
@@ -135,11 +143,14 @@ export function Translate() {
                 </div>
               ) : (
                 <div>
-                  <p className="text-lg font-medium">
+                  <p className="text-xl font-semibold">
                     {isDragActive ? t('translate.dropzoneActive') : t('translate.dropzone')}
                   </p>
                   <p className="text-sm text-muted-foreground mt-2">
                     {t('translate.formats')}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    {t('translate.ocrHint', 'PGS/SUP 图片字幕会先执行 OCR，再进入翻译流程')}
                   </p>
                 </div>
               )}
@@ -182,20 +193,10 @@ export function Translate() {
 
             {/* Model Selection */}
             <div>
-              <label className="text-sm font-medium mb-2 block">{t('translate.model')}</label>
-              <Select value={selectedModel} onValueChange={setSelectedModel}>
-                <SelectTrigger>
-                  <SelectValue placeholder={t('translate.useDefault')} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="default">{t('translate.defaultModel')}</SelectItem>
-                  {modelsData?.models.map((model) => (
-                    <SelectItem key={model.name} value={model.name}>
-                      {model.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <AIProviderSelector value={aiSelection} onChange={setAiSelection} />
+              <p className="text-xs text-muted-foreground mt-2">
+                {t('translate.providerSelectionHint', 'The selected provider filters available models and is sent with the translation request.')}
+              </p>
             </div>
 
             {/* Submit Button */}
@@ -206,8 +207,9 @@ export function Translate() {
             >
               {uploadMutation.isPending ? t('translate.uploading') : t('translate.translate')}
             </Button>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </>
       )}
     </div>
   )

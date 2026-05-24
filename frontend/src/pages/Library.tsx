@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Library as LibraryIcon,
   Play,
@@ -37,13 +37,15 @@ import {
 } from '../components/ui/AlertDialog'
 import api from '../lib/api'
 import { formatBytes, formatDuration, getLanguageName } from '../lib/utils'
-import type { JellyfinLibrary, JellyfinMediaItem } from '../types/api'
+import type { JellyfinItemListResponse, JellyfinLibrary, JellyfinMediaItem } from '../types/api'
 import { useTranslation } from 'react-i18next'
+import { PageHero } from '../components/ui/PageHero'
 
 export function Library() {
   const { t } = useTranslation()
   const [selectedLibrary, setSelectedLibrary] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState<string>('all')
   const [yearFilter, setYearFilter] = useState<string>('all')
   const [page, setPage] = useState(1)
@@ -56,6 +58,15 @@ export function Library() {
   const [selectedTargetLangs, setSelectedTargetLangs] = useState<string[]>([])
   const queryClient = useQueryClient()
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery.trim())
+      setPage(1)
+    }, 300)
+
+    return () => window.clearTimeout(timer)
+  }, [searchQuery])
+
   // Fetch libraries
   const { data: libraries, isLoading: librariesLoading } = useQuery<JellyfinLibrary[]>({
     queryKey: ['jellyfin-libraries'],
@@ -63,11 +74,37 @@ export function Library() {
   })
 
   // Fetch library items
-  const { data: items, isLoading: itemsLoading } = useQuery<JellyfinMediaItem[]>({
-    queryKey: ['jellyfin-library-items', selectedLibrary],
-    queryFn: () => api.getJellyfinLibraryItems(selectedLibrary!),
+  const {
+    data: itemsResponse,
+    isLoading: itemsLoading,
+    isFetching: itemsFetching,
+  } = useQuery<JellyfinItemListResponse>({
+    queryKey: [
+      'jellyfin-library-items',
+      selectedLibrary,
+      {
+        page,
+        pageSize,
+        search: debouncedSearchQuery,
+        type: typeFilter,
+        year: yearFilter,
+      },
+    ],
+    queryFn: () =>
+      api.getJellyfinLibraryItems(selectedLibrary!, {
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+        search: debouncedSearchQuery || undefined,
+        item_type: typeFilter !== 'all' ? typeFilter : undefined,
+        year: yearFilter !== 'all' ? Number(yearFilter) : undefined,
+      }),
     enabled: !!selectedLibrary,
+    placeholderData: keepPreviousData,
+    staleTime: 10 * 60 * 1000,
   })
+
+  const items = itemsResponse?.items ?? []
+  const totalItems = itemsResponse?.total ?? 0
 
   // Scan library mutation
   const scanMutation = useMutation({
@@ -119,7 +156,17 @@ export function Library() {
 
     try {
       // Fetch episodes for this series using the new API endpoint
-      const response = await api.getSeriesEpisodes(item.id)
+      let response = queryClient.getQueryData<JellyfinItemListResponse>([
+        'jellyfin-series-episodes',
+        item.id,
+      ])
+      if (!response) {
+        response = await queryClient.fetchQuery<JellyfinItemListResponse>({
+          queryKey: ['jellyfin-series-episodes', item.id],
+          queryFn: () => api.getSeriesEpisodes(item.id),
+          staleTime: 10 * 60 * 1000,
+        })
+      }
       console.log(`[Library] Fetched ${response.items.length} episodes for series: ${item.name}`)
       setSelectedSeries(response.items)
       setSeriesDialogOpen(true)
@@ -207,47 +254,24 @@ export function Library() {
     { code: 'ko', name: t('languages.ko') },
   ]
 
-  // Filter and search items (client-side for current page)
-  const filteredItems = useMemo(() => {
-    if (!items) return []
+  const paginatedItems = items
 
-    return items.filter(item => {
-      // Search filter
-      if (searchQuery && !item.name.toLowerCase().includes(searchQuery.toLowerCase())) {
-        return false
-      }
-
-      // Type filter
-      if (typeFilter !== 'all' && item.type !== typeFilter) {
-        return false
-      }
-
-      // Year filter
-      if (yearFilter !== 'all') {
-        const year = parseInt(yearFilter)
-        if (!item.production_year || item.production_year !== year) {
-          return false
-        }
-      }
-
-      return true
-    })
-  }, [items, searchQuery, typeFilter, yearFilter])
-
-  // Paginated items (directly from filtered items, no client-side grouping)
-  const paginatedItems = useMemo(() => {
-    const startIndex = (page - 1) * pageSize
-    const endIndex = startIndex + pageSize
-    return filteredItems.slice(startIndex, endIndex)
-  }, [filteredItems, page, pageSize])
-
-  // Total pages (based on filtered items)
-  const totalPages = Math.ceil(filteredItems.length / pageSize)
+  const totalPages = Math.ceil(totalItems / pageSize)
+  const loadedRangeStart = totalItems > 0 ? (page - 1) * pageSize + 1 : 0
+  const loadedRangeEnd = Math.min(page * pageSize, totalItems)
+  const currentPageMissingCount = useMemo(
+    () => paginatedItems.filter((item) => item.missing_languages.length > 0).length,
+    [paginatedItems]
+  )
+  const selectedLibraryInfo = useMemo(
+    () => libraries?.find((library) => library.id === selectedLibrary),
+    [libraries, selectedLibrary]
+  )
 
   // Reset page to 1 if current page exceeds total pages
   useEffect(() => {
     if (page > totalPages && totalPages > 0) {
-      setPage(1)
+      setPage(totalPages)
     }
   }, [page, totalPages])
 
@@ -258,13 +282,13 @@ export function Library() {
 
   // Extract unique types and years
   const availableTypes = useMemo(() => {
-    if (!items) return []
-    const types = new Set(items.map(item => item.type))
-    return Array.from(types).sort()
-  }, [items])
+    if (selectedLibraryInfo?.type === 'movies') return ['Movie']
+    if (selectedLibraryInfo?.type === 'tvshows') return ['Series']
+    return ['Movie', 'Series']
+  }, [selectedLibraryInfo])
 
   const availableYears = useMemo(() => {
-    if (!items) return []
+    if (!items.length) return []
     const years = new Set(
       items
         .map(item => item.production_year)
@@ -273,22 +297,62 @@ export function Library() {
     return Array.from(years).sort((a, b) => b - a)
   }, [items])
 
+  const selectedSeriesMissingCount = useMemo(
+    () => selectedSeries.filter((episode) => episode.missing_languages.length > 0).length,
+    [selectedSeries]
+  )
+
+  const sortedSelectedSeries = useMemo(
+    () => [...selectedSeries].sort((a, b) => {
+      if (a.season_number !== b.season_number) {
+        return (a.season_number || 0) - (b.season_number || 0)
+      }
+      return (a.episode_number || 0) - (b.episode_number || 0)
+    }),
+    [selectedSeries]
+  )
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 lg:space-y-8">
+      <PageHero
+        eyebrow={t('pageHero.library.eyebrow')}
+        title={t('library.libraries')}
+        description={t('pageHero.library.description')}
+        actions={selectedLibrary ? (
+          <Button onClick={() => scanMutation.mutate(selectedLibrary)} disabled={scanMutation.isPending}>
+            <Play className="mr-2 h-4 w-4" />
+            {scanMutation.isPending ? t('common.loading') : t('library.scanLibrary')}
+          </Button>
+        ) : undefined}
+        metrics={[
+          { label: t('pageHero.library.metrics.libraries.label'), value: String(libraries?.length ?? 0), detail: t('pageHero.library.metrics.libraries.detail') },
+          { label: t('pageHero.library.metrics.loaded.label'), value: String(totalItems), detail: selectedLibrary ? t('pageHero.library.metrics.loaded.detailSelected') : t('pageHero.library.metrics.loaded.detailEmpty') },
+          { label: t('pageHero.library.metrics.filtered.label'), value: String(items.length), detail: t('pageHero.library.metrics.filtered.detail') },
+        ]}
+      />
+
       {/* Libraries */}
-      <Card>
-        <CardHeader className="p-3 sm:p-4">
-          <CardTitle className="text-base sm:text-lg">{t('library.libraries')}</CardTitle>
+      <Card className="overflow-hidden rounded-[30px]">
+        <CardHeader className="border-b border-border/60 p-4 sm:p-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="eyebrow-label mb-2">Jellyfin</div>
+              <CardTitle className="text-xl sm:text-2xl">{t('library.libraries')}</CardTitle>
+            </div>
+            <Badge variant="outline" className="w-fit rounded-full px-3 py-1 text-xs">
+              {libraries?.length ?? 0} {t('library.libraries')}
+            </Badge>
+          </div>
         </CardHeader>
-        <CardContent className="p-3 sm:p-4">
-          <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        <CardContent className="p-4 sm:p-5">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             {librariesLoading ? (
               <p className="text-muted-foreground col-span-full">{t('library.loadingLibraries')}</p>
             ) : (
               libraries?.map((lib) => (
                 <div
                   key={lib.id}
-                  className={`rounded-lg border overflow-hidden cursor-pointer transition-all hover:shadow-lg ${selectedLibrary === lib.id ? 'border-primary ring-2 ring-primary' : 'hover:border-primary/50'
+                  className={`group cursor-pointer overflow-hidden rounded-[26px] border bg-background/35 transition-all duration-200 hover:-translate-y-1 hover:border-primary/60 hover:bg-background/55 hover:shadow-[0_18px_46px_-32px_rgba(0,0,0,0.65)] ${selectedLibrary === lib.id ? 'border-primary bg-primary/10 shadow-[0_18px_48px_-34px_hsl(var(--primary))] ring-2 ring-primary/40' : 'border-border/70'
                     }`}
                   onClick={() => {
                     setSelectedLibrary(lib.id)
@@ -296,19 +360,22 @@ export function Library() {
                   }}
                 >
                   {/* Library Cover Image */}
-                  <div className="relative aspect-[4/3] bg-muted">
+                  <div className="relative aspect-[16/9] overflow-hidden bg-muted">
                     {lib.image_url ? (
                       <img
                         src={lib.image_url}
                         alt={lib.name}
-                        className="w-full h-full object-cover"
+                        className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
                         loading="lazy"
                       />
                     ) : (
-                      <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-primary/20 to-primary/5">
-                        <LibraryIcon className="h-12 w-12 text-primary/60" />
+                      <div className="absolute inset-0 flex items-center justify-center bg-[radial-gradient(circle_at_top_left,hsl(var(--primary)/0.28),transparent_34%),linear-gradient(135deg,hsl(var(--muted)),hsl(var(--background)))]">
+                        <div className="flex h-16 w-16 items-center justify-center rounded-[24px] border border-border/70 bg-background/45 backdrop-blur">
+                          <LibraryIcon className="h-8 w-8 text-primary" />
+                        </div>
                       </div>
                     )}
+                    <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/55 to-transparent" />
                     {/* Selected indicator */}
                     {selectedLibrary === lib.id && (
                       <div className="absolute top-1.5 right-1.5">
@@ -318,25 +385,33 @@ export function Library() {
                   </div>
 
                   {/* Library Info */}
-                  <div className="p-2 sm:p-2.5">
-                    <h3 className="font-semibold text-sm mb-0.5 truncate" title={lib.name}>{lib.name}</h3>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {lib.item_count} {t('library.items')} • {lib.type || t('library.uncategorized')}
-                    </p>
+                  <div className="space-y-3 p-3 sm:p-4">
+                    <div>
+                      <h3 className="truncate text-base font-bold" title={lib.name}>{lib.name}</h3>
+                      <p className="mt-1 text-xs text-muted-foreground truncate">
+                        {lib.type || t('library.uncategorized')}
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-[20px] border border-border/60 bg-background/35 px-3 py-2">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">{t('library.items')}</div>
+                        <div className="text-lg font-extrabold">{lib.item_count}</div>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant={selectedLibrary === lib.id ? 'default' : 'outline'}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          scanMutation.mutate(lib.id)
+                        }}
+                        disabled={scanMutation.isPending}
+                        className="rounded-full"
+                      >
+                        <Play className="mr-1.5 h-3.5 w-3.5" />
+                        <span className="text-xs">{t('library.scan')}</span>
+                      </Button>
+                    </div>
                   </div>
-                  <Button
-                    className="w-full"
-                    size="sm"
-                    variant={selectedLibrary === lib.id ? 'default' : 'outline'}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      scanMutation.mutate(lib.id)
-                    }}
-                    disabled={scanMutation.isPending}
-                  >
-                    <Play className="mr-1.5 h-3.5 w-3.5" />
-                    <span className="text-xs">{t('library.scan')}</span>
-                  </Button>
                 </div>
               ))
             )}
@@ -346,25 +421,38 @@ export function Library() {
 
       {/* Media Items */}
       {selectedLibrary && (
-        <Card>
-          <CardHeader className="p-3 sm:p-4">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <CardTitle className="text-base sm:text-lg">{t('library.mediaItems')}</CardTitle>
-              <div className="flex items-center gap-2">
-                <Badge variant="outline" className="text-[10px] sm:text-xs">
-                  {t('library.showing')} {filteredItems.length} {t('library.items')}（{t('library.total')} {items?.length || 0}）
-                </Badge>
+        <Card className="overflow-hidden rounded-[30px]">
+          <CardHeader className="space-y-4 border-b border-border/60 p-4 sm:p-5">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0">
+                <div className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                  {selectedLibraryInfo?.name || t('library.mediaItems')}
+                </div>
+                <CardTitle className="mt-2 text-xl sm:text-2xl">{t('library.mediaItems')}</CardTitle>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-center sm:min-w-[360px]">
+                <div className="rounded-[20px] border border-border/70 bg-background/35 px-3 py-2">
+                  <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{t('library.showing')}</div>
+                  <div className="mt-1 text-lg font-extrabold">{itemsFetching ? '...' : items.length}</div>
+                </div>
+                <div className="rounded-[20px] border border-border/70 bg-background/35 px-3 py-2">
+                  <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{t('library.totalItems')}</div>
+                  <div className="mt-1 text-lg font-extrabold">{totalItems}</div>
+                </div>
+                <div className="rounded-[20px] border border-destructive/30 bg-destructive/10 px-3 py-2">
+                  <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{t('library.missing')}</div>
+                  <div className="mt-1 text-lg font-extrabold text-destructive">{currentPageMissingCount}</div>
+                </div>
               </div>
             </div>
 
             {/* Filters */}
-            <div className="grid gap-2 sm:gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 mt-3 sm:mt-4">
+            <div className="grid gap-2 rounded-[24px] border border-border/70 bg-background/35 p-3 sm:gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_180px_160px_auto]">
               <Input
                 placeholder={t('library.searchPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value)
-                  handleFilterChange()
                 }}
               />
               <Select value={typeFilter} onValueChange={(value) => {
@@ -407,6 +495,7 @@ export function Library() {
                     setSearchQuery('')
                     setTypeFilter('all')
                     setYearFilter('all')
+                    setPage(1)
                   }}
                 >
                   <Filter className="mr-1 sm:mr-2 h-4 w-4" />
@@ -416,38 +505,41 @@ export function Library() {
               )}
             </div>
           </CardHeader>
-          <CardContent className="p-3 sm:p-4">
+          <CardContent className="p-4 sm:p-5">
             {itemsLoading ? (
               <p className="text-muted-foreground">{t('library.loadingItems')}</p>
-            ) : filteredItems.length === 0 ? (
+            ) : paginatedItems.length === 0 ? (
               <p className="text-muted-foreground text-center py-8">
-                {items?.length === 0 ? t('library.noItems') : t('library.noMatchingItems')}
+                {totalItems === 0 ? t('library.noItems') : t('library.noMatchingItems')}
               </p>
             ) : (
-              <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-4">
                 {paginatedItems.map((item) => (
-                  <Card key={item.id} className="overflow-hidden hover:shadow-lg transition-shadow">
+                  <Card key={item.id} className="group overflow-hidden rounded-[28px] border-border/70 bg-background/45 transition-all duration-200 hover:-translate-y-1 hover:border-primary/50 hover:bg-background/65 hover:shadow-[0_22px_55px_-38px_rgba(0,0,0,0.7)]">
                     {/* Poster Image */}
-                    <div className="relative aspect-[2/3] bg-muted">
+                    <div className="relative aspect-[2/3] overflow-hidden bg-muted">
                       {item.image_url ? (
                         <img
                           src={item.image_url}
                           alt={item.name}
-                          className="w-full h-full object-cover"
+                          className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
                           loading="lazy"
                         />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          {item.type === 'Movie' ? (
-                            <Film className="h-16 w-16 text-muted-foreground" />
-                          ) : (
-                            <Tv className="h-16 w-16 text-muted-foreground" />
-                          )}
+                        <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_35%_20%,hsl(var(--primary)/0.22),transparent_32%),linear-gradient(145deg,hsl(var(--muted)),hsl(var(--background)))]">
+                          <div className="flex h-20 w-20 items-center justify-center rounded-[28px] border border-border/70 bg-background/45 backdrop-blur">
+                            {item.type === 'Movie' ? (
+                              <Film className="h-10 w-10 text-primary" />
+                            ) : (
+                              <Tv className="h-10 w-10 text-primary" />
+                            )}
+                          </div>
                         </div>
                       )}
+                      <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
                       {/* Type Badge */}
                       <div className="absolute top-2 right-2">
-                        <Badge variant={item.type === 'Movie' ? 'default' : 'secondary'}>
+                        <Badge variant={item.type === 'Movie' ? 'default' : 'secondary'} className="shadow-sm backdrop-blur">
                           {item.type === 'Series' && item.child_count
                             ? `${t('library.series')} ${item.child_count}${t('library.episodes')}`
                             : item.type === 'Movie' ? t('library.movie') : item.type === 'Series' ? t('library.series') : item.type}
@@ -456,17 +548,17 @@ export function Library() {
                       {/* Missing Languages Badge */}
                       {item.missing_languages.length > 0 && (
                         <div className="absolute top-2 left-2">
-                          <Badge variant="destructive">
+                          <Badge variant="destructive" className="shadow-sm">
                             {t('library.missing')} {item.missing_languages.length}
                           </Badge>
                         </div>
                       )}
                     </div>
 
-                    <CardContent className="p-2 sm:p-3 space-y-1.5 sm:space-y-2">
+                    <CardContent className="space-y-3 p-3">
                       {/* Title */}
                       <div>
-                        <h3 className="font-semibold text-xs sm:text-sm line-clamp-2 min-h-[2rem]">
+                        <h3 className="line-clamp-2 min-h-[2.5rem] text-sm font-bold leading-snug">
                           {item.name}
                         </h3>
                         {item.type === 'Series' && item.child_count ? (
@@ -483,13 +575,13 @@ export function Library() {
                       </div>
 
                       {/* Metadata */}
-                      <div className="flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-xs text-muted-foreground flex-wrap">
+                      <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                         {item.production_year && (
                           <span>{item.production_year}</span>
                         )}
                         {item.community_rating && (
                           <div className="flex items-center gap-1">
-                            <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                            <Star className="h-3 w-3 fill-primary text-primary" />
                             <span>{item.community_rating.toFixed(1)}</span>
                           </div>
                         )}
@@ -512,7 +604,7 @@ export function Library() {
                       )}
 
                       {/* Duration and Size */}
-                      <div className="flex items-center gap-2 sm:gap-3 text-[10px] sm:text-xs text-muted-foreground">
+                      <div className="flex items-center gap-3 rounded-[18px] border border-border/60 bg-muted/25 px-3 py-2 text-xs text-muted-foreground">
                         {item.duration_seconds && (
                           <div className="flex items-center gap-1">
                             <Clock className="h-3 w-3" />
@@ -528,7 +620,7 @@ export function Library() {
                       </div>
 
                       {/* Languages */}
-                      <div className="space-y-1.5 sm:space-y-2">
+                      <div className="space-y-2 rounded-[18px] border border-border/60 bg-background/30 p-2.5">
                         {/* Audio Languages */}
                         {item.audio_languages.length > 0 && (
                           <div className="flex items-start gap-1.5 sm:gap-2">
@@ -548,7 +640,7 @@ export function Library() {
                           <div className="flex items-start gap-1.5 sm:gap-2">
                             <span className="text-[10px] sm:text-xs text-muted-foreground whitespace-nowrap">{t('library.subtitles')}:</span>
                             <div className="flex gap-1 flex-wrap">
-                              {item.subtitle_streams.map((stream) => (
+                              {item.subtitle_streams.slice(0, 4).map((stream) => (
                                 <Badge
                                   key={stream.index}
                                   variant="secondary"
@@ -564,6 +656,11 @@ export function Library() {
                                   )}
                                 </Badge>
                               ))}
+                              {item.subtitle_streams.length > 4 && (
+                                <Badge variant="outline" className="text-xs">
+                                  +{item.subtitle_streams.length - 4}
+                                </Badge>
+                              )}
                             </div>
                           </div>
                         )}
@@ -573,11 +670,16 @@ export function Library() {
                           <div className="flex items-start gap-1.5 sm:gap-2">
                             <span className="text-[10px] sm:text-xs text-muted-foreground whitespace-nowrap">{t('library.missing')}:</span>
                             <div className="flex gap-1 flex-wrap">
-                              {item.missing_languages.map((lang) => (
+                              {item.missing_languages.slice(0, 3).map((lang) => (
                                 <Badge key={lang} variant="destructive" className="text-xs">
                                   {getLanguageName(lang)}
                                 </Badge>
                               ))}
+                              {item.missing_languages.length > 3 && (
+                                <Badge variant="destructive" className="text-xs">
+                                  +{item.missing_languages.length - 3}
+                                </Badge>
+                              )}
                             </div>
                           </div>
                         )}
@@ -591,13 +693,13 @@ export function Library() {
                       )}
 
                       {/* Quick Actions */}
-                      <div className="flex gap-2 pt-1.5 sm:pt-2 border-t">
+                      <div className="flex gap-2 border-t border-border/60 pt-2">
                         {/* Quick Translate Button */}
                         {item.missing_languages.length > 0 ? (
                           <Button
                             size="sm"
                             variant="default"
-                            className="flex-1"
+                            className="flex-1 rounded-full"
                             onClick={() => handleQuickTranslate(item)}
                           >
                             <Languages className="mr-1 sm:mr-2 h-4 w-4" />
@@ -605,9 +707,9 @@ export function Library() {
                             <span className="sm:hidden">{t('library.translate')}</span>
                           </Button>
                         ) : (
-                          <div className="flex-1 flex items-center justify-center gap-1 sm:gap-2 text-[10px] sm:text-xs text-green-600 dark:text-green-400">
+                          <div className="flex flex-1 items-center justify-center gap-1 text-[10px] text-foreground sm:gap-2 sm:text-xs">
                             <CheckCircle2 className="h-4 w-4" />
-                            {t('library.subtitlesComplete')}
+                            {t('library.subtitleComplete')}
                           </div>
                         )}
 
@@ -615,6 +717,7 @@ export function Library() {
                         <Button
                           size="sm"
                           variant="outline"
+                          className="rounded-full"
                           onClick={() => {
                             if (item.type === 'Series') {
                               handleViewSeries(item)
@@ -634,12 +737,12 @@ export function Library() {
             )}
 
             {/* Pagination Controls */}
-            {filteredItems.length > pageSize && (
-              <div className="flex items-center justify-between gap-3 pt-3 sm:pt-4 border-t flex-wrap">
+            {totalItems > pageSize && (
+              <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-border/70 bg-background/35 p-3">
                 <div className="text-xs sm:text-sm text-muted-foreground">
-                  {t('library.page')} {page} / {totalPages} {t('library.pages')}
+                  {t('library.page', { current: page, total: totalPages })}
                   <span className="hidden sm:inline">
-                    ，{t('library.showing')} {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, filteredItems.length)} {t('library.items')}（{t('library.total')} {filteredItems.length} {t('library.items')}）
+                    ，{t('library.pageRange', { from: loadedRangeStart, to: loadedRangeEnd, total: totalItems })}
                   </span>
                 </div>
                 <div className="flex gap-2">
@@ -655,7 +758,7 @@ export function Library() {
                     variant="outline"
                     size="sm"
                     onClick={() => setPage(page + 1)}
-                    disabled={page >= totalPages}
+                    disabled={page >= totalPages || itemsFetching}
                   >
                     {t('library.nextPage')}
                   </Button>
@@ -678,7 +781,7 @@ export function Library() {
                 <>
                   {t('library.batchCreateFor')} <strong>{selectedSeries[0]?.series_name}</strong> {t('library.of')}{' '}
                   <strong className="text-destructive">
-                    {selectedSeries.filter(ep => ep.missing_languages.length > 0).length} {t('library.episodes')}
+                    {selectedSeriesMissingCount} {t('library.episodes')}
                   </strong>{' '}
                   {t('library.batchCreateTasks')}
                 </>
@@ -736,7 +839,7 @@ export function Library() {
                 <ul className="space-y-1 text-muted-foreground ml-4 list-disc">
                   <li>{t('library.batchTranslateDesc1')}</li>
                   <li>{t('library.batchTranslateDesc2')}</li>
-                  <li>{t('library.totalEpisodesNeedTranslation', { count: selectedSeries.filter(ep => ep.missing_languages.length > 0).length })}</li>
+                  <li>{t('library.totalEpisodesNeedTranslation', { count: selectedSeriesMissingCount })}</li>
                 </ul>
               </div>
             )}
@@ -784,7 +887,7 @@ export function Library() {
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
               {selectedItem ? t('library.createTask') : t('library.batchCreateCount', {
-                count: selectedSeries.filter(ep =>
+                  count: selectedSeries.filter(ep =>
                   selectedTargetLangs.some(lang => ep.missing_languages.includes(lang))
                 ).length
               })}
@@ -1030,15 +1133,15 @@ export function Library() {
                 <AlertDialogTitle>{t('library.episodeList')}</AlertDialogTitle>
                 <AlertDialogDescription>
                   <strong>{selectedSeries[0]?.series_name}</strong> {t('library.totalEpisodesCount', { count: selectedSeries.length })}
-                  {selectedSeries.filter(ep => ep.missing_languages.length > 0).length > 0 && (
+                  {selectedSeriesMissingCount > 0 && (
                     <span className="text-destructive ml-2">
-                      • {t('library.episodesMissingSubtitles', { count: selectedSeries.filter(ep => ep.missing_languages.length > 0).length })}
+                       • {t('library.episodesMissingSubtitles', { count: selectedSeriesMissingCount })}
                     </span>
                   )}
                 </AlertDialogDescription>
               </div>
               {/* Batch Translate Button */}
-              {selectedSeries.filter(ep => ep.missing_languages.length > 0).length > 0 && (
+              {selectedSeriesMissingCount > 0 && (
                 <Button
                   size="sm"
                   onClick={handleBatchTranslateSeries}
@@ -1054,15 +1157,7 @@ export function Library() {
           {/* Scrollable Episodes Container */}
           <div className="flex-1 overflow-y-auto px-1 py-4 -mx-1">
             <div className="grid gap-3 pr-3">
-              {selectedSeries
-                .sort((a, b) => {
-                  // Sort by season then episode
-                  if (a.season_number !== b.season_number) {
-                    return (a.season_number || 0) - (b.season_number || 0)
-                  }
-                  return (a.episode_number || 0) - (b.episode_number || 0)
-                })
-                .map((episode) => (
+              {sortedSelectedSeries.map((episode) => (
                   <Card key={episode.id} className="overflow-hidden">
                     <CardContent className="p-3 sm:p-4">
                       <div className="flex gap-3 sm:gap-4">
