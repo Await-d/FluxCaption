@@ -80,6 +80,8 @@ class AIModelConfigUpdate(BaseModel):
 class AIModelConfigResponse(AIModelConfigBase):
     """Schema for AI model configuration response."""
 
+    model_config = ConfigDict(protected_namespaces=(), from_attributes=True)
+
     id: str
     is_available: bool
     usage_count: int
@@ -88,10 +90,6 @@ class AIModelConfigResponse(AIModelConfigBase):
     last_checked: datetime | None = None
     created_at: datetime
     updated_at: datetime
-
-    class Config:
-        from_attributes = True
-
 
 class AIModelConfigList(BaseModel):
     """Schema for listing AI model configurations."""
@@ -115,3 +113,25 @@ class PricingCalculation(BaseModel):
     output_cost: float = Field(description="Cost for output tokens (USD)")
     total_cost: float = Field(description="Total cost (USD)")
     currency: str = Field(default="USD")
+
+
+class AIModelCatalogSyncResponse(BaseModel):
+    """Schema for AI model catalog sync response."""
+
+    source: str
+    created: int
+    updated: int
+    merged: int
+    skipped: int
+    providers_created: int
+    synced_at: datetime
+
+
+class AIModelCatalogSyncQueuedResponse(BaseModel):
+    """Response when AI model catalog sync has been queued."""
+
+    status: str
+    task_id: str
+    message: str
+    source: str
+    provider: str | None = None

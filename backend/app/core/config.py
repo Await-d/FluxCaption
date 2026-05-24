@@ -4,6 +4,7 @@ Application configuration using pydantic-settings.
 Loads and validates environment variables from .env file or system environment.
 """
 
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, field_validator
@@ -13,8 +14,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
+    _repo_root = Path(__file__).resolve().parents[3]
+
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_repo_root / ".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -96,6 +99,8 @@ class Settings(BaseSettings):
     # =============================================================================
     openai_api_key: str | None = Field(default=None, description="OpenAI API key")
     deepseek_api_key: str | None = Field(default=None, description="DeepSeek API key")
+    deeplx_api_key: str | None = Field(default=None, description="DeepLX token")
+    deeplx_base_url: str | None = Field(default=None, description="DeepLX base URL")
     claude_api_key: str | None = Field(default=None, description="Claude API key")
     gemini_api_key: str | None = Field(default=None, description="Google Gemini API key")
     zhipu_api_key: str | None = Field(default=None, description="Zhipu AI API key")
@@ -105,6 +110,15 @@ class Settings(BaseSettings):
     )
     custom_openai_base_url: str | None = Field(
         default=None, description="Custom OpenAI-compatible base URL"
+    )
+    ai_models_catalog_url: str = Field(
+        default="https://models.dev", description="Base URL for opencode-compatible AI model catalog"
+    )
+    ai_models_auto_sync_enabled: bool = Field(
+        default=True, description="Automatically sync AI model catalog on startup and in background"
+    )
+    ai_models_auto_sync_interval_seconds: int = Field(
+        default=3600, description="Interval in seconds between automatic AI model catalog syncs"
     )
 
     # =============================================================================
@@ -158,10 +172,33 @@ class Settings(BaseSettings):
     default_subtitle_format: Literal["srt", "ass", "vtt"] = Field(default="srt")
     preserve_ass_styles: bool = Field(default=True)
     translation_batch_size: int = Field(default=10)
+    translation_line_concurrency: int = Field(
+        default=3, description="Maximum concurrent upstream translation requests per batch"
+    )
+    ai_provider_max_concurrency: int = Field(
+        default=6, description="Maximum concurrent upstream AI requests per provider in one process"
+    )
     translation_max_line_length: int = Field(default=42)
     translation_preserve_formatting: bool = Field(default=True)
     enable_translation_proofreading: bool = Field(
         default=True, description="Enable AI proofreading to review and improve translations"
+    )
+    pgs_ocr_engine: Literal["auto", "pgsocr", "subtitleedit", "disabled"] = Field(
+        default="auto", description="OCR engine for PGS/SUP subtitles"
+    )
+    pgs_ocr_output_format: Literal["srt", "ass"] = Field(
+        default="srt", description="Output format for OCR-converted PGS subtitles"
+    )
+    pgs_ocr_timeout_seconds: int = Field(
+        default=1800, description="Timeout for PGS OCR conversion in seconds"
+    )
+    pgsocr_executable: str = Field(default="pgsocr", description="pgsocr executable path")
+    pgsocr_module_command: str = Field(
+        default="python -m pgsocr",
+        description="Fallback command used when pgsocr executable is not directly on PATH",
+    )
+    subtitle_edit_executable: str = Field(
+        default="SubtitleEdit", description="Subtitle Edit executable path"
     )
 
     # =============================================================================

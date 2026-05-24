@@ -61,6 +61,13 @@ celery_app.conf.update(
         "app.workers.tasks.scan_library_task": {"queue": "scan"},
         "app.workers.tasks.translate_subtitle_task": {"queue": "translate"},
         "app.workers.tasks.asr_then_translate_task": {"queue": "asr"},
+        "app.workers.tasks.pull_model_task": {"queue": "models"},
+        "app.workers.tasks.test_model_task": {"queue": "models"},
+        "app.workers.tasks.sync_models_task": {"queue": "models"},
+        "app.workers.tasks.sync_ai_model_catalog_task": {"queue": "models"},
+        "app.workers.tasks.sync_subtitle_task": {"queue": "translate"},
+        "app.workers.tasks.sync_asset_subtitles_task": {"queue": "translate"},
+        "app.workers.tasks.sync_all_subtitles_task": {"queue": "translate"},
     },
     # Task rate limits (tasks per second)
     task_annotations={

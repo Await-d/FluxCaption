@@ -4,11 +4,13 @@ Ollama model management schemas.
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ModelInfo(BaseModel):
     """Information about an Ollama model."""
+
+    model_config = ConfigDict(from_attributes=True)
 
     name: str = Field(description="Model name")
     status: str = Field(description="Model status: available | pulling | failed")
@@ -20,10 +22,6 @@ class ModelInfo(BaseModel):
     last_used: datetime | None = Field(default=None, description="Last usage timestamp")
     usage_count: int = Field(default=0, description="Usage count")
     is_default: bool = Field(default=False, description="Is default model")
-
-    class Config:
-        from_attributes = True
-
 
 class ModelPullRequest(BaseModel):
     """Request to pull an Ollama model."""
