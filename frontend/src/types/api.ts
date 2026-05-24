@@ -80,6 +80,22 @@ export interface JellyfinMediaItem {
   child_count: number | null  // For Series items: number of episodes/seasons
 }
 
+export interface JellyfinItemListResponse {
+  items: JellyfinMediaItem[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface JellyfinLibraryItemsParams {
+  limit?: number
+  offset?: number
+  search?: string
+  item_type?: string
+  year?: number
+  has_subtitle?: boolean
+}
+
 export interface ScanLibraryRequest {
   library_id: string
   required_langs?: string[]  // Optional: will be inferred from auto translation rules if not provided
@@ -123,6 +139,7 @@ export interface CreateJobRequest {
   source_lang?: string
   target_langs: string[]
   model?: string | null
+  provider?: string | null
   writeback_mode?: string
   priority?: number
 }
@@ -189,6 +206,15 @@ export interface ModelListResponse {
 export interface PullModelRequest {
   name: string
   insecure?: boolean
+}
+
+export interface QueuedTaskResponse {
+  status: 'queued' | 'pulling'
+  task_id: string
+  message: string
+  model?: string
+  source?: string
+  provider?: string | null
 }
 
 export interface PullModelProgress {
@@ -273,6 +299,8 @@ export interface AppSettings {
   default_subtitle_format: SubtitleFormat
   preserve_ass_styles: boolean
   translation_batch_size: number
+  translation_line_concurrency: number
+  ai_provider_max_concurrency: number
   translation_max_line_length: number
   translation_preserve_formatting: boolean
 
@@ -299,6 +327,10 @@ export interface AppSettings {
   enable_auto_pull_models: boolean
   enable_sidecar_writeback: boolean
   enable_metrics: boolean
+  ai_models_auto_sync_enabled: boolean
+  ai_models_auto_sync_interval_seconds: number
+  ai_models_catalog_url: string
+  ai_models_last_catalog_sync_at: string | null
 
   // Task Timeouts
   scan_task_timeout: number
@@ -323,14 +355,18 @@ export interface UpdateSettingsRequest extends Partial<AppSettings> { }
 
 export interface ProgressEvent {
   job_id: string
-  phase: 'pull' | 'extract' | 'asr' | 'mt' | 'post' | 'writeback'
-  status: 'started' | 'progress' | 'completed' | 'error' | 'paused'
+  phase: string
+  status: string
   progress: number
   total?: number
   completed?: number
   message?: string
   error?: string
   timestamp?: string  // ISO timestamp from server
+  type?: string
+  index?: number
+  source?: string
+  translated?: string
 }
 
 // =============================================================================
@@ -427,6 +463,7 @@ export interface ScanDirectoryResponse {
   directory: string
   media_files: MediaFileResponse[]
   total_count: number
+  required_langs: string[]
 }
 
 export interface DirectoryStatsResponse {

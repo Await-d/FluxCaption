@@ -2,9 +2,7 @@
  * AI Model Configuration API Client
  */
 
-import axios from 'axios';
-
-const API_BASE_URL = '/api';
+import api from '../lib/api'
 
 export interface AIModelConfig {
   id: string;
@@ -70,6 +68,14 @@ export interface AIModelConfigListResponse {
   page_size: number;
 }
 
+export interface AIModelCatalogSyncQueuedResponse {
+  status: 'queued';
+  task_id: string;
+  message: string;
+  source: string;
+  provider?: string | null;
+}
+
 export interface PricingCalculation {
   model_name: string;
   provider_name: string;
@@ -90,26 +96,21 @@ export async function listModels(params?: {
   page?: number;
   page_size?: number;
 }): Promise<AIModelConfigListResponse> {
-  const response = await axios.get<AIModelConfigListResponse>(`${API_BASE_URL}/ai-models`, {
-    params,
-  });
-  return response.data;
+  return api.get<AIModelConfigListResponse>('/ai-models', { params })
 }
 
 /**
  * Get detailed model configuration
  */
 export async function getModel(modelId: string): Promise<AIModelConfig> {
-  const response = await axios.get<AIModelConfig>(`${API_BASE_URL}/ai-models/${modelId}`);
-  return response.data;
+  return api.get<AIModelConfig>(`/ai-models/${modelId}`)
 }
 
 /**
  * Create a new AI model configuration
  */
 export async function createModel(data: AIModelConfigCreate): Promise<AIModelConfig> {
-  const response = await axios.post<AIModelConfig>(`${API_BASE_URL}/ai-models`, data);
-  return response.data;
+  return api.post<AIModelConfig>('/ai-models', data)
 }
 
 /**
@@ -119,15 +120,14 @@ export async function updateModel(
   modelId: string,
   data: AIModelConfigUpdate
 ): Promise<AIModelConfig> {
-  const response = await axios.patch<AIModelConfig>(`${API_BASE_URL}/ai-models/${modelId}`, data);
-  return response.data;
+  return api.patch<AIModelConfig>(`/ai-models/${modelId}`, data)
 }
 
 /**
  * Delete an AI model configuration
  */
 export async function deleteModel(modelId: string): Promise<void> {
-  await axios.delete(`${API_BASE_URL}/ai-models/${modelId}`);
+  await api.delete(`/ai-models/${modelId}`)
 }
 
 /**
@@ -139,10 +139,11 @@ export async function calculatePrice(params: {
   input_tokens: number;
   output_tokens: number;
 }): Promise<PricingCalculation> {
-  const response = await axios.post<PricingCalculation>(
-    `${API_BASE_URL}/ai-models/calculate-price`,
-    null,
-    { params }
-  );
-  return response.data;
+  return api.post<PricingCalculation>('/ai-models/calculate-price', null, { params })
+}
+
+export async function syncCatalog(params?: {
+  provider?: string;
+}): Promise<AIModelCatalogSyncQueuedResponse> {
+  return api.post<AIModelCatalogSyncQueuedResponse>('/ai-models/sync-catalog', null, { params })
 }

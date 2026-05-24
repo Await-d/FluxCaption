@@ -5,10 +5,10 @@
  * with pricing information.
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Edit2, Trash2, DollarSign, Check, X, Loader2 } from 'lucide-react'
+import { Plus, Edit2, Trash2, DollarSign, Check, X, Loader2, RefreshCw } from 'lucide-react'
 import * as aiModelsApi from '../api/aiModels'
 import type { AIModelConfig, AIModelConfigCreate, AIModelConfigUpdate } from '../api/aiModels'
 import { aiProviderApi } from '../api/aiProviders'
@@ -33,6 +33,7 @@ import {
   DialogTitle,
 } from '../components/ui/Dialog'
 import { cn } from '../lib/utils'
+import { PageHero } from '../components/ui/PageHero'
 
 export default function AIModelsPage() {
   const { t } = useTranslation()
@@ -97,6 +98,28 @@ export default function AIModelsPage() {
     },
   })
 
+  const syncCatalogMutation = useMutation({
+    mutationFn: ({ provider }: { provider?: string }) => aiModelsApi.syncCatalog({ provider }),
+    onSuccess: (result) => {
+      localStorage.setItem('ai-model-catalog:last-sync', new Date().toISOString())
+      toast.success(t('aiModels.syncSuccess', { taskId: result.task_id }))
+    },
+    onError: () => {
+      toast.error(t('aiModels.syncFailed'))
+    },
+  })
+
+  useEffect(() => {
+    const lastSync = localStorage.getItem('ai-model-catalog:last-sync')
+    const lastSyncTs = lastSync ? Date.parse(lastSync) : 0
+    const shouldAutoSync = !lastSyncTs || Date.now() - lastSyncTs >= 60 * 60 * 1000
+    if (!shouldAutoSync || syncCatalogMutation.isPending) {
+      return
+    }
+    syncCatalogMutation.mutate({ provider: selectedProvider || undefined })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const handleDelete = (model: AIModelConfig) => {
     // eslint-disable-next-line no-alert
     if (confirm(`${t('common.delete')} "${model.display_name}"?`)) {
@@ -108,20 +131,41 @@ export default function AIModelsPage() {
   const providers = (providersData || []).map((p) => p.provider_name).sort()
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 className="text-xl font-semibold">{t('nav.aiModels')}</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            {t('aiModels.descHeader')}
-          </p>
-        </div>
-        <Button onClick={() => setShowCreateDialog(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          {t('aiModels.addButton')}
-        </Button>
-      </div>
+    <div className="space-y-6 lg:space-y-8">
+      <PageHero
+        eyebrow={t('pageHero.aiModels.eyebrow')}
+        title={t('nav.aiModels')}
+        description={t('aiModels.descHeader')}
+        actions={
+          <>
+            <Button
+              variant="outline"
+              onClick={() => syncCatalogMutation.mutate({ provider: selectedProvider || undefined })}
+              disabled={syncCatalogMutation.isPending}
+            >
+              {syncCatalogMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-2 h-4 w-4" />
+              )}
+              {t('aiModels.syncCatalog')}
+            </Button>
+            <Button onClick={() => setShowCreateDialog(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              {t('aiModels.addButton')}
+            </Button>
+          </>
+        }
+        metrics={[
+          { label: t('pageHero.aiModels.metrics.visible.label'), value: String(modelsData?.models.length ?? 0), detail: selectedProvider || t('pageHero.aiModels.metrics.visible.detail') },
+          { label: t('pageHero.aiModels.metrics.providers.label'), value: String(providers.length), detail: t('pageHero.aiModels.metrics.providers.detail') },
+          { label: t('pageHero.aiModels.metrics.catalog.label'), value: syncCatalogMutation.isPending ? t('pageHero.common.syncing') : t('pageHero.common.ready'), detail: t('pageHero.aiModels.metrics.catalog.detail') },
+        ]}
+      />
+
+      <p className="text-xs text-muted-foreground">
+        {t('aiModels.syncHint')}
+      </p>
 
       {/* Provider Filter */}
       <div className="flex flex-wrap items-center gap-2">
@@ -161,7 +205,7 @@ export default function AIModelsPage() {
           ))}
         </div>
       ) : (
-        <Card>
+        <Card className="rounded-[30px]">
           <CardContent className="py-12 text-center text-muted-foreground space-y-1">
             <p>{t('aiModels.noModels')}</p>
             <p className="text-sm">{t('aiModels.clickToCreate')}</p>
@@ -298,7 +342,7 @@ function ModelCard({
               )}
               {model.input_price === 0 && model.output_price === 0 && (
                 <div className="text-green-500 dark:text-green-400 font-medium">
-                  {t('common.free', 'Free')}
+                  {t('common.free')}
                 </div>
               )}
             </div>
@@ -520,30 +564,26 @@ function ModelDialog({
               </div>
 
               {!model && !useCustomModel && recommendedModels.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {recommendedModels.map((modelInfo) => {
-                    const isSelected = formData.model_name === modelInfo.name
-                    return (
-                      <button
-                        key={modelInfo.name}
-                        type="button"
-                        onClick={() => handleRecommendedModelSelect(modelInfo)}
-                        className={cn(
-                          'p-3 rounded-md border text-left transition-colors',
-                          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-                          isSelected
-                            ? 'border-primary bg-primary/10'
-                            : 'border-border hover:border-primary/50 hover:bg-accent/30',
-                        )}
-                      >
-                        <p className="font-medium text-sm">{modelInfo.display}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {modelInfo.description}
-                        </p>
-                      </button>
-                    )
-                  })}
-                </div>
+                <Select
+                  value={formData.model_name || undefined}
+                  onValueChange={(modelName) => {
+                    const selected = recommendedModels.find((modelInfo) => modelInfo.name === modelName)
+                    if (selected) {
+                      handleRecommendedModelSelect(selected)
+                    }
+                  }}
+                >
+                  <SelectTrigger id="model-name">
+                    <SelectValue placeholder={t('common.select')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {recommendedModels.map((modelInfo) => (
+                      <SelectItem key={modelInfo.name} value={modelInfo.name}>
+                        {modelInfo.display} - {modelInfo.description}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               ) : (
                 <Input
                   id="model-name"
