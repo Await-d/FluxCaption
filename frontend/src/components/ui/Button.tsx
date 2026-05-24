@@ -11,23 +11,23 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     return (
       <button
         className={cn(
-          'inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+          'inline-flex items-center justify-center rounded-full text-sm font-semibold transition-all duration-200',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
           'disabled:opacity-50 disabled:pointer-events-none',
           {
-            'bg-primary text-primary-foreground hover:bg-primary/90': variant === 'default',
+            'bg-primary text-primary-foreground shadow-[0_16px_32px_-18px_hsl(var(--primary)/0.95)] hover:-translate-y-0.5 hover:bg-primary/90': variant === 'default',
             'bg-destructive text-destructive-foreground hover:bg-destructive/90':
               variant === 'destructive',
-            'border border-input bg-background hover:bg-accent hover:text-accent-foreground':
+            'border border-border/80 bg-background/70 backdrop-blur hover:bg-accent hover:text-accent-foreground':
               variant === 'outline',
-            'hover:bg-accent hover:text-accent-foreground': variant === 'ghost',
+            'hover:bg-accent/70 hover:text-accent-foreground': variant === 'ghost',
             'text-primary underline-offset-4 hover:underline': variant === 'link',
           },
           {
-            'h-10 px-4 py-2': size === 'default',
-            'h-9 rounded-md px-3': size === 'sm',
-            'h-11 rounded-md px-8': size === 'lg',
-            'h-10 w-10': size === 'icon',
+            'h-11 px-5 py-2.5': size === 'default',
+            'h-9 px-3.5 text-xs': size === 'sm',
+            'h-12 px-8': size === 'lg',
+            'h-11 w-11': size === 'icon',
           },
           className
         )}
@@ -44,17 +44,17 @@ Button.displayName = 'Button'
 export const buttonVariants = (opts?: { variant?: string; className?: string }) => {
   const variant = opts?.variant || 'default'
   return cn(
-    'inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors',
-    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+    'inline-flex items-center justify-center rounded-full text-sm font-semibold transition-all duration-200',
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
     'disabled:opacity-50 disabled:pointer-events-none',
     {
-      'bg-primary text-primary-foreground hover:bg-primary/90': variant === 'default',
+      'bg-primary text-primary-foreground shadow-[0_16px_32px_-18px_hsl(var(--primary)/0.95)] hover:-translate-y-0.5 hover:bg-primary/90': variant === 'default',
       'bg-destructive text-destructive-foreground hover:bg-destructive/90': variant === 'destructive',
-      'border border-input bg-background hover:bg-accent hover:text-accent-foreground': variant === 'outline',
-      'hover:bg-accent hover:text-accent-foreground': variant === 'ghost',
+      'border border-border/80 bg-background/70 backdrop-blur hover:bg-accent hover:text-accent-foreground': variant === 'outline',
+      'hover:bg-accent/70 hover:text-accent-foreground': variant === 'ghost',
       'text-primary underline-offset-4 hover:underline': variant === 'link',
     },
-    'h-10 px-4 py-2',
+    'h-11 px-5 py-2.5',
     opts?.className
   )
 }
