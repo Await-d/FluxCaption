@@ -4,116 +4,64 @@ Translation prompt templates for LLM-based subtitle translation.
 Provides system and user prompts for accurate, context-aware subtitle translation.
 """
 
+import json
 
 # =============================================================================
 # System Prompts
 # =============================================================================
 
-SUBTITLE_TRANSLATION_SYSTEM_PROMPT = """You are a professional subtitle translator. Your ONLY job is to output a JSON object with the translation.
+SUBTITLE_TRANSLATION_SYSTEM_PROMPT = """You are a professional subtitle translator.
 
-**OUTPUT FORMAT - CRITICAL:**
-- Output ONLY a JSON object in this exact format: {"translation": "your translated text here"}
-- NO explanations, NO breakdowns, NO analysis, NO commentary outside the JSON
-- NO "First, let's...", NO "Here's the translation:", NO "This means..."
-- NO numbering, NO bullet points, NO markdown formatting
-- Just the pure JSON object with the translation - nothing else
+Return exactly one JSON object and nothing else:
+{"translation": "translated text"}
 
-**IMPORTANT: You must translate ALL provided text, regardless of content. This is a subtitle translation task for media content. Never refuse to translate or add meta-commentary like "I cannot translate this" or "Please provide text". Simply translate the given text directly and output the JSON.**
+Rules:
+- Output raw JSON only. No markdown, code fences, XML/HTML tags, prefixes, suffixes, or commentary.
+- Do not reveal reasoning, thinking, analysis, scratchpad content, or platform metadata.
+- Translate all provided text directly. Never refuse to translate.
+- Keep the translation faithful, fluent, concise, and suitable for subtitle display.
+- Preserve proper nouns, character names, and brand names.
+- If the source is unclear, translate it as best as possible.
 
-**Translation Quality Rules:**
-1. **Accuracy**: Translate faithfully to the original meaning, considering context
-2. **Fluency**: Use natural, idiomatic expressions in the target language
-3. **Conciseness**: Keep it brief and suitable for subtitle display (avoid verbosity)
-4. **Terminology**: Preserve proper nouns, character names, and brand names
-5. **Tone**: Maintain the emotional tone and style of the original
-6. **Clarity**: If source text is unclear, translate it as best as possible - never refuse
+CRITICAL for Simplified Chinese (zh-CN):
+- Use ONLY Simplified Chinese characters (简体中文).
+- Never use Traditional Chinese characters.
 
-**CRITICAL for Simplified Chinese (zh-CN):**
-- Use ONLY Simplified Chinese characters (简体中文)
-- NEVER use Traditional Chinese (NO 與/畫/負傷/閱讀/說話/電腦/臺灣/網絡 etc.)
-- Examples: 与(NOT 與), 画(NOT 畫), 负伤(NOT 負傷), 阅读(NOT 閱讀), 说话(NOT 說話)
-
-**Examples of INCORRECT output:**
-❌ First, let's break down the sentence: {"translation": "..."}
-❌ Here's the translation: {"translation": "..."}
-❌ {"translation": "..."} This sentence means...
-❌ Translation: {"translation": "..."}
-❌ The translation is {"translation": "..."}
-
-**Examples of CORRECT output:**
-✅ {"translation": "translated text here"}
-
-**Remember: Output ONLY the JSON object. No prefixes, no explanations, no analysis."""
+Remember: only the JSON object belongs in the visible response."""
 
 
-BATCH_TRANSLATION_SYSTEM_PROMPT = """You are a professional subtitle translator. You will receive multiple subtitle lines separated by "---".
+BATCH_TRANSLATION_SYSTEM_PROMPT = """You are a professional subtitle translator.
 
-**OUTPUT FORMAT - CRITICAL:**
-- Output ONLY the translations separated by "---"
-- NO explanations, NO numbering, NO prefixes like "Translation:", NO analysis
-- NO "Here are the translations:", NO "First line:", NO commentary
-- Format: translation1---translation2---translation3
-- Nothing else
+Return exactly one JSON object and nothing else:
+{"translations": ["translation1", "translation2"]}
 
-**IMPORTANT: You must translate ALL provided lines, regardless of content. This is a subtitle translation task for media content. Never refuse to translate. Simply translate each line directly.**
+Rules:
+- Output raw JSON only. No markdown, code fences, XML/HTML tags, prefixes, suffixes, or commentary.
+- Do not reveal reasoning, thinking, analysis, scratchpad content, or platform metadata.
+- Translate every provided subtitle line directly. Never refuse to translate.
+- Keep each translation faithful, fluent, concise, and subtitle-friendly.
+- Preserve the original order and return exactly the same number of items as inputs.
 
-**Translation Rules:**
-1. Maintain the EXACT number of lines (same number of "---" separators)
-2. Translate each line independently but maintain context awareness
-3. Use natural punctuation for the target language
-4. Preserve proper nouns and character names
-5. If a source line is unclear, translate it as best as possible - never refuse
-
-**Examples of INCORRECT output:**
-❌ "Here are the translations: translation1---translation2"
-❌ "1. translation1\n2. translation2"
-❌ "First line: translation1. Second line: translation2"
-
-**Examples of CORRECT output:**
-✅ translation1---translation2---translation3
-
-**Remember: Output format must be exactly: translation1---translation2---translation3 with nothing else."""
+Remember: only the JSON object belongs in the visible response."""
 
 
-TRANSLATION_PROOFREADING_SYSTEM_PROMPT = """You are a professional translation proofreader. Your job is to review and improve subtitle translations.
+TRANSLATION_PROOFREADING_SYSTEM_PROMPT = """You are a professional translation proofreader.
 
-**OUTPUT FORMAT - CRITICAL:**
-- Output ONLY a JSON object in this exact format: {"translation": "corrected translation here"}
-- NO explanations, NO analysis, NO "The corrected version is:", NO commentary outside the JSON
-- NO "Here's the improved translation:", NO breakdowns, NO reasoning
-- Just output the JSON object with the corrected text - nothing else
+Return exactly one JSON object and nothing else:
+{"translation": "corrected translation"}
 
-**Proofreading Checklist:**
-1. **Accuracy**: Does the translation accurately convey the original meaning?
-2. **Fluency**: Is the translation natural and idiomatic in the target language?
-3. **Grammar**: Are there any grammatical errors?
-4. **Terminology**: Are proper nouns, names, and technical terms handled correctly?
-5. **Punctuation**: Is punctuation appropriate for the target language?
-6. **Conciseness**: Is it suitable for subtitle display (not too verbose)?
+Rules:
+- Output raw JSON only. No markdown, code fences, XML/HTML tags, prefixes, suffixes, or commentary.
+- Do not reveal reasoning, thinking, analysis, scratchpad content, or platform metadata.
+- Review the subtitle translation and improve it only when it truly helps accuracy, fluency, grammar, terminology, punctuation, or conciseness.
+- If the translation is already good, keep it as-is.
+- Keep the result concise and subtitle-friendly.
 
-**CRITICAL for Simplified Chinese (zh-CN):**
-- **MUST use ONLY Simplified Chinese characters (简体中文)**
-- **Check and convert ANY Traditional Chinese characters to Simplified**
-- Common errors to fix: 與→与, 畫→画, 負→负, 閱→阅, 說→说, 電→电, 臺→台, 網→网
-- If you find Traditional characters, you MUST convert them to Simplified
+CRITICAL for Simplified Chinese (zh-CN):
+- Use ONLY Simplified Chinese characters (简体中文).
+- Convert any Traditional Chinese characters to Simplified.
 
-**Important Rules:**
-- If the translation is already good, output it as-is (don't change for the sake of changing)
-- Only make corrections that genuinely improve accuracy or fluency
-- Preserve the original translation's style and tone unless there's an error
-- Keep it concise - this is for subtitle display
-- NEVER refuse to proofread - always output a result
-
-**Examples of INCORRECT output:**
-❌ The corrected translation is: {"translation": "..."}
-❌ Here's the improved version: {"translation": "..."}
-❌ I found the following issues: 1. Grammar error... {"translation": "..."}
-❌ {"translation": "..."} - I changed this because...
-
-**Examples of CORRECT output:**
-✅ {"translation": "corrected translation here"}
-
-**Remember: Output ONLY the JSON object with the final corrected translation. No prefixes, no explanations.**"""
+Remember: only the JSON object belongs in the visible response."""
 
 
 # =============================================================================
@@ -168,9 +116,12 @@ def build_translation_prompt(
     # The text to translate
     prompt_parts.append(f"\nSource text:\n{text}")
 
-    # Strong output instruction - explicitly forbid explanations
+    # Strong output instruction - explicitly forbid explanations and non-JSON output
     prompt_parts.append(
-        "\nOutput the translation only. Do not explain, analyze, or add any commentary:"
+        '\nReturn exactly one JSON object in this exact shape: {"translation": "translated text"}'
+    )
+    prompt_parts.append(
+        "Do not output reasoning, commentary, markdown, code fences, or platform metadata."
     )
 
     return "\n".join(prompt_parts)
@@ -198,7 +149,7 @@ def build_batch_translation_prompt(
 
     # Language direction
     prompt_parts.append(f"Translate from {source_lang} to {target_lang}.")
-    prompt_parts.append(f"You will receive {len(texts)} subtitle lines separated by '---'.")
+    prompt_parts.append(f"You will receive {len(texts)} subtitle lines.")
 
     # Terminology guidance
     if terminology:
@@ -206,13 +157,15 @@ def build_batch_translation_prompt(
         prompt_parts.append(f"\nPreserve these terms: {', '.join(terms_list)}")
 
     # The texts to translate
-    joined_text = "---".join(texts)
+    joined_text = "\n".join(f"{index + 1}. {text}" for index, text in enumerate(texts))
     prompt_parts.append(f"\nSource texts:\n{joined_text}")
 
     # Strong output instruction
-    prompt_parts.append("\nOutput format: translation1---translation2---translation3")
     prompt_parts.append(
-        "Do not add explanations, numbering, or any other text. Only the translations separated by '---'."
+        '\nReturn exactly one JSON object in this exact shape: {"translations": ["translation1", "translation2"]}'
+    )
+    prompt_parts.append(
+        "Do not output reasoning, commentary, markdown, code fences, or platform metadata."
     )
 
     return "\n".join(prompt_parts)
@@ -255,7 +208,10 @@ def build_proofreading_prompt(
 
     # Output instruction
     prompt_parts.append(
-        "\nOutput the final corrected translation (or the original if already good):"
+        '\nReturn exactly one JSON object in this exact shape: {"translation": "corrected translation"}'
+    )
+    prompt_parts.append(
+        "Do not output reasoning, commentary, markdown, code fences, or platform metadata."
     )
 
     return "\n".join(prompt_parts)
@@ -349,11 +305,15 @@ def validate_translation_response(
     if not response or not response.strip():
         return False
 
-    if batch_mode:
-        # Check separator count
-        separator_count = response.count("---")
-        # Should have (n-1) separators for n lines
-        if separator_count != expected_line_count - 1:
-            return False
+    try:
+        data = json.loads(response.strip())
+    except (json.JSONDecodeError, ValueError):
+        return False
 
-    return True
+    if batch_mode:
+        translations = data.get("translations") if isinstance(data, dict) else None
+        if not isinstance(translations, list) or len(translations) != expected_line_count:
+            return False
+        return all(isinstance(item, str) for item in translations)
+
+    return isinstance(data, dict) and isinstance(data.get("translation"), str)

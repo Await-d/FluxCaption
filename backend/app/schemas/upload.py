@@ -12,7 +12,7 @@ class UploadResponse(BaseModel):
     filename: str = Field(description="Original filename")
     path: str = Field(description="Server file path")
     size: int = Field(description="File size in bytes")
-    format: str = Field(description="Detected subtitle format (srt/ass/vtt)")
+    format: str = Field(description="Detected subtitle format (srt/ass/vtt/sup)")
 
 
 class UploadError(BaseModel):

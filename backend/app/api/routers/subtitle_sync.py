@@ -7,7 +7,7 @@ Endpoints for syncing subtitle files to translation memory.
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
@@ -60,6 +60,8 @@ class BatchSyncRequest(BaseModel):
 class SyncRecordResponse(BaseModel):
     """Sync record response."""
 
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     subtitle_id: str
     asset_id: str | None
@@ -74,10 +76,6 @@ class SyncRecordResponse(BaseModel):
     finished_at: str | None
     error_message: str | None
     created_at: str
-
-    class Config:
-        from_attributes = True
-
 
 class SubtitlePairResponse(BaseModel):
     """Subtitle pair response."""
@@ -103,9 +101,9 @@ class SyncStatusResponse(BaseModel):
 
 
 @router.post("/sync", response_model=dict)
-async def sync_subtitle(
+def sync_subtitle(
     request: SyncSubtitleRequest,
-    background: bool = Query(True, description="Run sync in background"),
+    background: bool = Query(True, description="Deprecated; sync is always queued"),
     db: Session = Depends(get_db),
 ):
     """
@@ -113,7 +111,7 @@ async def sync_subtitle(
 
     Args:
         request: Sync request
-        background: Whether to run in background (default: True)
+        background: Deprecated; sync is always queued
         db: Database session
 
     Returns:
@@ -132,37 +130,19 @@ async def sync_subtitle(
         if not paired_subtitle:
             raise HTTPException(status_code=404, detail="Paired subtitle not found")
 
-    if background:
-        # Run in background using Celery
-        task = sync_subtitle_task.apply_async(
-            args=[request.subtitle_id],
-            kwargs={"mode": request.mode, "paired_subtitle_id": request.paired_subtitle_id},
-            queue="translate",
-        )
+    task = sync_subtitle_task.apply_async(
+        args=[request.subtitle_id],
+        kwargs={"mode": request.mode, "paired_subtitle_id": request.paired_subtitle_id},
+        queue="translate",
+    )
 
-        return {"status": "queued", "task_id": task.id, "subtitle_id": request.subtitle_id}
-    else:
-        # Run synchronously
-        sync_service = SubtitleSyncService(db)
-        sync_record = sync_service.sync_subtitle_to_memory(
-            subtitle_id=request.subtitle_id,
-            mode=request.mode,
-            paired_subtitle_id=request.paired_subtitle_id,
-        )
-
-        return {
-            "status": sync_record.status,
-            "sync_record_id": str(sync_record.id),
-            "synced_lines": sync_record.synced_lines,
-            "skipped_lines": sync_record.skipped_lines,
-            "failed_lines": sync_record.failed_lines,
-        }
+    return {"status": "queued", "task_id": task.id, "subtitle_id": request.subtitle_id}
 
 
 @router.post("/sync/asset", response_model=dict)
-async def sync_asset_subtitles(
+def sync_asset_subtitles(
     request: SyncAssetRequest,
-    background: bool = Query(True, description="Run sync in background"),
+    background: bool = Query(True, description="Deprecated; sync is always queued"),
     db: Session = Depends(get_db),
 ):
     """
@@ -170,7 +150,7 @@ async def sync_asset_subtitles(
 
     Args:
         request: Sync request
-        background: Whether to run in background
+        background: Deprecated; sync is always queued
         db: Database session
 
     Returns:
@@ -183,27 +163,17 @@ async def sync_asset_subtitles(
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
 
-    if background:
-        # Run in background
-        task = sync_asset_subtitles_task.apply_async(
-            args=[request.asset_id],
-            kwargs={"mode": request.mode, "auto_pair": request.auto_pair},
-            queue="translate",
-        )
+    task = sync_asset_subtitles_task.apply_async(
+        args=[request.asset_id],
+        kwargs={"mode": request.mode, "auto_pair": request.auto_pair},
+        queue="translate",
+    )
 
-        return {"status": "queued", "task_id": task.id, "asset_id": request.asset_id}
-    else:
-        # Run synchronously
-        sync_service = SubtitleSyncService(db)
-        results = sync_service.sync_asset_subtitles(
-            asset_id=request.asset_id, mode=request.mode, auto_pair=request.auto_pair
-        )
-
-        return results
+    return {"status": "queued", "task_id": task.id, "asset_id": request.asset_id}
 
 
 @router.post("/sync/batch", response_model=dict)
-async def batch_sync_subtitles(request: BatchSyncRequest, db: Session = Depends(get_db)):
+def batch_sync_subtitles(request: BatchSyncRequest, db: Session = Depends(get_db)):
     """
     Batch sync multiple subtitles or all subtitles in the system.
 
@@ -228,7 +198,7 @@ async def batch_sync_subtitles(request: BatchSyncRequest, db: Session = Depends(
 
 
 @router.get("/status/{subtitle_id}", response_model=SyncStatusResponse)
-async def get_sync_status(subtitle_id: str, db: Session = Depends(get_db)):
+def get_sync_status(subtitle_id: str, db: Session = Depends(get_db)):
     """
     Get sync status for a subtitle.
 
@@ -264,7 +234,7 @@ async def get_sync_status(subtitle_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/pairs/{asset_id}", response_model=list[SubtitlePairResponse])
-async def discover_subtitle_pairs(asset_id: str, db: Session = Depends(get_db)):
+def discover_subtitle_pairs(asset_id: str, db: Session = Depends(get_db)):
     """
     Discover all possible subtitle pairs for an asset.
 
@@ -295,7 +265,7 @@ async def discover_subtitle_pairs(asset_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/records", response_model=list[SyncRecordResponse])
-async def list_sync_records(
+def list_sync_records(
     subtitle_id: str | None = Query(None, description="Filter by subtitle ID"),
     asset_id: str | None = Query(None, description="Filter by asset ID"),
     status: str | None = Query(None, description="Filter by status"),
@@ -337,7 +307,7 @@ async def list_sync_records(
 
 
 @router.delete("/records/{record_id}")
-async def delete_sync_record(record_id: str, db: Session = Depends(get_db)):
+def delete_sync_record(record_id: str, db: Session = Depends(get_db)):
     """
     Delete a sync record.
 

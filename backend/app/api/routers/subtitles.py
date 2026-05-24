@@ -7,7 +7,7 @@ Provides REST API for browsing and managing subtitle records in the database.
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
@@ -31,6 +31,8 @@ router = APIRouter(prefix="/api/subtitles", tags=["Subtitles"])
 class SubtitleRecord(BaseModel):
     """Subtitle record with media information."""
 
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     lang: str
     format: str
@@ -46,10 +48,6 @@ class SubtitleRecord(BaseModel):
     media_type: str | None
     media_path: str | None
     item_id: str | None
-
-    class Config:
-        from_attributes = True
-
 
 class SubtitleListResponse(BaseModel):
     """Response for subtitle list endpoint."""
@@ -90,7 +88,7 @@ class DeleteSubtitleResponse(BaseModel):
 
 
 @router.get("/", response_model=SubtitleListResponse)
-async def list_subtitles(
+def list_subtitles(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
     limit: int = Query(default=50, ge=1, le=200),
@@ -179,7 +177,7 @@ async def list_subtitles(
 
 
 @router.get("/{subtitle_id}/content", response_model=SubtitleContentResponse)
-async def get_subtitle_content(
+def get_subtitle_content(
     subtitle_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -237,7 +235,7 @@ async def get_subtitle_content(
 
 
 @router.get("/stats")
-async def get_subtitle_stats(
+def get_subtitle_stats(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
 ):
@@ -266,10 +264,8 @@ async def get_subtitle_stats(
         )
 
         # Uploaded vs not uploaded
-        uploaded = db.query(func.count(Subtitle.id)).filter(Subtitle.is_uploaded == True).scalar()  # noqa: E712
-        not_uploaded = (
-            db.query(func.count(Subtitle.id)).filter(Subtitle.is_uploaded == False).scalar()
-        )  # noqa: E712
+        uploaded = db.query(func.count(Subtitle.id)).filter(Subtitle.is_uploaded).scalar()
+        not_uploaded = db.query(func.count(Subtitle.id)).filter(~Subtitle.is_uploaded).scalar()
 
         return {
             "total": total,
@@ -285,7 +281,7 @@ async def get_subtitle_stats(
 
 
 @router.delete("/{subtitle_id}")
-async def delete_subtitle(
+def delete_subtitle(
     subtitle_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -342,7 +338,7 @@ async def delete_subtitle(
 
 
 @router.post("/batch-delete", response_model=DeleteSubtitleResponse)
-async def batch_delete_subtitles(
+def batch_delete_subtitles(
     request: DeleteSubtitleRequest,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
