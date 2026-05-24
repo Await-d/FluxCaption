@@ -46,6 +46,35 @@ FluxCaption is a comprehensive subtitle translation system that automatically de
 
 ## 🚀 Quick Start
 
+### Non-Developer Quick Start (Windows + Docker Desktop)
+
+If you only want to start and use the system quickly, use the root shortcut scripts:
+
+1. Double-click `quick-setup.cmd`
+2. Double-click `quick-start.cmd`
+3. Open `http://localhost`
+
+Useful shortcuts:
+
+- `quick-open.cmd` - open the app in browser
+- `quick-status.cmd` - show service status
+- `quick-logs.cmd` - show backend logs
+- `quick-stop.cmd` - stop the system
+
+Chinese-numbered launchers for non-technical users:
+
+- `01-首次配置.cmd`
+- `02-启动系统.cmd`
+- `03-打开系统.cmd`
+- `04-查看状态.cmd`
+- `05-查看日志.cmd`
+- `06-停止系统.cmd`
+
+Detailed end-user guide:
+
+- `docs/09-QUICK_START_NON_DEVELOPER.md`
+- `docs/10-CUSTOMER_HANDOFF_PACKAGE.md`
+
 ### Prerequisites
 
 - Docker & Docker Compose
@@ -67,18 +96,18 @@ FluxCaption is a comprehensive subtitle translation system that automatically de
 
 3. **Start all services:**
    ```bash
-   docker compose up -d
+   docker compose up -d --build
    ```
 
-4. **Run database migrations:**
-   ```bash
-   docker compose exec api alembic upgrade head
-   ```
+   Notes:
+   - Start Docker Desktop first and wait until it is fully running.
+   - First startup may take a long time because Docker images and frontend assets are built.
+   - The backend container already runs database migrations automatically.
 
-5. **Access the application:**
-   - API: http://localhost:8000
-   - Swagger UI: http://localhost:8000/docs
-   - Frontend: http://localhost:5173 (in development)
+4. **Access the application:**
+   - App: http://localhost
+   - Swagger UI: http://localhost/docs
+   - Backend API: http://localhost/api
 
 ## 📖 Documentation
 
@@ -93,6 +122,7 @@ Detailed documentation is available in the `docs/` directory:
 - [06-DEPLOYMENT_DEVOPS.md](docs/06-DEPLOYMENT_DEVOPS.md) - Deployment guide
 - [07-TESTING_QA.md](docs/07-TESTING_QA.md) - Testing strategy
 - [08-CONTRIBUTING.md](docs/08-CONTRIBUTING.md) - Contribution guidelines
+- [09-QUICK_START_NON_DEVELOPER.md](docs/09-QUICK_START_NON_DEVELOPER.md) - Quick start for non-developers
 
 ## 🛠️ Development
 
@@ -119,6 +149,17 @@ celery -A app.workers.celery_app beat -l INFO
 # Run tests
 pytest
 ```
+
+Windows PowerShell:
+
+```powershell
+cd backend
+powershell -ExecutionPolicy Bypass -File .\start.ps1
+```
+
+`start.ps1` will run migrations, start the Celery worker with `--pool=solo`, and then run Uvicorn in the foreground. The existing `start.sh` remains the Linux/container entrypoint.
+
+On Windows, `start.ps1` disables Uvicorn reload by default to avoid noisy Ctrl+C shutdown tracebacks from the reload supervisor. Set `FLUXCAPTION_RELOAD=1` before running the script if you specifically need reload mode during local development.
 
 ### Frontend Development
 
@@ -152,6 +193,11 @@ JELLYFIN_API_KEY=your_api_key_here
 OLLAMA_BASE_URL=http://ollama:11434
 DEFAULT_MT_MODEL=qwen2.5:7b-instruct
 
+# AI model catalog metadata sync (models.dev-compatible)
+AI_MODELS_CATALOG_URL=https://models.dev
+AI_MODELS_AUTO_SYNC_ENABLED=true
+AI_MODELS_AUTO_SYNC_INTERVAL_SECONDS=3600
+
 # ASR
 ASR_MODEL=medium
 ASR_DEVICE=auto
@@ -167,19 +213,19 @@ WRITEBACK_MODE=upload
 
 **List Models:**
 ```bash
-curl http://localhost:8000/api/models
+curl http://localhost/api/models
 ```
 
 **Pull a Model:**
 ```bash
-curl -X POST http://localhost:8000/api/models/pull \
+curl -X POST http://localhost/api/models/pull \
   -H "Content-Type: application/json" \
   -d '{"name": "qwen2.5:7b-instruct"}'
 ```
 
 **Create Translation Job:**
 ```bash
-curl -X POST http://localhost:8000/api/jobs/translate \
+curl -X POST http://localhost/api/jobs/translate \
   -H "Content-Type: application/json" \
   -d '{
     "source_type": "subtitle",

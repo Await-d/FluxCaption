@@ -136,6 +136,27 @@ export JELLYFIN_BASE_URL=http://localhost:8096
 export JELLYFIN_API_KEY=xxxxx
 ```
 
+Windows PowerShell：
+
+```powershell
+cd backend
+powershell -ExecutionPolicy Bypass -File .\start.ps1
+```
+
+- `start.ps1` 会自动执行迁移、启动 Celery Worker，再以前台方式启动 Uvicorn。
+- Windows 下 Celery 使用 `--pool=solo`，避免沿用 Linux 默认进程池带来的兼容性问题。
+- Windows 下 `start.ps1` 默认不启用 Uvicorn `--reload`，用于避免 reload 监督进程在 Ctrl+C 关闭时输出 `asyncio.CancelledError` 噪音。若需要本地热重载，先设置 `FLUXCAPTION_RELOAD=1` 再运行脚本。
+
+AI 模型目录会从 models.dev 兼容目录同步模型元数据，可通过环境变量或系统设置调整：
+
+```bash
+export AI_MODELS_CATALOG_URL=https://models.dev
+export AI_MODELS_AUTO_SYNC_ENABLED=true
+export AI_MODELS_AUTO_SYNC_INTERVAL_SECONDS=3600
+```
+
+自动同步会在启动时及后台定时访问目录源；离线或受限网络环境可将 `AI_MODELS_AUTO_SYNC_ENABLED=false`。
+
 ---
 
 ## 6. 性能与稳定性建议
