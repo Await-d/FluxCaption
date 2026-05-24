@@ -6,7 +6,7 @@ Defines tasks for translation, ASR, and library scanning.
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 
 from celery import Task
@@ -15,9 +15,16 @@ from app.core.config import settings
 from app.core.db import session_scope
 from app.core.events import event_publisher
 from app.core.logging import JobLogContext, get_logger
+from app.services.task_log_service import (
+    build_job_event_data,
+    persist_task_log_if_needed,
+)
 from app.workers.celery_app import celery_app
 
 logger = get_logger(__name__)
+
+MODEL_PULL_PROVIDERS = {None, "", "ollama"}
+OLLAMA_PROVIDER = "ollama"
 
 
 # Helper to run async code in sync context
@@ -35,6 +42,10 @@ def save_task_log_sync(
     completed: int | None = None,
     total: int | None = None,
     error: str | None = None,
+    event_type: str | None = None,
+    index: int | None = None,
+    source: str | None = None,
+    translated: str | None = None,
 ):
     """
     Synchronously save task log to database and publish to Redis for SSE streaming.
@@ -42,30 +53,24 @@ def save_task_log_sync(
     This is used in progress callbacks where async operations cause event loop conflicts.
     """
     try:
-        import json
         from datetime import datetime
 
         import redis
 
-        from app.core.db import SessionLocal
-        from app.models.task_log import TaskLog
+        timestamp = datetime.now(UTC)
 
-        timestamp = datetime.now(timezone.utc)
-
-        # Save to database
-        with SessionLocal() as session:
-            log_entry = TaskLog(
-                job_id=job_id,
-                timestamp=timestamp,
-                phase=phase,
-                status=status,
-                progress=progress,
-                completed=completed,
-                total=total,
-                extra_data=json.dumps({"error": error}) if error else None,
-            )
-            session.add(log_entry)
-            session.commit()
+        persist_task_log_if_needed(
+            job_id=job_id,
+            phase=phase,
+            status=status,
+            progress=progress,
+            timestamp=timestamp,
+            completed=completed,
+            total=total,
+            error=error,
+            event_type=event_type,
+            index=index,
+        )
 
         # Also publish to Redis for real-time SSE streaming
         try:
@@ -73,19 +78,20 @@ def save_task_log_sync(
 
             redis_client = redis.from_url(settings.redis_url, decode_responses=True)
 
-            event_data = {
-                "job_id": job_id,
-                "phase": phase,
-                "status": status,
-                "progress": progress,
-                "timestamp": timestamp.isoformat(),
-            }
-            if completed is not None:
-                event_data["completed"] = completed
-            if total is not None:
-                event_data["total"] = total
-            if error:
-                event_data["error"] = error
+            event_data = build_job_event_data(
+                job_id=job_id,
+                phase=phase,
+                status=status,
+                progress=progress,
+                timestamp=timestamp,
+                completed=completed,
+                total=total,
+                error=error,
+                event_type=event_type,
+                index=index,
+                source=source,
+                translated=translated,
+            )
 
             channel = f"job:{job_id}"
             event_json = json.dumps(event_data)
@@ -164,7 +170,7 @@ def save_checkpoint(session, job_id: str, phase: str, **kwargs):
             job.completed_target_langs = json.dumps(completed_langs)
 
     # Update checkpoint timestamp
-    job.last_checkpoint_at = datetime.now(timezone.utc)
+    job.last_checkpoint_at = datetime.now(UTC)
 
     session.commit()
     logger.info(f"Checkpoint saved for job {job_id}: phase={phase}, data={kwargs}")
@@ -219,6 +225,31 @@ def get_remaining_target_langs(job) -> list:
             return []
 
 
+def mark_job_completed(job_id: str, result_paths: list[str]) -> None:
+    with session_scope() as session:
+        from app.models.translation_job import TranslationJob
+
+        job = session.query(TranslationJob).filter(TranslationJob.id == job_id).first()
+        if not job:
+            logger.warning(f"Job {job_id} not found when marking completed")
+            return
+
+        job.status = "completed"
+        job.progress = 100.0
+        job.finished_at = datetime.now(UTC)
+        job.current_phase = "completed"
+        job.result_paths = json.dumps(result_paths)
+        session.commit()
+
+
+def is_job_paused(job_id: str) -> bool:
+    with session_scope() as session:
+        from app.models.translation_job import TranslationJob
+
+        job = session.query(TranslationJob).filter(TranslationJob.id == job_id).first()
+        return bool(job and job.status == "paused")
+
+
 # =============================================================================
 # Base Task Class
 # =============================================================================
@@ -270,7 +301,7 @@ class BaseTask(Task):
                             if not job.error:
                                 job.error = str(exc)
                             if not job.finished_at:
-                                job.finished_at = datetime.now(timezone.utc)
+                                job.finished_at = datetime.now(UTC)
                             session.commit()
                             logger.info(
                                 f"Job {job_id} status updated to failed in on_failure handler"
@@ -350,88 +381,85 @@ def translate_subtitle_task(self, job_id: str) -> dict:
 
                 # Update job status
                 job.status = "running"
-                job.started_at = datetime.now(timezone.utc)
+                job.started_at = datetime.now(UTC)
                 job.current_phase = "init"
+
+                source_path = job.source_path
+                source_lang = job.source_lang
+                target_langs = json.loads(job.target_langs)
+                model = job.model
+                provider = job.provider  # Get AI provider from job
+                item_id = job.item_id  # Extract item_id for writeback
                 session.commit()
 
-                # Extract job data
-            source_path = job.source_path
-            source_lang = job.source_lang
-            target_langs = json.loads(job.target_langs)
-            model = job.model
-            provider = job.provider  # Get AI provider from job
-            item_id = job.item_id  # Extract item_id for writeback
-
             # === 2. Ensure model is available (with checkpoint support) ===
-            from app.services.ollama_client import ollama_client
+            if provider in MODEL_PULL_PROVIDERS:
+                from app.services.ollama_client import ollama_client
 
-            # Check if model pull phase was already completed
-            with session_scope() as session:
-                job = session.query(TranslationJob).filter(TranslationJob.id == job_id).first()
-                pull_completed = check_phase_completed(job, "pull")
+                with session_scope() as session:
+                    job = session.query(TranslationJob).filter(TranslationJob.id == job_id).first()
+                    pull_completed = check_phase_completed(job, "pull")
 
-            if not pull_completed:
-                logger.info(f"Checking model availability: {model}")
-                job.current_phase = "model_check"
+                if not pull_completed:
+                    logger.info(f"Checking model availability: {model}")
+                    job.current_phase = "model_check"
 
-                model_exists = run_async(ollama_client.check_model_exists(model))
+                    model_exists = run_async(ollama_client.check_model_exists(model))
 
-                if not model_exists:
-                    logger.info(f"Model {model} not found locally, pulling...")
-                    job.current_phase = "pull"
+                    if not model_exists:
+                        logger.info(f"Model {model} not found locally, pulling...")
+                        job.current_phase = "pull"
 
-                    # Publish pull start event
-                    run_async(
-                        event_publisher.publish_job_progress(
-                            job_id=job_id,
-                            phase="pull",
-                            status="pulling",
-                            progress=0,
-                        )
-                    )
-
-                    # Pull model with progress callback
-                    def pull_progress_callback(progress_data: dict):
-                        # Forward progress to SSE
-                        completed = progress_data.get("completed", 0)
-                        total = progress_data.get("total", 0)
-                        status_msg = progress_data.get("status", "")
-
-                        if total > 0:
-                            progress_pct = (completed / total) * 100
-                        else:
-                            progress_pct = 0
-
-                        # Publish to Redis for SSE
-                        try:
-                            run_async(
-                                event_publisher.publish_job_progress(
-                                    job_id=job_id,
-                                    phase="pull",
-                                    status=status_msg,
-                                    progress=progress_pct,
-                                    completed=completed,
-                                    total=total,
-                                )
+                        run_async(
+                            event_publisher.publish_job_progress(
+                                job_id=job_id,
+                                phase="pull",
+                                status="pulling",
+                                progress=0,
                             )
-                        except Exception as e:
-                            logger.warning(f"Failed to publish progress: {e}")
+                        )
 
-                    run_async(
-                        ollama_client.pull_model(model, progress_callback=pull_progress_callback)
-                    )
-                    logger.info(f"Model {model} pulled successfully")
+                        def pull_progress_callback(progress_data: dict):
+                            completed = progress_data.get("completed", 0)
+                            total = progress_data.get("total", 0)
+                            status_msg = progress_data.get("status", "")
 
-                    # Save checkpoint after successful pull
-                    with session_scope() as session:
-                        save_checkpoint(session, job_id, "pull")
+                            if total > 0:
+                                progress_pct = (completed / total) * 100
+                            else:
+                                progress_pct = 0
+
+                            try:
+                                run_async(
+                                    event_publisher.publish_job_progress(
+                                        job_id=job_id,
+                                        phase="pull",
+                                        status=status_msg,
+                                        progress=progress_pct,
+                                        completed=completed,
+                                        total=total,
+                                    )
+                                )
+                            except Exception as e:
+                                logger.warning(f"Failed to publish progress: {e}")
+
+                        run_async(
+                            ollama_client.pull_model(model, progress_callback=pull_progress_callback)
+                        )
+                        logger.info(f"Model {model} pulled successfully")
+
+                        with session_scope() as session:
+                            save_checkpoint(session, job_id, "pull")
+                    else:
+                        logger.info(f"Model {model} already exists locally")
+                        with session_scope() as session:
+                            save_checkpoint(session, job_id, "pull")
                 else:
-                    logger.info(f"Model {model} already exists locally")
-                    # Save checkpoint even if model exists (no pull needed)
-                    with session_scope() as session:
-                        save_checkpoint(session, job_id, "pull")
+                    logger.info("Model pull phase already completed, skipping...")
             else:
-                logger.info("Model pull phase already completed, skipping...")
+                logger.info(f"Skipping Ollama model check for provider: {provider}")
+                with session_scope() as session:
+                    save_checkpoint(session, job_id, "pull")
 
             # === 3. Load and translate subtitle ===
             from app.services.subtitle_service import SubtitleService
@@ -500,7 +528,7 @@ def translate_subtitle_task(self, job_id: str) -> dict:
                             if job:
                                 job.status = "paused"
                                 job.pause_reason = e.reason
-                                job.paused_at = datetime.now(timezone.utc)
+                                job.paused_at = datetime.now(UTC)
                                 job.resume_at = e.resume_at
                                 job.error = f"Paused: {e.limit_type} quota exceeded"
                                 session.commit()
@@ -515,7 +543,7 @@ def translate_subtitle_task(self, job_id: str) -> dict:
                             )
                         )
 
-                        # Stop processing further languages
+                        # Stop processing further languages and preserve paused state
                         break
 
                     with session_scope() as session:
@@ -562,6 +590,20 @@ def translate_subtitle_task(self, job_id: str) -> dict:
                             total=total,
                         )
 
+                    def line_callback(index: int, total: int, source_text: str, translated_text: str):
+                        line_progress = 50 + (actual_idx / total_targets) * 30
+                        save_task_log_sync(
+                            job_id=job_id,
+                            phase="mt",
+                            status=f"translated line {index}/{total}",
+                            progress=line_progress,
+                            event_type="line",
+                            index=index,
+                            total=total,
+                            source=source_text,
+                            translated=translated_text,
+                        )
+
                     # Get asset_id and media_name for translation memory
                     asset_id = None
                     media_name = None
@@ -588,6 +630,7 @@ def translate_subtitle_task(self, job_id: str) -> dict:
                                 preserve_formatting=settings.preserve_ass_styles,
                                 enable_proofreading=settings.enable_translation_proofreading,
                                 progress_callback=progress_callback,
+                                line_callback=line_callback,
                                 db_session=session,
                                 subtitle_id=None,
                                 asset_id=asset_id,
@@ -609,6 +652,14 @@ def translate_subtitle_task(self, job_id: str) -> dict:
                         )
                         job.result_paths = json.dumps(result_paths)
                         session.commit()
+
+            if is_job_paused(job_id):
+                logger.info(f"Job {job_id} is paused after translation loop, skipping completion")
+                return {
+                    "status": "paused",
+                    "job_id": job_id,
+                    "result_paths": result_paths,
+                }
 
             # === 4. Writeback to Jellyfin (if item_id present) ===
             with session_scope() as session:
@@ -692,7 +743,7 @@ def translate_subtitle_task(self, job_id: str) -> dict:
                             existing_subtitle.storage_path = output_path
                             existing_subtitle.line_count = line_count
                             existing_subtitle.word_count = word_count
-                            existing_subtitle.updated_at = datetime.now(timezone.utc)
+                            existing_subtitle.updated_at = datetime.now(UTC)
                             subtitle = existing_subtitle
                         else:
                             # Create subtitle record
@@ -740,22 +791,23 @@ def translate_subtitle_task(self, job_id: str) -> dict:
                             # Continue with other languages even if one fails
                             # Note: Subtitle record is saved but writeback failed
 
+            if is_job_paused(job_id):
+                logger.info(f"Job {job_id} paused during writeback boundary, skipping completion")
+                return {
+                    "status": "paused",
+                    "job_id": job_id,
+                    "result_paths": result_paths,
+                }
+
             # === 5. Update job status ===
-            with session_scope() as session:
-                job = session.query(TranslationJob).filter(TranslationJob.id == job_id).first()
-                job.status = "success"
-                job.progress = 100.0
-                job.finished_at = datetime.utcnow()
-                job.current_phase = "completed"
-                job.result_paths = json.dumps(result_paths)
-                session.commit()
+            mark_job_completed(job_id, result_paths)
 
             # Publish completion event
             run_async(
                 event_publisher.publish_job_progress(
                     job_id=job_id,
                     phase="completed",
-                    status="success",
+                    status="completed",
                     progress=100,
                 )
             )
@@ -792,7 +844,7 @@ def translate_subtitle_task(self, job_id: str) -> dict:
                     if job:
                         job.status = "failed"
                         job.error = str(exc)
-                        job.finished_at = datetime.now(timezone.utc)
+                        job.finished_at = datetime.now(UTC)
                         session.commit()
                         logger.info(f"Job {job_id} marked as failed in database")
             except Exception as db_exc:
@@ -837,7 +889,7 @@ def asr_then_translate_task(self, job_id: str) -> dict:
 
                 # Update job status
                 job.status = "running"
-                job.started_at = datetime.now(timezone.utc)
+                job.started_at = datetime.now(UTC)
                 job.current_phase = "init"
                 session.commit()
 
@@ -1433,7 +1485,7 @@ def asr_then_translate_task(self, job_id: str) -> dict:
                         existing_asr_subtitle.storage_path = str(asr_subtitle_path)
                         existing_asr_subtitle.line_count = asr_result.get("num_segments", 0)
                         existing_asr_subtitle.word_count = asr_word_count
-                        existing_asr_subtitle.updated_at = datetime.now(timezone.utc)
+                        existing_asr_subtitle.updated_at = datetime.now(UTC)
                         asr_source_subtitle = existing_asr_subtitle
                     else:
                         # Create subtitle record for ASR source
@@ -1537,7 +1589,7 @@ def asr_then_translate_task(self, job_id: str) -> dict:
                             if job:
                                 job.status = "paused"
                                 job.pause_reason = e.reason
-                                job.paused_at = datetime.now(timezone.utc)
+                                job.paused_at = datetime.now(UTC)
                                 job.resume_at = e.resume_at
                                 job.error = f"Paused: {e.limit_type} quota exceeded"
                                 session.commit()
@@ -1552,7 +1604,7 @@ def asr_then_translate_task(self, job_id: str) -> dict:
                             )
                         )
 
-                        # Stop processing further languages
+                        # Stop processing further languages and preserve paused state
                         break
 
                     # Publish translation start event for this language
@@ -1640,6 +1692,14 @@ def asr_then_translate_task(self, job_id: str) -> dict:
                         job.result_paths = json.dumps(result_paths)
                         session.commit()
 
+            if is_job_paused(job_id):
+                logger.info(f"Job {job_id} is paused after ASR translation loop, skipping completion")
+                return {
+                    "status": "paused",
+                    "job_id": job_id,
+                    "result_paths": result_paths,
+                }
+
             # === 5. Writeback to Jellyfin (if item_id present) ===
             # Initialize writeback counters
             writeback_success_count = 0
@@ -1716,7 +1776,7 @@ def asr_then_translate_task(self, job_id: str) -> dict:
                             existing_subtitle.storage_path = output_path
                             existing_subtitle.line_count = line_count
                             existing_subtitle.word_count = word_count
-                            existing_subtitle.updated_at = datetime.now(timezone.utc)
+                            existing_subtitle.updated_at = datetime.now(UTC)
                             subtitle = existing_subtitle
                         else:
                             # Create subtitle record with origin="mt" (machine translated)
@@ -1764,22 +1824,23 @@ def asr_then_translate_task(self, job_id: str) -> dict:
                             # Continue with other languages even if one fails
                             # Note: Subtitle record is saved but writeback failed
 
+            if is_job_paused(job_id):
+                logger.info(f"Job {job_id} paused during ASR writeback boundary, skipping completion")
+                return {
+                    "status": "paused",
+                    "job_id": job_id,
+                    "result_paths": result_paths,
+                }
+
             # === 6. Update job status ===
-            with session_scope() as session:
-                job = session.query(TranslationJob).filter(TranslationJob.id == job_id).first()
-                job.status = "success"
-                job.progress = 100.0
-                job.finished_at = datetime.utcnow()
-                job.current_phase = "completed"
-                job.result_paths = json.dumps(result_paths)
-                session.commit()
+            mark_job_completed(job_id, result_paths)
 
             # Publish completion event
             run_async(
                 event_publisher.publish_job_progress(
                     job_id=job_id,
                     phase="completed",
-                    status="success",
+                    status="completed",
                     progress=100,
                 )
             )
@@ -1819,7 +1880,7 @@ def asr_then_translate_task(self, job_id: str) -> dict:
                     if job:
                         job.status = "failed"
                         job.error = str(exc)
-                        job.finished_at = datetime.now(timezone.utc)
+                        job.finished_at = datetime.now(UTC)
                         session.commit()
                         logger.info(f"Job {job_id} marked as failed in database")
             except Exception as db_exc:
@@ -1875,10 +1936,10 @@ def scan_library_task(
             logger.info(f"Using provided required languages: {req_langs}")
         else:
             # 使用新的辅助函数从自动翻译规则推断
-            from app.core.db import session_scope
+            from app.services.detector import get_required_langs_from_rules
 
             with session_scope() as session:
-                req_langs = detector.get_required_langs_from_rules(session)
+                req_langs = get_required_langs_from_rules(session)
             logger.info(f"Inferred required languages from auto translation rules: {req_langs}")
 
         # Get libraries to scan
@@ -2036,6 +2097,12 @@ def scan_library_task(
                                                         subtitle_format = "ass"
                                                     elif stream.codec.lower() in ["vtt", "webvtt"]:
                                                         subtitle_format = "vtt"
+                                                    elif stream.codec.lower() in [
+                                                        "pgs",
+                                                        "pgssub",
+                                                        "hdmv_pgs_subtitle",
+                                                    ]:
+                                                        subtitle_format = "sup"
                                                     else:
                                                         subtitle_format = "srt"  # Default to srt
                                                 else:
@@ -2135,10 +2202,10 @@ def scan_library_task(
 
                                 # Check library_id match
                                 if library_ids and len(library_ids) > 0:
-                                    if library_id and library_id not in library_ids:
+                                    if lib_id not in library_ids:
                                         logger.debug(
                                             f"Rule '{rule.name}' (priority={rule.priority}) skipped: "
-                                            f"library mismatch (rule requires {library_ids}, got {library_id})"
+                                            f"library mismatch (rule requires {library_ids}, got {lib_id})"
                                         )
                                         continue
 
@@ -2160,9 +2227,9 @@ def scan_library_task(
 
                                 # Rule matched, auto-start if configured
                                 logger.info(
-                                    f"Rule '{rule.name}' (priority={rule.priority}) matched job {job.id} "
-                                    f"(library={library_id}, {source_lang}→{missing_lang})"
-                                )
+                                        f"Rule '{rule.name}' (priority={rule.priority}) matched job {job.id} "
+                                        f"(library={lib_id}, {source_lang}→{missing_lang})"
+                                    )
 
                                 if rule.auto_start:
                                     session.commit()  # Commit before dispatching
@@ -2410,7 +2477,7 @@ def health_check_models() -> dict:
         available_count = 0
         missing_count = 0
         skipped = 0
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         with session_scope() as session:
             models = session.query(ModelRegistry).all()
@@ -2467,6 +2534,229 @@ def health_check_models() -> dict:
 
     except Exception as exc:
         logger.error(f"Model health check failed: {exc}", exc_info=True)
+        raise
+
+
+@celery_app.task(
+    bind=True,
+    base=BaseTask,
+    name="app.workers.tasks.pull_model_task",
+    max_retries=2,
+    default_retry_delay=120,
+)
+def pull_model_task(self, model_name: str) -> dict:
+    """Pull an Ollama model and update the local model registry."""
+    logger.info(f"Starting model pull task for {model_name}")
+
+    try:
+        from app.models.model_registry import ModelRegistry
+        from app.services.ollama_client import ollama_client
+
+        with session_scope() as session:
+            model = (
+                session.query(ModelRegistry)
+                .filter(
+                    ModelRegistry.provider == OLLAMA_PROVIDER,
+                    ModelRegistry.name == model_name,
+                )
+                .first()
+            )
+            if model:
+                model.status = "pulling"
+                model.error_message = None
+            else:
+                session.add(
+                    ModelRegistry(
+                        provider=OLLAMA_PROVIDER,
+                        name=model_name,
+                        status="pulling",
+                    )
+                )
+
+        run_async(ollama_client.pull_model(model_name))
+        ollama_models = run_async(ollama_client.list_models())
+        ollama_model = next((item for item in ollama_models if item.get("name") == model_name), None)
+
+        with session_scope() as session:
+            model = (
+                session.query(ModelRegistry)
+                .filter(
+                    ModelRegistry.provider == OLLAMA_PROVIDER,
+                    ModelRegistry.name == model_name,
+                )
+                .first()
+            )
+            if not model:
+                model = ModelRegistry(
+                    provider=OLLAMA_PROVIDER,
+                    name=model_name,
+                    status="available",
+                )
+                session.add(model)
+
+            model.status = "available"
+            model.error_message = None
+            model.last_checked = datetime.now(UTC)
+            if ollama_model:
+                model.size_bytes = ollama_model.get("size")
+                model.digest = ollama_model.get("digest")
+                details = ollama_model.get("details") or {}
+                model.family = details.get("family")
+                model.parameter_size = details.get("parameter_size")
+                model.quantization = details.get("quantization_level")
+
+        logger.info(f"Successfully pulled model: {model_name}")
+        return {"status": "success", "model": model_name}
+
+    except Exception as exc:
+        logger.error(f"Failed to pull model {model_name}: {exc}", exc_info=True)
+        with session_scope() as session:
+            model = (
+                session.query(ModelRegistry)
+                .filter(
+                    ModelRegistry.provider == OLLAMA_PROVIDER,
+                    ModelRegistry.name == model_name,
+                )
+                .first()
+            )
+            if model:
+                model.status = "failed"
+                model.error_message = str(exc)
+
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc)
+        raise
+
+
+@celery_app.task(
+    bind=True,
+    base=BaseTask,
+    name="app.workers.tasks.test_model_task",
+    max_retries=1,
+    default_retry_delay=60,
+)
+def test_model_task(self, model_name: str) -> dict:
+    """Run a short Ollama generation test for a model."""
+    logger.info(f"Starting model test task for {model_name}")
+
+    try:
+        import time
+
+        from app.models.model_registry import ModelRegistry
+        from app.services.ollama_client import ollama_client
+
+        test_prompt = "Translate to English: 你好"
+        start_time = time.time()
+        response = run_async(
+            ollama_client.generate(
+                model=model_name,
+                prompt=test_prompt,
+                system="You are a translation assistant. Respond with only the translation.",
+                temperature=0.3,
+                max_tokens=50,
+            )
+        )
+        elapsed_time = time.time() - start_time
+
+        with session_scope() as session:
+            model = (
+                session.query(ModelRegistry)
+                .filter(
+                    ModelRegistry.provider == OLLAMA_PROVIDER,
+                    ModelRegistry.name == model_name,
+                )
+                .first()
+            )
+            if model:
+                model.status = "available"
+                model.error_message = None
+                model.last_checked = datetime.now(UTC)
+
+        return {
+            "status": "success",
+            "model": model_name,
+            "test_prompt": test_prompt,
+            "response": response.strip(),
+            "response_time_seconds": round(elapsed_time, 2),
+        }
+
+    except Exception as exc:
+        logger.error(f"Failed to test model {model_name}: {exc}", exc_info=True)
+        with session_scope() as session:
+            model = (
+                session.query(ModelRegistry)
+                .filter(
+                    ModelRegistry.provider == OLLAMA_PROVIDER,
+                    ModelRegistry.name == model_name,
+                )
+                .first()
+            )
+            if model:
+                model.status = "error"
+                model.error_message = str(exc)
+
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc)
+        raise
+
+
+@celery_app.task(
+    bind=True,
+    base=BaseTask,
+    name="app.workers.tasks.sync_models_task",
+    max_retries=2,
+    default_retry_delay=120,
+)
+def sync_models_task(self) -> dict:
+    """Sync Ollama models into the local registry."""
+    logger.info("Starting model registry sync task")
+
+    try:
+        from app.core.model_sync import sync_models_from_ollama
+        from app.models.model_registry import ModelRegistry
+
+        with session_scope() as session:
+            run_async(sync_models_from_ollama(session))
+            model_count = session.query(ModelRegistry).filter(ModelRegistry.provider == OLLAMA_PROVIDER).count()
+
+        return {"status": "success", "total_models": model_count}
+    except Exception as exc:
+        logger.error(f"Failed to sync models: {exc}", exc_info=True)
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc)
+        raise
+
+
+@celery_app.task(
+    bind=True,
+    base=BaseTask,
+    name="app.workers.tasks.sync_ai_model_catalog_task",
+    max_retries=2,
+    default_retry_delay=120,
+)
+def sync_ai_model_catalog_task(self, provider_name: str | None = None) -> dict:
+    """Sync AI model metadata from the configured catalog."""
+    logger.info("Starting AI model catalog sync task")
+
+    try:
+        from app.core.ai_model_catalog_sync import sync_ai_models_from_catalog
+
+        with session_scope() as session:
+            result = run_async(sync_ai_models_from_catalog(session, provider_name=provider_name))
+
+        return {
+            "status": "success",
+            "source": "models.dev",
+            "created": result.created,
+            "updated": result.updated,
+            "merged": result.merged,
+            "skipped": result.skipped,
+            "providers_created": result.providers_created,
+        }
+    except Exception as exc:
+        logger.error(f"Failed to sync AI model catalog: {exc}", exc_info=True)
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc)
         raise
 
 
@@ -2669,100 +2959,13 @@ def resume_paused_jobs_task() -> dict:
     try:
         from datetime import datetime
 
-        from app.models.translation_job import TranslationJob
+        from app.services.job_resume_service import resume_due_paused_jobs
 
-        results = {
-            "status": "success",
-            "paused_jobs_found": 0,
-            "jobs_resumed": 0,
-            "jobs_still_paused": 0,
-            "errors": [],
-        }
-
-        with session_scope() as session:
-            # Find all paused jobs ready to resume
-            now = datetime.now(timezone.utc)
-
-            paused_jobs = (
-                session.query(TranslationJob)
-                .filter(
-                    TranslationJob.status == "paused",
-                    TranslationJob.resume_at.isnot(None),
-                    TranslationJob.resume_at <= now,  # Only get jobs ready to resume
-                )
-                .all()
-            )
-
-            results["paused_jobs_found"] = len(paused_jobs)
-            logger.info(f"Found {len(paused_jobs)} paused jobs ready to resume")
-
-            for job in paused_jobs:
-                try:
-                    # Use row-level lock to prevent concurrent resume
-                    locked_job = (
-                        session.query(TranslationJob)
-                        .filter(TranslationJob.id == job.id)
-                        .with_for_update(skip_locked=True)  # Skip if locked by another process
-                        .first()
-                    )
-
-                    # Job might be already resumed by another process
-                    if not locked_job or locked_job.status != "paused":
-                        logger.debug(f"Job {job.id} already processed by another task")
-                        continue
-
-                    logger.info(f"Resuming paused job {job.id} (paused reason: {job.pause_reason})")
-
-                    # Reset job status to queued
-                    locked_job.status = "queued"
-                    locked_job.pause_reason = None
-                    locked_job.paused_at = None
-                    locked_job.resume_at = None
-                    locked_job.error = None
-                    locked_job.started_at = None
-
-                    session.commit()
-
-                    # Resubmit to Celery based on source type
-                    try:
-                        if locked_job.source_type == "subtitle":
-                            task = translate_subtitle_task.apply_async(
-                                args=[str(locked_job.id)],
-                                queue="translate",
-                                priority=locked_job.priority,
-                            )
-                        elif locked_job.source_type == "audio":
-                            task = asr_then_translate_task.apply_async(
-                                args=[str(locked_job.id)],
-                                queue="asr",
-                                priority=locked_job.priority,
-                            )
-                        else:
-                            raise ValueError(f"Unknown source type: {locked_job.source_type}")
-
-                        # Update job with Celery task ID
-                        locked_job.celery_task_id = task.id
-                        session.commit()
-
-                        logger.info(f"Resubmitted job {job.id} as Celery task {task.id}")
-                        results["jobs_resumed"] += 1
-
-                    except Exception as celery_error:
-                        logger.error(f"Failed to resubmit job {job.id}: {celery_error}")
-                        results["errors"].append(f"Job {job.id}: {str(celery_error)}")
-                        session.rollback()
-
-                except Exception as job_error:
-                    logger.error(f"Error processing job {job.id}: {job_error}", exc_info=True)
-                    results["errors"].append(f"Job {job.id}: {str(job_error)}")
-                    session.rollback()
-
+        results = resume_due_paused_jobs(datetime.now(UTC))
+        results["status"] = "success"
         logger.info(
-            f"Paused jobs check completed: "
-            f"{results['jobs_resumed']} resumed, "
-            f"{len(results['errors'])} errors"
+            f"Paused jobs check completed: {results['jobs_resumed']} resumed, {len(results['errors'])} errors"
         )
-
         return results
 
     except Exception as exc:
@@ -2798,7 +3001,7 @@ def check_and_pause_quota_limited_jobs() -> dict:
 
         with session_scope() as session:
             # Look for failed jobs from last hour with quota-related errors
-            one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
+            one_hour_ago = datetime.now(UTC) - timedelta(hours=1)
 
             failed_jobs = (
                 session.query(TranslationJob)
@@ -2821,8 +3024,8 @@ def check_and_pause_quota_limited_jobs() -> dict:
                     # Pause the job instead of leaving it as failed
                     job.status = "paused"
                     job.pause_reason = "quota_exceeded"
-                    job.paused_at = datetime.now(timezone.utc)
-                    job.resume_at = datetime.now(timezone.utc) + timedelta(days=1)
+                    job.paused_at = datetime.now(UTC)
+                    job.resume_at = datetime.now(UTC) + timedelta(days=1)
 
                     session.commit()
 

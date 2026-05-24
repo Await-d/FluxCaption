@@ -7,12 +7,17 @@ Provides event publishing and subscription for job progress streaming.
 import asyncio
 import json
 from collections.abc import AsyncGenerator
-from datetime import timezone
+from datetime import UTC, timezone
 
 from redis import asyncio as aioredis
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.services.task_log_service import (
+    build_job_event_data,
+    persist_task_log_if_needed,
+    should_persist_task_log,
+)
 
 logger = get_logger(__name__)
 
@@ -51,7 +56,12 @@ class EventPublisher:
             self._redis = None
             logger.info("Event publisher disconnected from Redis")
 
-    async def publish_event(self, channel: str, event_data: dict) -> None:
+    async def publish_event(
+        self,
+        channel: str,
+        event_data: dict,
+        persist_history: bool = True,
+    ) -> None:
         """
         Publish an event to a channel and store in history.
 
@@ -68,11 +78,12 @@ class EventPublisher:
             # Publish to subscribers
             await self._redis.publish(channel, event_json)
 
-            # Store in history list (keep last 100 events)
-            history_key = f"{channel}:history"
-            await self._redis.lpush(history_key, event_json)
-            await self._redis.ltrim(history_key, 0, 99)  # Keep only last 100
-            await self._redis.expire(history_key, 3600)  # Auto-delete after 1 hour
+            if persist_history:
+                # Store in history list (keep last 100 events)
+                history_key = f"{channel}:history"
+                await self._redis.lpush(history_key, event_json)
+                await self._redis.ltrim(history_key, 0, 99)  # Keep only last 100
+                await self._redis.expire(history_key, 3600)  # Auto-delete after 1 hour
 
             logger.info(f"Published event to {channel}: {event_data}")
         except Exception as e:
@@ -87,6 +98,10 @@ class EventPublisher:
         completed: int | None = None,
         total: int | None = None,
         error: str | None = None,
+        event_type: str | None = None,
+        index: int | None = None,
+        source: str | None = None,
+        translated: str | None = None,
     ) -> None:
         """
         Publish job progress event and save to database log.
@@ -103,47 +118,50 @@ class EventPublisher:
         from datetime import datetime
 
         # Generate timestamp ONCE for both event and database
-        timestamp = datetime.now(timezone.utc)
+        timestamp = datetime.now(UTC)
 
-        event_data = {
-            "job_id": job_id,
-            "phase": phase,
-            "status": status,
-            "progress": progress,
-            "timestamp": timestamp.isoformat(),  # Include timestamp in event
-        }
+        event_data = build_job_event_data(
+            job_id=job_id,
+            phase=phase,
+            status=status,
+            progress=progress,
+            timestamp=timestamp,
+            completed=completed,
+            total=total,
+            error=error,
+            event_type=event_type,
+            index=index,
+            source=source,
+            translated=translated,
+        )
 
-        if completed is not None:
-            event_data["completed"] = completed
+        persist_history = should_persist_task_log(
+            job_id=job_id,
+            phase=phase,
+            progress=progress,
+            timestamp=timestamp,
+            completed=completed,
+            total=total,
+            error=error,
+            event_type=event_type,
+            index=index,
+        )
 
-        if total is not None:
-            event_data["total"] = total
+        await self.publish_event(f"job:{job_id}", event_data, persist_history=persist_history)
 
-        if error:
-            event_data["error"] = error
-
-        await self.publish_event(f"job:{job_id}", event_data)
-
-        # Also save to database for historical viewing
-        try:
-            from app.core.db import SessionLocal
-            from app.models.task_log import TaskLog
-
-            with SessionLocal() as session:
-                log_entry = TaskLog(
-                    job_id=job_id,
-                    timestamp=timestamp,  # Use the same timestamp as the event
-                    phase=phase,
-                    status=status,
-                    progress=progress,
-                    completed=completed,
-                    total=total,
-                    extra_data=json.dumps({"error": error}) if error else None,
-                )
-                session.add(log_entry)
-                session.commit()
-        except Exception as e:
-            logger.warning(f"Failed to save task log to database: {e}")
+        persist_task_log_if_needed(
+            job_id=job_id,
+            phase=phase,
+            status=status,
+            progress=progress,
+            timestamp=timestamp,
+            completed=completed,
+            total=total,
+            error=error,
+            event_type=event_type,
+            index=index,
+            persist_override=persist_history,
+        )
 
     async def publish_config_change(
         self,
@@ -169,7 +187,7 @@ class EventPublisher:
             "old_value": old_value,
             "new_value": new_value,
             "changed_by": changed_by,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
         # Publish to config change channel
@@ -300,7 +318,7 @@ async def generate_sse_response(
             yield sse_data
 
             # Check if job is complete
-            if event_data.get("status") in ("success", "failed", "canceled"):
+            if event_data.get("status") in ("completed", "success", "failed", "cancelled", "canceled"):
                 break
 
     except asyncio.CancelledError:
