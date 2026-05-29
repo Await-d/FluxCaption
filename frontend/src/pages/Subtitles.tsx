@@ -18,6 +18,7 @@ import {
 import api from '../lib/api'
 import { getLanguageName } from '../lib/utils'
 import { useTranslation } from 'react-i18next'
+import { PageHero } from '../components/ui/PageHero'
 
 interface SubtitleContentPreviewProps {
   subtitleId: string
@@ -252,7 +253,17 @@ export function Subtitles() {
   const uniqueLanguages = stats?.by_language ? Object.keys(stats.by_language) : []
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 lg:space-y-8">
+      <PageHero
+        eyebrow={t('pageHero.subtitles.eyebrow')}
+        title={t('subtitles.translationRecords')}
+        description={t('pageHero.subtitles.description')}
+        metrics={[
+          { label: t('pageHero.subtitles.metrics.total.label'), value: String(stats?.total || 0), detail: t('pageHero.subtitles.metrics.total.detail') },
+          { label: t('pageHero.subtitles.metrics.uploaded.label'), value: String(stats?.uploaded || 0), detail: t('pageHero.subtitles.metrics.uploaded.detail') },
+          { label: t('pageHero.subtitles.metrics.languages.label'), value: String(uniqueLanguages.length), detail: t('pageHero.subtitles.metrics.languages.detail') },
+        ]}
+      />
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>

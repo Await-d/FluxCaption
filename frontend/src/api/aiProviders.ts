@@ -11,6 +11,8 @@ export interface AIProviderConfig {
   provider_name: string;
   display_name: string;
   is_enabled: boolean;
+  has_api_key?: boolean;
+  api_key?: string;
   base_url?: string;
   timeout: number;
   default_model?: string;
@@ -76,6 +78,24 @@ export interface ModelInfo {
   description?: string;
 }
 
+export interface ProviderTestRequest {
+  prompt: string;
+  model?: string;
+  system?: string;
+  temperature?: number;
+  max_tokens?: number;
+  source_lang?: string;
+  target_lang?: string;
+}
+
+export interface ProviderTestResponse {
+  provider: string;
+  model?: string;
+  success: boolean;
+  response_text?: string;
+  error?: string;
+}
+
 // API functions
 export const aiProviderApi = {
   // Provider management
@@ -102,6 +122,11 @@ export const aiProviderApi = {
 
   async healthCheck(providerName: string): Promise<{ provider: string; is_healthy: boolean; checked_at: string }> {
     const response = await axios.post(`${API_BASE_URL}/api/ai-providers/${providerName}/health-check`);
+    return response.data;
+  },
+
+  async testProvider(providerName: string, request: ProviderTestRequest): Promise<ProviderTestResponse> {
+    const response = await axios.post(`${API_BASE_URL}/api/ai-providers/${providerName}/test`, request);
     return response.data;
   },
 

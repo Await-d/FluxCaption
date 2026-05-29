@@ -60,6 +60,7 @@ async def sync_models_from_ollama(db: Session) -> None:
                 # Add new model
                 details = ollama_model.get("details", {})
                 model = ModelRegistry(
+                    provider="ollama",
                     name=model_name,
                     status="available",
                     size_bytes=ollama_model.get("size", 0),

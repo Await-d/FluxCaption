@@ -74,7 +74,7 @@ const QuotaDialog: React.FC<QuotaDialogProps> = ({ providerName, onClose }) => {
 
   const handleReset = (period: 'daily' | 'monthly' | 'both') => {
     // eslint-disable-next-line no-alert
-    if (confirm(t('quota.confirm_reset', `Reset ${period} quota counters?`))) {
+    if (confirm(t('quota.confirm_reset', { period }))) {
       resetQuotaMutation.mutate(period)
     }
   }
@@ -122,11 +122,11 @@ const QuotaDialog: React.FC<QuotaDialogProps> = ({ providerName, onClose }) => {
       ) : null}
       <div className="flex justify-between text-xs text-muted-foreground">
         <span>
-          {tokens.toLocaleString()} {t('quota.tokens', 'tokens')}
+          {tokens.toLocaleString()} {t('quota.tokens')}
         </span>
         {remaining !== null && remaining !== undefined && (
           <span>
-            ${remaining.toFixed(4)} {t('quota.remaining', 'remaining')}
+            ${remaining.toFixed(4)} {t('quota.remaining')}
           </span>
         )}
       </div>
@@ -139,7 +139,7 @@ const QuotaDialog: React.FC<QuotaDialogProps> = ({ providerName, onClose }) => {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <DollarSign className="h-5 w-5 text-primary" />
-            {t('quota.title', 'Quota Management')}
+            {t('quota.title')}
           </DialogTitle>
           <DialogDescription className="capitalize">{providerName}</DialogDescription>
         </DialogHeader>
@@ -154,11 +154,11 @@ const QuotaDialog: React.FC<QuotaDialogProps> = ({ providerName, onClose }) => {
             {quota && (
               <div className="space-y-4">
                 <h4 className="text-sm font-semibold">
-                  {t('quota.current_usage', 'Current Usage')}
+                  {t('quota.current_usage')}
                 </h4>
 
                 {renderUsageBlock(
-                  t('quota.daily', 'Daily'),
+                  t('quota.daily'),
                   quota.current_daily_cost,
                   quota.daily_limit,
                   quota.daily_usage_percent,
@@ -167,7 +167,7 @@ const QuotaDialog: React.FC<QuotaDialogProps> = ({ providerName, onClose }) => {
                 )}
 
                 {renderUsageBlock(
-                  t('quota.monthly', 'Monthly'),
+                  t('quota.monthly'),
                   quota.current_monthly_cost,
                   quota.monthly_limit,
                   quota.monthly_usage_percent,
@@ -184,7 +184,7 @@ const QuotaDialog: React.FC<QuotaDialogProps> = ({ providerName, onClose }) => {
                     disabled={resetQuotaMutation.isPending}
                   >
                     <RotateCcw className="mr-2 h-4 w-4" />
-                    {t('quota.reset_daily', 'Reset Daily')}
+                    {t('quota.reset_daily')}
                   </Button>
                   <Button
                     type="button"
@@ -194,7 +194,7 @@ const QuotaDialog: React.FC<QuotaDialogProps> = ({ providerName, onClose }) => {
                     disabled={resetQuotaMutation.isPending}
                   >
                     <RotateCcw className="mr-2 h-4 w-4" />
-                    {t('quota.reset_monthly', 'Reset Monthly')}
+                    {t('quota.reset_monthly')}
                   </Button>
                 </div>
               </div>
@@ -204,48 +204,48 @@ const QuotaDialog: React.FC<QuotaDialogProps> = ({ providerName, onClose }) => {
             <div className="space-y-4 border-t pt-4">
               <h4 className="text-sm font-semibold flex items-center gap-2">
                 <AlertTriangle className="h-4 w-4 text-yellow-500" />
-                {t('quota.configuration', 'Quota Configuration')}
+                {t('quota.configuration')}
               </h4>
 
               <div className="space-y-2">
                 <Label htmlFor="quota-daily-limit">
-                  {t('quota.daily_limit', 'Daily Limit (USD)')}
+                  {t('quota.daily_limit')}
                 </Label>
                 <Input
                   id="quota-daily-limit"
                   type="number"
                   value={dailyLimit}
                   onChange={(e) => setDailyLimit(e.target.value)}
-                  placeholder={t('quota.daily_limit_placeholder', 'e.g., 10.00')}
+                  placeholder={t('quota.daily_limit_placeholder')}
                   step="0.01"
                   min="0"
                 />
                 <p className="text-xs text-muted-foreground">
-                  {t('quota.daily_limit_hint', 'Leave empty for no daily limit')}
+                    {t('quota.daily_limit_hint')}
                 </p>
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="quota-monthly-limit">
-                  {t('quota.monthly_limit', 'Monthly Limit (USD)')}
+                  {t('quota.monthly_limit')}
                 </Label>
                 <Input
                   id="quota-monthly-limit"
                   type="number"
                   value={monthlyLimit}
                   onChange={(e) => setMonthlyLimit(e.target.value)}
-                  placeholder={t('quota.monthly_limit_placeholder', 'e.g., 100.00')}
+                  placeholder={t('quota.monthly_limit_placeholder')}
                   step="0.01"
                   min="0"
                 />
                 <p className="text-xs text-muted-foreground">
-                  {t('quota.monthly_limit_hint', 'Leave empty for no monthly limit')}
+                    {t('quota.monthly_limit_hint')}
                 </p>
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="quota-alert-threshold">
-                  {t('quota.alert_threshold', 'Alert Threshold')} ({alertThreshold}%)
+                  {t('quota.alert_threshold')} ({alertThreshold}%)
                 </Label>
                 <input
                   id="quota-alert-threshold"
@@ -266,10 +266,10 @@ const QuotaDialog: React.FC<QuotaDialogProps> = ({ providerName, onClose }) => {
               <div className="flex items-center justify-between gap-4">
                 <div className="space-y-1">
                   <Label htmlFor="quota-auto-disable" className="cursor-pointer">
-                    {t('quota.auto_disable', 'Auto-disable on limit')}
+                    {t('quota.auto_disable')}
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    {t('quota.auto_disable_hint', 'Automatically disable provider when quota exceeded')}
+                    {t('quota.auto_disable_hint')}
                   </p>
                 </div>
                 <label className="relative inline-flex h-6 w-11 cursor-pointer items-center">
@@ -290,7 +290,7 @@ const QuotaDialog: React.FC<QuotaDialogProps> = ({ providerName, onClose }) => {
 
         <DialogFooter className="gap-2">
           <Button type="button" variant="outline" onClick={onClose}>
-            {t('common.cancel', 'Cancel')}
+            {t('common.cancel')}
           </Button>
           <Button
             type="button"
@@ -300,7 +300,7 @@ const QuotaDialog: React.FC<QuotaDialogProps> = ({ providerName, onClose }) => {
             {updateQuotaMutation.isPending && (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             )}
-            {t('common.save', 'Save')}
+            {t('common.save')}
           </Button>
         </DialogFooter>
       </DialogContent>

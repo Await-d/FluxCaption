@@ -30,7 +30,7 @@ router = APIRouter(prefix="/api/auto-translation-rules", tags=["Auto Translation
 @router.get(
     "", response_model=AutoTranslationRuleListResponse, summary="List auto translation rules"
 )
-async def list_rules(
+def list_rules(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
 ) -> AutoTranslationRuleListResponse:
@@ -73,7 +73,7 @@ async def list_rules(
 
 
 @router.get("/{rule_id}", response_model=AutoTranslationRuleResponse, summary="Get a specific rule")
-async def get_rule(
+def get_rule(
     rule_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -115,7 +115,7 @@ async def get_rule(
 
 
 @router.post("", response_model=AutoTranslationRuleResponse, summary="Create a new rule")
-async def create_rule(
+def create_rule(
     rule_data: AutoTranslationRuleCreate,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -163,7 +163,7 @@ async def create_rule(
 
 
 @router.put("/{rule_id}", response_model=AutoTranslationRuleResponse, summary="Update a rule")
-async def update_rule(
+def update_rule(
     rule_id: UUID,
     rule_data: AutoTranslationRuleUpdate,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -228,7 +228,7 @@ async def update_rule(
 
 
 @router.delete("/{rule_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a rule")
-async def delete_rule(
+def delete_rule(
     rule_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -262,7 +262,7 @@ async def delete_rule(
     response_model=AutoTranslationRuleResponse,
     summary="Toggle rule enabled status",
 )
-async def toggle_rule(
+def toggle_rule(
     rule_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),

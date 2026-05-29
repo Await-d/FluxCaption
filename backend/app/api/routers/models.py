@@ -6,8 +6,9 @@ Provides API for managing Ollama models.
 
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.api.routers.auth import get_current_user
 from app.core.db import get_db
@@ -21,10 +22,23 @@ from app.schemas.models import (
     ModelPullRequest,
 )
 from app.services.ollama_client import ollama_client
+from app.workers.tasks import pull_model_task, sync_models_task, test_model_task
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/models", tags=["Models"])
+OLLAMA_PROVIDER = "ollama"
+
+
+def _delete_model_registry_entry(db: Session, model_name: str) -> None:
+    model = (
+        db.query(ModelRegistry)
+        .filter(ModelRegistry.provider == OLLAMA_PROVIDER, ModelRegistry.name == model_name)
+        .first()
+    )
+    if model:
+        db.delete(model)
+        db.commit()
 
 
 @router.get(
@@ -32,7 +46,7 @@ router = APIRouter(prefix="/api/models", tags=["Models"])
     response_model=ModelListResponse,
     summary="List all models",
 )
-async def list_models(
+def list_models(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
 ) -> ModelListResponse:
@@ -75,7 +89,7 @@ async def list_models(
     response_model=ModelInfo,
     summary="Get model information",
 )
-async def get_model(
+def get_model(
     model_name: str,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -92,7 +106,11 @@ async def get_model(
     Raises:
         HTTPException: If model not found
     """
-    model = db.query(ModelRegistry).filter(ModelRegistry.name == model_name).first()
+    model = (
+        db.query(ModelRegistry)
+        .filter(ModelRegistry.provider == OLLAMA_PROVIDER, ModelRegistry.name == model_name)
+        .first()
+    )
 
     if not model:
         raise HTTPException(
@@ -114,62 +132,13 @@ async def get_model(
     )
 
 
-async def pull_model_task(model_name: str, db: Session) -> None:
-    """
-    Background task to pull a model.
-
-    Args:
-        model_name: Name of the model to pull
-        db: Database session
-    """
-    try:
-        # Update status to pulling
-        model = db.query(ModelRegistry).filter(ModelRegistry.name == model_name).first()
-        if model:
-            model.status = "pulling"
-            db.commit()
-
-        # Pull the model
-        await ollama_client.pull_model(model_name)
-
-        # Get model info from Ollama to update size and details
-        ollama_models = await ollama_client.list_models()
-        ollama_model = next((m for m in ollama_models if m.get("name") == model_name), None)
-
-        # Update status to available and populate size info
-        if model:
-            model.status = "available"
-            if ollama_model:
-                model.size_bytes = ollama_model.get("size")
-                details = ollama_model.get("details", {})
-                if details:
-                    model.family = details.get("family")
-                    model.parameter_size = details.get("parameter_size")
-                    model.quantization = details.get("quantization_level")
-                model.digest = ollama_model.get("digest")
-            db.commit()
-
-        logger.info(f"Successfully pulled model: {model_name}")
-
-    except Exception as e:
-        logger.error(f"Failed to pull model {model_name}: {e}", exc_info=True)
-
-        # Update status to failed
-        model = db.query(ModelRegistry).filter(ModelRegistry.name == model_name).first()
-        if model:
-            model.status = "failed"
-            model.error_message = str(e)
-            db.commit()
-
-
 @router.post(
     "/pull",
     status_code=status.HTTP_202_ACCEPTED,
     summary="Pull a model",
 )
-async def pull_model(
+def pull_model(
     request: ModelPullRequest,
-    background_tasks: BackgroundTasks,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
 ) -> dict:
@@ -181,7 +150,6 @@ async def pull_model(
 
     Args:
         request: Model pull request
-        background_tasks: FastAPI background tasks
         db: Database session
 
     Returns:
@@ -189,7 +157,11 @@ async def pull_model(
     """
     try:
         # Check if model already exists
-        existing_model = db.query(ModelRegistry).filter(ModelRegistry.name == request.name).first()
+        existing_model = (
+            db.query(ModelRegistry)
+            .filter(ModelRegistry.provider == OLLAMA_PROVIDER, ModelRegistry.name == request.name)
+            .first()
+        )
 
         if existing_model and existing_model.status == "pulling":
             return {
@@ -199,19 +171,21 @@ async def pull_model(
 
         # Create or update model registry entry
         if not existing_model:
-            model = ModelRegistry(name=request.name, status="pulling")
+            model = ModelRegistry(provider=OLLAMA_PROVIDER, name=request.name, status="pulling")
             db.add(model)
         else:
             existing_model.status = "pulling"
+            existing_model.error_message = None
 
         db.commit()
 
-        # Start background task
-        background_tasks.add_task(pull_model_task, request.name, db)
+        task = pull_model_task.apply_async(args=[request.name], queue="models")
 
         return {
             "message": f"Started pulling model '{request.name}'",
             "status": "pulling",
+            "task_id": task.id,
+            "model": request.name,
         }
 
     except Exception as e:
@@ -249,11 +223,7 @@ async def delete_model(
         # Delete from Ollama
         await ollama_client.delete_model(model_name)
 
-        # Delete from registry
-        model = db.query(ModelRegistry).filter(ModelRegistry.name == model_name).first()
-        if model:
-            db.delete(model)
-            db.commit()
+        await run_in_threadpool(_delete_model_registry_entry, db, model_name)
 
         logger.info(f"Successfully deleted model: {model_name}")
 
@@ -272,9 +242,10 @@ async def delete_model(
 
 @router.post(
     "/{model_name}/test",
+    status_code=status.HTTP_202_ACCEPTED,
     summary="Test a model",
 )
-async def test_model(
+def test_model(
     model_name: str,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -287,64 +258,36 @@ async def test_model(
         db: Database session
 
     Returns:
-        dict: Test result with response time and output
+        dict: Queued task details
 
     Raises:
         HTTPException: If test fails
     """
-    import time
-
     try:
-        # Check if model exists in Ollama
-        models = await ollama_client.list_models()
-        if not any(m.get("name") == model_name for m in models):
+        model = (
+            db.query(ModelRegistry)
+            .filter(ModelRegistry.provider == OLLAMA_PROVIDER, ModelRegistry.name == model_name)
+            .first()
+        )
+        if not model:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Model '{model_name}' not found in Ollama",
+                detail=f"Model '{model_name}' not found in registry",
             )
 
-        # Run test generation
-        test_prompt = "Translate to English: 你好"
-        start_time = time.time()
-
-        response = await ollama_client.generate(
-            model=model_name,
-            prompt=test_prompt,
-            system="You are a translation assistant. Respond with only the translation.",
-            temperature=0.3,
-            max_tokens=50,
-        )
-
-        elapsed_time = time.time() - start_time
-
-        # Update model registry
-        model = db.query(ModelRegistry).filter(ModelRegistry.name == model_name).first()
-        if model:
-            model.status = "available"
-            model.last_checked = model.last_checked  # Will be updated by DB trigger
-            db.commit()
-
-        logger.info(f"Successfully tested model {model_name} in {elapsed_time:.2f}s")
+        task = test_model_task.apply_async(args=[model_name], queue="models")
 
         return {
-            "success": True,
+            "status": "queued",
+            "task_id": task.id,
             "model": model_name,
-            "test_prompt": test_prompt,
-            "response": response.strip(),
-            "response_time_seconds": round(elapsed_time, 2),
-            "status": "available",
+            "message": f"Model test queued for '{model_name}'",
         }
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to test model {model_name}: {e}", exc_info=True)
-
-        # Update model status to error
-        model = db.query(ModelRegistry).filter(ModelRegistry.name == model_name).first()
-        if model:
-            model.status = "error"
-            db.commit()
 
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -356,7 +299,7 @@ async def test_model(
     "/{model_name}/set-default",
     summary="Set model as default",
 )
-async def set_default_model(
+def set_default_model(
     model_name: str,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -376,7 +319,11 @@ async def set_default_model(
     """
     try:
         # Check if model exists in registry
-        model = db.query(ModelRegistry).filter(ModelRegistry.name == model_name).first()
+        model = (
+            db.query(ModelRegistry)
+            .filter(ModelRegistry.provider == OLLAMA_PROVIDER, ModelRegistry.name == model_name)
+            .first()
+        )
         if not model:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -391,7 +338,9 @@ async def set_default_model(
             )
 
         # Unset all other defaults
-        db.query(ModelRegistry).update({"is_default": False})
+        db.query(ModelRegistry).filter(ModelRegistry.provider == OLLAMA_PROVIDER).update(
+            {"is_default": False}
+        )
 
         # Set this model as default
         model.is_default = True
@@ -442,7 +391,7 @@ async def set_default_model(
     "/recommended/list",
     summary="Get recommended models",
 )
-async def get_recommended_models(
+def get_recommended_models(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> dict:
     """
@@ -516,11 +465,11 @@ async def get_recommended_models(
 
 @router.post(
     "/sync",
+    status_code=status.HTTP_202_ACCEPTED,
     summary="Sync models from Ollama",
 )
-async def sync_models(
+def sync_models(
     current_user: Annotated[User, Depends(get_current_user)],
-    db: Session = Depends(get_db),
 ) -> dict:
     """
     Sync models from Ollama server to local database.
@@ -528,23 +477,16 @@ async def sync_models(
     This will fetch all models from Ollama and update the local registry.
 
     Returns:
-        dict: Sync result with counts
+        dict: Queued task details
     """
     try:
-        from app.core.model_sync import sync_models_from_ollama
-
-        logger.info("Starting manual model sync from Ollama")
-        await sync_models_from_ollama(db)
-
-        # Get updated model count
-        model_count = db.query(ModelRegistry).count()
-
-        logger.info(f"Model sync completed, total models: {model_count}")
+        logger.info("Queueing manual model sync from Ollama")
+        task = sync_models_task.apply_async(queue="models")
 
         return {
-            "success": True,
-            "message": "Models synced successfully",
-            "total_models": model_count,
+            "status": "queued",
+            "task_id": task.id,
+            "message": "Model sync queued",
         }
 
     except Exception as e:

@@ -29,7 +29,7 @@ router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 security = HTTPBearer(auto_error=False)
 
 
-async def get_current_user(
+def get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
     db: Annotated[Session, Depends(get_db)],
 ) -> User:
@@ -64,7 +64,7 @@ async def get_current_user(
     return user
 
 
-async def get_current_user_sse(
+def get_current_user_sse(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
     token: str | None = None,
     db: Session = Depends(get_db),

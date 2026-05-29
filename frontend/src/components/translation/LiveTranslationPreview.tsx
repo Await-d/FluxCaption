@@ -11,6 +11,8 @@ import { Badge } from '../ui/Badge'
 import { Progress } from '../ui/Progress'
 import { CheckCircle2, Loader2, Languages } from 'lucide-react'
 import { cn } from '../../lib/utils'
+import { subscribeToJobProgress, type SSESubscription } from '../../lib/sse'
+import type { ProgressEvent } from '../../types/api'
 
 export interface TranslationLine {
   index: number
@@ -34,8 +36,12 @@ export function LiveTranslationPreview({
   const [lines, setLines] = useState<TranslationLine[]>([])
   const [progress, setProgress] = useState(0)
   const [currentLine, setCurrentLine] = useState(0)
+  const [totalLines, setTotalLines] = useState(0)
+  const [phase, setPhase] = useState('init')
+  const [statusMessage, setStatusMessage] = useState('')
   const [status, setStatus] = useState<'connecting' | 'translating' | 'completed' | 'error'>('connecting')
-  const eventSourceRef = useRef<EventSource | null>(null)
+  const subscriptionRef = useRef<SSESubscription | null>(null)
+  const terminalStateReachedRef = useRef(false)
   const linesEndRef = useRef<HTMLDivElement>(null)
 
   // Auto-scroll to latest translated line
@@ -48,66 +54,94 @@ export function LiveTranslationPreview({
   }, [currentLine])
 
   useEffect(() => {
-    // Connect to SSE endpoint
-    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
-    const eventSource = new EventSource(`${apiBaseUrl}/api/jobs/${jobId}/stream`)
-    eventSourceRef.current = eventSource
+    terminalStateReachedRef.current = false
+    setStatus('connecting')
 
-    eventSource.onopen = () => {
+    const handleProgress = (event: ProgressEvent) => {
+      const normalizedStatus = (event.status || '').toLowerCase()
+      const normalizedPhase = (event.phase || '').toLowerCase()
+
+      if (typeof event.progress === 'number') {
+        setProgress(event.progress || 0)
+      }
+
+      if (typeof event.phase === 'string') {
+        setPhase(event.phase)
+      }
+
+      if (typeof event.status === 'string') {
+        setStatusMessage(event.status)
+      }
+
+      if (
+        normalizedStatus === 'completed'
+        || normalizedStatus === 'success'
+        || normalizedPhase === 'completed'
+      ) {
+        terminalStateReachedRef.current = true
+        setStatus('completed')
+        setProgress(100)
+        onComplete?.()
+        return
+      }
+
+      if (
+        normalizedStatus === 'failed'
+        || normalizedStatus === 'error'
+        || normalizedStatus === 'cancelled'
+        || normalizedStatus === 'canceled'
+      ) {
+        terminalStateReachedRef.current = true
+        setStatus('error')
+        onError?.(event.error || event.message || t('translation.translationFailed'))
+        return
+      }
+
       setStatus('translating')
-    }
 
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data)
+      if (event.type === 'line' && typeof event.index === 'number') {
+        const lineIndex = event.index
 
-        // Handle different event types
-        if (data.type === 'progress') {
-          setProgress(data.progress || 0)
-        } else if (data.type === 'line') {
-          // Update specific line
-          setLines(prev => {
-            const newLines = [...prev]
-            const existingIndex = newLines.findIndex(l => l.index === data.index)
+        setLines(prev => {
+          const newLines = [...prev]
+          const existingIndex = newLines.findIndex(line => line.index === lineIndex)
 
-            const line: TranslationLine = {
-              index: data.index,
-              source: data.source || '',
-              translated: data.translated || '',
-              status: data.status || 'completed'
-            }
+          const line: TranslationLine = {
+            index: lineIndex,
+            source: event.source || '',
+            translated: event.translated || '',
+            status: 'completed',
+          }
 
-            if (existingIndex >= 0) {
-              newLines[existingIndex] = line
-            } else {
-              newLines.push(line)
-            }
+          if (typeof event.total === 'number' && event.total > 0) {
+            setTotalLines(event.total)
+          }
 
-            return newLines.sort((a, b) => a.index - b.index)
-          })
+          if (existingIndex >= 0) {
+            newLines[existingIndex] = line
+          } else {
+            newLines.push(line)
+          }
 
-          setCurrentLine(data.index)
-        } else if (data.type === 'complete') {
-          setStatus('completed')
-          setProgress(100)
-          onComplete?.()
-        } else if (data.type === 'error') {
-          setStatus('error')
-          onError?.(data.message || t('translation.translationFailed'))
-        }
-      } catch (err) {
-        console.error('Failed to parse SSE message:', err)
+          return newLines.sort((a, b) => a.index - b.index)
+        })
+
+        setCurrentLine(lineIndex)
       }
     }
 
-    eventSource.onerror = () => {
+    subscriptionRef.current = subscribeToJobProgress(jobId, handleProgress, () => {
+      if (terminalStateReachedRef.current) {
+        return
+      }
+
       setStatus('error')
       onError?.(t('translation.connectionLost'))
-      eventSource.close()
-    }
+    })
 
     return () => {
-      eventSource.close()
+      subscriptionRef.current?.unsubscribe()
+      subscriptionRef.current = null
     }
   }, [jobId, onComplete, onError])
 
@@ -132,8 +166,13 @@ export function LiveTranslationPreview({
         </div>
         <Progress value={progress} className="mt-2" />
         <p className="text-sm text-muted-foreground mt-1">
-          {progress.toFixed(1)}% - {currentLine} / {lines.length} {t('components.liveTranslation.lines')}
+          {progress.toFixed(1)}% - {phase === 'ocr'
+            ? t('components.liveTranslation.ocrPhase', '正在识别图片字幕文本')
+            : `${currentLine} / ${totalLines || lines.length} ${t('components.liveTranslation.lines')}`}
         </p>
+        {statusMessage ? (
+          <p className="text-xs text-muted-foreground mt-1">{statusMessage}</p>
+        ) : null}
       </CardHeader>
       <CardContent>
         <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2">

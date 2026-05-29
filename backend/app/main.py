@@ -1,11 +1,8 @@
-"""
-FluxCaption FastAPI Application.
+"""FluxCaption FastAPI application."""
 
-Main application entry point with route registration and lifecycle management.
-"""
-
+import asyncio
 from contextlib import asynccontextmanager
-from datetime import timezone
+from datetime import UTC
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -33,10 +30,16 @@ from app.api.routers import (
     upload,
 )
 from app.api.routers import settings as settings_router
+from app.core.ai_model_catalog_runtime import (
+    ensure_catalog_sync_task,
+    load_catalog_sync_config,
+    shutdown_catalog_sync_task,
+)
 from app.core.config import settings
 from app.core.db import close_db, get_db, init_db
 from app.core.init_db import init_database
 from app.core.logging import get_logger
+from app.services.ollama_client import ollama_client
 
 logger = get_logger(__name__)
 
@@ -46,6 +49,45 @@ logger = get_logger(__name__)
 # =============================================================================
 
 
+async def sync_models_from_ollama_if_available(db) -> bool:
+    """
+    Sync Ollama models only when the Ollama server is reachable.
+
+    Returns:
+        bool: True when a sync was performed, False when Ollama was unavailable.
+    """
+    if not await ollama_client.health_check(log_errors=False):
+        logger.info("Ollama is unavailable, skipping model sync")
+        return False
+
+    from app.core.model_sync import sync_models_from_ollama
+
+    await sync_models_from_ollama(db)
+    return True
+
+
+async def sync_ai_model_catalog_once() -> None:
+    from app.core.ai_model_catalog_sync import sync_ai_models_from_catalog
+
+    with next(get_db()) as db:
+        await sync_ai_models_from_catalog(db)
+
+
+async def ai_model_catalog_sync_loop() -> None:
+    while True:
+        try:
+            await asyncio.sleep(settings.ai_models_auto_sync_interval_seconds)
+            if not settings.ai_models_auto_sync_enabled:
+                logger.info("AI model catalog auto sync disabled, stopping background loop")
+                return
+            await sync_ai_model_catalog_once()
+        except asyncio.CancelledError:
+            logger.debug("AI model catalog sync loop cancelled")
+            return
+        except Exception as e:
+            logger.warning(f"Background AI model catalog sync failed: {e}", exc_info=True)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -53,6 +95,8 @@ async def lifespan(app: FastAPI):
 
     Handles startup and shutdown events.
     """
+    background_tasks: list[asyncio.Task[None]] = []
+
     # Startup
     logger.info("Starting FluxCaption application...")
 
@@ -117,6 +161,7 @@ async def lifespan(app: FastAPI):
                 from app.core.runtime_config import load_config_from_db
 
                 load_config_from_db(db)
+                load_catalog_sync_config(db)
 
             logger.info("System settings initialized")
         except Exception as e:
@@ -160,13 +205,21 @@ async def lifespan(app: FastAPI):
         try:
             logger.info("Syncing models from Ollama...")
             with next(get_db()) as db:
-                from app.core.model_sync import sync_models_from_ollama
-
-                await sync_models_from_ollama(db)
-            logger.info("Model sync completed")
+                if await sync_models_from_ollama_if_available(db):
+                    logger.info("Model sync completed")
         except Exception as e:
             logger.warning(f"Failed to sync models from Ollama: {e}", exc_info=True)
             # Don't fail startup if model sync fails
+
+        if settings.ai_models_auto_sync_enabled:
+            try:
+                logger.info("Syncing AI model catalog from models.dev...")
+                await sync_ai_model_catalog_once()
+                logger.info("AI model catalog sync completed")
+            except Exception as e:
+                logger.warning(f"Failed to sync AI model catalog: {e}", exc_info=True)
+
+        await ensure_catalog_sync_task(ai_model_catalog_sync_loop)
 
         # Sync default model from database to runtime settings
         try:
@@ -222,7 +275,7 @@ async def lifespan(app: FastAPI):
                     for job in stuck_jobs:
                         job.status = "failed"
                         job.error = "任务因服务重启而中断 (Task interrupted by server restart)"
-                        job.finished_at = datetime.now(timezone.utc)
+                        job.finished_at = datetime.now(UTC)
                         logger.info(f"Reset stuck job: {job.id}")
 
                     db.commit()
@@ -237,12 +290,25 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to initialize database: {e}", exc_info=True)
         raise
 
-    yield
-
-    # Shutdown
-    logger.info("Shutting down FluxCaption application...")
-    close_db()
-    logger.info("Application shutdown complete")
+    try:
+        yield
+    except asyncio.CancelledError:
+        logger.debug("Application lifespan cancelled during shutdown")
+    finally:
+        # Shutdown
+        logger.info("Shutting down FluxCaption application...")
+        await shutdown_catalog_sync_task()
+        for task in background_tasks:
+            task.cancel()
+        if background_tasks:
+            try:
+                await asyncio.shield(
+                    asyncio.gather(*background_tasks, return_exceptions=True)
+                )
+            except asyncio.CancelledError:
+                logger.debug("Cancelled while waiting for background tasks to stop")
+        close_db()
+        logger.info("Application shutdown complete")
 
 
 # =============================================================================

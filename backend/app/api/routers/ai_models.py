@@ -1,8 +1,4 @@
-"""
-AI Model Configuration Management Endpoints.
-
-Provides API for managing AI model configurations and pricing.
-"""
+"""AI Model configuration management endpoints."""
 
 from typing import Annotated
 
@@ -16,12 +12,14 @@ from app.core.logging import get_logger
 from app.models.ai_model_config import AIModelConfig
 from app.models.user import User
 from app.schemas.ai_models import (
+    AIModelCatalogSyncQueuedResponse,
     AIModelConfigCreate,
     AIModelConfigList,
     AIModelConfigResponse,
     AIModelConfigUpdate,
     PricingCalculation,
 )
+from app.workers.tasks import sync_ai_model_catalog_task
 
 logger = get_logger(__name__)
 
@@ -33,7 +31,7 @@ router = APIRouter(prefix="/api/ai-models", tags=["AI Models"])
     response_model=AIModelConfigList,
     summary="List AI model configurations",
 )
-async def list_models(
+def list_models(
     current_user: Annotated[User, Depends(get_current_user)],
     provider: str | None = Query(None, description="Filter by provider"),
     enabled_only: bool = Query(False, description="Only return enabled models"),
@@ -120,7 +118,7 @@ async def list_models(
     response_model=AIModelConfigResponse,
     summary="Get AI model configuration",
 )
-async def get_model(
+def get_model(
     model_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -178,7 +176,7 @@ async def get_model(
     status_code=status.HTTP_201_CREATED,
     summary="Create AI model configuration",
 )
-async def create_model(
+def create_model(
     request: AIModelConfigCreate,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -262,7 +260,7 @@ async def create_model(
     response_model=AIModelConfigResponse,
     summary="Update AI model configuration",
 )
-async def update_model(
+def update_model(
     model_id: str,
     request: AIModelConfigUpdate,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -326,7 +324,7 @@ async def update_model(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete AI model configuration",
 )
-async def delete_model(
+def delete_model(
     model_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -369,7 +367,7 @@ async def delete_model(
     response_model=PricingCalculation,
     summary="Calculate pricing for token usage",
 )
-async def calculate_price(
+def calculate_price(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
     provider_name: str = Query(..., description="Provider name"),
@@ -429,3 +427,35 @@ async def calculate_price(
         output_cost=output_cost,
         total_cost=total_cost,
     )
+
+
+@router.post(
+    "/sync-catalog",
+    response_model=AIModelCatalogSyncQueuedResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Sync AI models from opencode-compatible catalog",
+)
+def sync_catalog(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+    provider: str | None = Query(None, description="Sync only one provider"),
+) -> AIModelCatalogSyncQueuedResponse:
+    """Queue AI model metadata sync from models.dev/api.json."""
+    try:
+        task = sync_ai_model_catalog_task.apply_async(
+            kwargs={"provider_name": provider},
+            queue="models",
+        )
+        return AIModelCatalogSyncQueuedResponse(
+            status="queued",
+            task_id=task.id,
+            message="AI model catalog sync queued",
+            source="models.dev",
+            provider=provider,
+        )
+    except Exception as e:
+        logger.error(f"Failed to sync AI model catalog: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to sync AI model catalog: {str(e)}",
+        )

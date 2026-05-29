@@ -5,7 +5,7 @@ Job management schemas.
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class JobCreate(BaseModel):
@@ -38,6 +38,8 @@ class JobStatus(BaseModel):
 class JobResponse(BaseModel):
     """Full job information response."""
 
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID = Field(description="Job ID")
     item_id: str | None = Field(default=None, description="Jellyfin item ID")
     source_type: str = Field(description="Source type")
@@ -56,10 +58,6 @@ class JobResponse(BaseModel):
     result_paths: list[str] | None = Field(default=None, description="Result file paths")
     metrics: dict | None = Field(default=None, description="Performance metrics")
 
-    class Config:
-        from_attributes = True
-
-
 class JobListResponse(BaseModel):
     """Paginated list of jobs."""
 
@@ -72,6 +70,7 @@ class JobListResponse(BaseModel):
 class JobEventData(BaseModel):
     """SSE event data for job progress."""
 
+    type: str | None = Field(default=None, description="Event type (progress | line)")
     job_id: str = Field(description="Job ID")
     phase: str = Field(description="Current phase")
     status: str = Field(description="Status message")
@@ -79,3 +78,6 @@ class JobEventData(BaseModel):
     completed: int | None = Field(default=None, description="Completed units")
     total: int | None = Field(default=None, description="Total units")
     error: str | None = Field(default=None, description="Error message")
+    index: int | None = Field(default=None, description="Subtitle line index")
+    source: str | None = Field(default=None, description="Source subtitle line")
+    translated: str | None = Field(default=None, description="Translated subtitle line")

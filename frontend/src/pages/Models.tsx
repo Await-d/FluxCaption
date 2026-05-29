@@ -46,7 +46,6 @@ export function Models() {
     onSuccess: () => {
       setModelName('')
       refetch()
-      queryClient.invalidateQueries({ queryKey: ['jobs'] })
       alert(t('models.pullSuccess'))
     },
     onError: (error: any) => {
@@ -83,9 +82,9 @@ export function Models() {
   // Sync models mutation
   const syncMutation = useMutation({
     mutationFn: () => api.syncModels(),
-    onSuccess: (data) => {
+    onSuccess: () => {
       refetch()
-      alert(t('models.syncSuccess', { count: data.total_models }))
+      alert(t('models.syncSuccess'))
     },
     onError: (error: any) => {
       alert(t('models.syncFailed', { error: error.response?.data?.detail || error.message }))

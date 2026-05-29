@@ -35,10 +35,10 @@ const UsageStatsDialog: React.FC<UsageStatsDialogProps> = ({ providerName, onClo
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {t('ai_providers.usage_statistics', 'Usage Statistics')}
+            {t('ai_providers.usage_statistics')}
           </DialogTitle>
           <DialogDescription>
-            {providerName} • {t('ai_providers.last_7_days', 'Last 7 days')}
+            {providerName} • {t('ai_providers.last_7_days')}
           </DialogDescription>
         </DialogHeader>
 
@@ -53,7 +53,7 @@ const UsageStatsDialog: React.FC<UsageStatsDialogProps> = ({ providerName, onClo
                 <CardContent className="pt-6 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium text-muted-foreground">
-                      {t('ai_providers.total_requests', 'Total Requests')}
+                      {t('ai_providers.total_requests')}
                     </span>
                     <TrendingUp className="h-4 w-4 text-muted-foreground" />
                   </div>
@@ -67,7 +67,7 @@ const UsageStatsDialog: React.FC<UsageStatsDialogProps> = ({ providerName, onClo
                 <CardContent className="pt-6 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium text-muted-foreground">
-                      {t('ai_providers.total_tokens', 'Total Tokens')}
+                      {t('ai_providers.total_tokens')}
                     </span>
                     <TrendingUp className="h-4 w-4 text-muted-foreground" />
                   </div>
@@ -81,7 +81,7 @@ const UsageStatsDialog: React.FC<UsageStatsDialogProps> = ({ providerName, onClo
                 <CardContent className="pt-6 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium text-muted-foreground">
-                      {t('ai_providers.total_cost', 'Total Cost')}
+                      {t('ai_providers.total_cost')}
                     </span>
                     <DollarSign className="h-4 w-4 text-muted-foreground" />
                   </div>
@@ -95,7 +95,7 @@ const UsageStatsDialog: React.FC<UsageStatsDialogProps> = ({ providerName, onClo
                 <CardContent className="pt-6 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium text-muted-foreground">
-                      {t('ai_providers.avg_response_time', 'Avg Response Time')}
+                      {t('ai_providers.avg_response_time')}
                     </span>
                     <Clock className="h-4 w-4 text-muted-foreground" />
                   </div>
@@ -114,11 +114,11 @@ const UsageStatsDialog: React.FC<UsageStatsDialogProps> = ({ providerName, onClo
                     <AlertTriangle className="h-6 w-6 text-destructive" />
                     <div>
                       <p className="text-sm font-medium text-destructive">
-                        {t('ai_providers.error_rate', 'Error Rate')}
+                        {t('ai_providers.error_rate')}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {latestStats.error_count} {t('ai_providers.errors_out_of', 'errors out of')}{' '}
-                        {latestStats.request_count} {t('ai_providers.requests', 'requests')}
+                        {latestStats.error_count} {t('ai_providers.errors_out_of')}{' '}
+                        {latestStats.request_count} {t('ai_providers.requests')}
                       </p>
                     </div>
                   </div>
@@ -127,7 +127,7 @@ const UsageStatsDialog: React.FC<UsageStatsDialogProps> = ({ providerName, onClo
                       {((1 - latestStats.success_rate) * 100).toFixed(2)}%
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {t('ai_providers.success_rate', 'Success')}:{' '}
+                        {t('ai_providers.success_rate')}:{' '}
                       {(latestStats.success_rate * 100).toFixed(2)}%
                     </p>
                   </div>
@@ -137,13 +137,13 @@ const UsageStatsDialog: React.FC<UsageStatsDialogProps> = ({ providerName, onClo
           </div>
         ) : (
           <div className="text-center py-12 text-muted-foreground">
-            {t('ai_providers.no_usage_data', 'No usage data available for the selected period')}
+            {t('ai_providers.no_usage_data')}
           </div>
         )}
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onClose}>
-            {t('common.close', 'Close')}
+            {t('common.close')}
           </Button>
         </DialogFooter>
       </DialogContent>

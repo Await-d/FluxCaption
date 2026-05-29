@@ -18,6 +18,7 @@ import { Badge } from '../components/ui/Badge'
 import { Textarea } from '../components/ui/Textarea'
 import api from '../lib/api'
 import type { SystemConfigCategory, SettingChangeHistory } from '../types/api'
+import { PageHero } from '../components/ui/PageHero'
 
 export function SystemConfig() {
   const { t } = useTranslation()
@@ -96,16 +97,16 @@ export function SystemConfig() {
     if (valueType === 'int') {
       const numValue = parseInt(value, 10)
       if (isNaN(numValue)) {
-        return 'Value must be a valid integer'
+        return t('systemConfig.validation.integer')
       }
 
       // Range validation
       if (constraints) {
         if (constraints.min !== undefined && numValue < constraints.min) {
-          return `Value must be at least ${constraints.min} ${constraints.unit || ''}`
+          return t('systemConfig.validation.min', { min: constraints.min, unit: constraints.unit || '' })
         }
         if (constraints.max !== undefined && numValue > constraints.max) {
-          return `Value must not exceed ${constraints.max} ${constraints.unit || ''}`
+          return t('systemConfig.validation.max', { max: constraints.max, unit: constraints.unit || '' })
         }
       }
     }
@@ -161,22 +162,20 @@ export function SystemConfig() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
-            <Settings className="h-6 w-6 sm:h-8 sm:w-8" />
-            {t('systemConfig.title')}
-          </h1>
-          <p className="text-muted-foreground mt-2">
-            {t('systemConfig.description')}
-          </p>
-        </div>
-      </div>
+    <div className="space-y-6 lg:space-y-8">
+      <PageHero
+        eyebrow={t('pageHero.systemConfig.eyebrow')}
+        title={t('systemConfig.title')}
+        description={t('systemConfig.description')}
+        metrics={[
+          { label: t('pageHero.systemConfig.metrics.categories.label'), value: String(categories?.length ?? 0), detail: t('pageHero.systemConfig.metrics.categories.detail') },
+          { label: t('pageHero.systemConfig.metrics.edited.label'), value: String(Object.keys(editedValues).length), detail: t('pageHero.systemConfig.metrics.edited.detail') },
+          { label: t('pageHero.systemConfig.metrics.history.label'), value: showHistory ? t('pageHero.common.open') : t('pageHero.common.ready'), detail: t('pageHero.systemConfig.metrics.history.detail') },
+        ]}
+      />
 
       {/* Restart Warning */}
-      <Card className="border-amber-500/50 bg-amber-500/10">
+      <Card className="rounded-[30px] border-amber-500/50 bg-amber-500/10">
         <CardContent className="pt-6">
           <div className="flex items-start gap-3">
             <AlertTriangle className="h-5 w-5 text-amber-500 mt-0.5" />
@@ -194,7 +193,7 @@ export function SystemConfig() {
 
       {/* Configuration Categories */}
       {categories?.map((category) => (
-        <Card key={category.category}>
+        <Card key={category.category} className="rounded-[30px]">
           <CardHeader>
             <CardTitle className="text-lg sm:text-xl">{category.label}</CardTitle>
             <CardDescription>{category.description}</CardDescription>
@@ -238,7 +237,7 @@ export function SystemConfig() {
                       {setting.constraints && (
                         <p className="text-xs text-primary">
                           <Info className="h-3 w-3 inline mr-1" />
-                          Range: {setting.constraints.min} - {setting.constraints.max} {setting.constraints.unit}
+                          {t('systemConfig.validation.range', { min: setting.constraints.min, max: setting.constraints.max, unit: setting.constraints.unit || '' })}
                         </p>
                       )}
                       {validationErrors[setting.key] && (

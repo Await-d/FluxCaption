@@ -31,6 +31,7 @@ import { useToast } from '../hooks/use-toast'
 import api from '../lib/api'
 import { getLanguageName } from '../lib/utils'
 import { useTranslation } from 'react-i18next'
+import { PageHero } from '../components/ui/PageHero'
 
 interface TranslationPair {
   id: string
@@ -294,7 +295,17 @@ export function TranslationMemory() {
     : []
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 lg:space-y-8">
+      <PageHero
+        eyebrow={t('pageHero.translationMemory.eyebrow')}
+        title={t('translationMemory.title')}
+        description={t('pageHero.translationMemory.description')}
+        metrics={[
+          { label: t('pageHero.translationMemory.metrics.entries.label'), value: String(stats?.total || 0), detail: t('pageHero.translationMemory.metrics.entries.detail') },
+          { label: t('pageHero.translationMemory.metrics.pairs.label'), value: String(stats?.by_language_pair ? Object.keys(stats.by_language_pair).length : 0), detail: t('pageHero.translationMemory.metrics.pairs.detail') },
+          { label: t('pageHero.translationMemory.metrics.models.label'), value: String(stats?.by_model ? Object.keys(stats.by_model).length : 0), detail: t('pageHero.translationMemory.metrics.models.detail') },
+        ]}
+      />
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
@@ -778,17 +789,17 @@ export function TranslationMemory() {
                 id="batch-find"
                 value={batchFind}
                 onChange={(e) => setBatchFind(e.target.value)}
-                placeholder={t('translationMemory.findTextPlaceholder')}
+                placeholder={t('translationMemory.findPlaceholder')}
                 className="mt-1"
               />
             </div>
             <div>
-              <Label htmlFor="batch-replace">{t('translationMemory.replaceWith')}</Label>
+              <Label htmlFor="batch-replace">{t('translationMemory.replaceText')}</Label>
               <Input
                 id="batch-replace"
                 value={batchReplace}
                 onChange={(e) => setBatchReplace(e.target.value)}
-                placeholder={t('translationMemory.replaceWithPlaceholder')}
+                placeholder={t('translationMemory.replacePlaceholder')}
                 className="mt-1"
               />
             </div>
@@ -823,7 +834,7 @@ export function TranslationMemory() {
               onClick={handleBatchReplace}
               disabled={!batchFind || batchReplaceMutation.isPending}
             >
-              {t('translationMemory.replace')}
+              {t('translationMemory.replaceButton')}
             </Button>
           </DialogFooter>
         </DialogContent>

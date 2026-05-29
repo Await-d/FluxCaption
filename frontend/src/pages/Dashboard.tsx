@@ -188,12 +188,73 @@ export function Dashboard() {
       .slice(0, 6) // Top 6 languages
   }, [allJobs, t])
 
-  const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
+  const COLORS = ['#fb923c', '#38bdf8', '#22c55e', '#f43f5e', '#a78bfa', '#facc15']
+  const recentActivity = recentJobs?.jobs?.[0]
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 lg:space-y-8">
+      <section className="panel-shell relative overflow-hidden rounded-[32px] p-6 sm:p-8">
+        <div className="absolute inset-y-0 right-0 hidden w-1/2 bg-[radial-gradient(circle_at_top,rgba(255,172,84,0.28),transparent_46%),radial-gradient(circle_at_70%_50%,rgba(56,189,248,0.16),transparent_36%)] lg:block" />
+        <div className="relative grid gap-8 lg:grid-cols-[1.25fr_0.75fr] lg:items-end">
+          <div className="space-y-5">
+            <div className="eyebrow-label">{t('pageHero.dashboard.eyebrow')}</div>
+            <div className="max-w-3xl space-y-3">
+              <h2 className="section-title text-4xl leading-none sm:text-5xl">{t('pageHero.dashboard.title')}</h2>
+              <p className="max-w-2xl text-sm leading-7 text-muted-foreground sm:text-base">
+                {t('pageHero.dashboard.description')}
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-3xl border border-border/70 bg-background/40 p-4">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{t('pageHero.dashboard.metrics.health.label')}</div>
+                <div className="mt-3 text-3xl font-extrabold">{healthLoading ? '...' : health?.status || t('pageHero.dashboard.unknown')}</div>
+                <div className="mt-2 text-sm text-muted-foreground">{t('pageHero.dashboard.metrics.health.detail', { healthy: healthyServices, total: totalServices })}</div>
+              </div>
+              <div className="rounded-3xl border border-border/70 bg-background/40 p-4">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{t('pageHero.dashboard.metrics.today.label')}</div>
+                <div className="mt-3 text-3xl font-extrabold">{stats.today}</div>
+                <div className="mt-2 text-sm text-muted-foreground">{t('pageHero.dashboard.metrics.today.detail', { count: stats.running + stats.pending })}</div>
+              </div>
+              <div className="rounded-3xl border border-border/70 bg-background/40 p-4">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{t('pageHero.dashboard.metrics.activity.label')}</div>
+                <div className="mt-3 text-lg font-bold">{recentActivity?.source_type || t('pageHero.dashboard.metrics.activity.empty')}</div>
+                <div className="mt-2 text-sm text-muted-foreground">{recentActivity ? t('pageHero.dashboard.metrics.activity.detail', { progress: recentActivity.progress }) : t('pageHero.dashboard.metrics.activity.waiting')}</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+            <div className="rounded-[28px] border border-primary/25 bg-primary/10 p-5 backdrop-blur">
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-primary">{t('pageHero.dashboard.metrics.successRate.label')}</div>
+              <div className="text-5xl font-black tracking-tight">{stats.successRate}%</div>
+              <p className="mt-2 text-sm text-muted-foreground">{t('pageHero.dashboard.metrics.successRate.detail')}</p>
+            </div>
+            <div className="rounded-[28px] border border-border/70 bg-card/40 p-5">
+              <div className="mb-3 flex items-center justify-between">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{t('pageHero.dashboard.metrics.queue.label')}</span>
+                {getStatusBadge(health?.status || 'down')}
+              </div>
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div>
+                  <div className="text-2xl font-bold">{stats.completed}</div>
+                  <div className="text-xs text-muted-foreground">{t('pageHero.dashboard.metrics.queue.completed')}</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold">{stats.running}</div>
+                  <div className="text-xs text-muted-foreground">{t('jobs.running')}</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold text-destructive">{stats.failed}</div>
+                  <div className="text-xs text-muted-foreground">{t('jobs.failed')}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Task Statistics Chart */}
-      <Card>
+      <Card className="rounded-[30px]">
         <CardHeader className="px-4 sm:px-6">
           <div className="flex items-center justify-between">
             <CardTitle className="text-base sm:text-lg">{t('dashboard.recentTasksChart')}</CardTitle>
@@ -257,7 +318,7 @@ export function Dashboard() {
 
       {/* System Status */}
       <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
-        <Card>
+        <Card className="rounded-[28px]">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-3 sm:px-4">
             <CardTitle className="text-xs sm:text-sm font-medium">{t('dashboard.systemStatus')}</CardTitle>
             <Activity className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
@@ -272,7 +333,7 @@ export function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="rounded-[28px]">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-3 sm:px-4">
             <CardTitle className="text-xs sm:text-sm font-medium">{t('dashboard.serviceStatus')}</CardTitle>
             <Server className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
@@ -287,7 +348,7 @@ export function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="rounded-[28px]">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-3 sm:px-4">
             <CardTitle className="text-xs sm:text-sm font-medium">{t('dashboard.totalJobs')}</CardTitle>
             <FileText className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
@@ -298,7 +359,7 @@ export function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="rounded-[28px]">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-3 sm:px-4">
             <CardTitle className="text-xs sm:text-sm font-medium">{t('dashboard.todayTasks')}</CardTitle>
             <CalendarDays className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
@@ -309,7 +370,7 @@ export function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="rounded-[28px]">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-3 sm:px-4">
             <CardTitle className="text-xs sm:text-sm font-medium">{t('dashboard.successRate')}</CardTitle>
             <Percent className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
@@ -320,7 +381,7 @@ export function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="rounded-[28px]">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-3 sm:px-4">
             <CardTitle className="text-xs sm:text-sm font-medium">{t('dashboard.failedTasksCount')}</CardTitle>
             <AlertCircle className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
@@ -335,7 +396,7 @@ export function Dashboard() {
       {/* Success Rate & Distribution Charts */}
       <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
         {/* Success Rate Trend */}
-        <Card>
+         <Card className="rounded-[30px]">
           <CardHeader className="px-4 sm:px-6">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base sm:text-lg">{t('dashboard.successRateTrend')}</CardTitle>
@@ -373,7 +434,7 @@ export function Dashboard() {
         </Card>
 
         {/* Task Type Distribution */}
-        <Card>
+         <Card className="rounded-[30px]">
           <CardHeader className="px-4 sm:px-6">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base sm:text-lg">{t('dashboard.taskTypeDistribution')}</CardTitle>
@@ -406,7 +467,7 @@ export function Dashboard() {
       {/* Language Distribution & Service Health */}
       <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
         {/* Language Distribution */}
-        <Card>
+        <Card className="rounded-[30px]">
           <CardHeader className="px-4 sm:px-6">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base sm:text-lg">{t('dashboard.languageDistribution')}</CardTitle>
@@ -446,7 +507,7 @@ export function Dashboard() {
         </Card>
 
         {/* Service Health Details */}
-        <Card>
+        <Card className="rounded-[30px]">
           <CardHeader className="px-4 sm:px-6">
             <CardTitle className="text-base sm:text-lg">{t('dashboard.serviceHealth')}</CardTitle>
           </CardHeader>
@@ -476,7 +537,7 @@ export function Dashboard() {
       </div>
 
       {/* Recent Jobs */}
-      <Card>
+      <Card className="rounded-[30px]">
         <CardHeader className="px-4 sm:px-6">
           <CardTitle className="text-base sm:text-lg">{t('dashboard.recentJobs')}</CardTitle>
         </CardHeader>
@@ -490,7 +551,7 @@ export function Dashboard() {
               {recentJobs?.jobs.map((job) => (
                 <div
                   key={job.id}
-                  className="flex items-center justify-between rounded-lg border p-2 sm:p-3"
+                  className="flex items-center justify-between rounded-[22px] border border-border/70 bg-background/35 p-3 sm:p-4"
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">

@@ -9,6 +9,7 @@ Provides complete integration with Jellyfin server including:
 """
 
 import base64
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urljoin
 
@@ -102,6 +103,10 @@ class JellyfinClient:
         # Ensure base URL ends with /
         if not self.base_url.endswith("/"):
             self.base_url += "/"
+
+        self._user_id: str | None = None
+        self._libraries_cache: tuple[datetime, list[JellyfinLibrary]] | None = None
+        self._libraries_cache_ttl = timedelta(minutes=5)
 
         logger.info(f"Initialized Jellyfin client for {self.base_url}")
 
@@ -219,6 +224,13 @@ class JellyfinClient:
         Raises:
             JellyfinError: API error
         """
+        now = datetime.now(UTC)
+        if self._libraries_cache:
+            cached_at, cached_libraries = self._libraries_cache
+            if now - cached_at < self._libraries_cache_ttl:
+                logger.debug("Using cached Jellyfin libraries")
+                return cached_libraries
+
         logger.info("Listing Jellyfin libraries")
 
         # Get basic library info from VirtualFolders
@@ -278,6 +290,7 @@ class JellyfinClient:
             )
             # Keep item_count as None or 0
 
+        self._libraries_cache = (datetime.now(UTC), libraries)
         logger.info(f"Found {len(libraries)} libraries")
         return libraries
 
@@ -641,6 +654,9 @@ class JellyfinClient:
         Raises:
             JellyfinError: Cannot get user ID
         """
+        if self._user_id:
+            return self._user_id
+
         # For API key auth, we can use any valid user ID
         # Try to get current user from /System/Info
         try:
@@ -650,10 +666,12 @@ class JellyfinClient:
             users_response = await self._request("GET", "/Users")
             for user in users_response:
                 if user.get("Policy", {}).get("IsAdministrator"):
-                    return user["Id"]
+                    self._user_id = user["Id"]
+                    return self._user_id
             # Fallback: use first user
             if users_response:
-                return users_response[0]["Id"]
+                self._user_id = users_response[0]["Id"]
+                return self._user_id
             raise JellyfinError("No users found")
         except Exception as e:
             logger.error(f"Could not get user ID from Jellyfin: {e}")

@@ -9,6 +9,19 @@
 
 ## 快速开始（最小命令集合）
 
+如果你是**非开发人员**，请不要走下面这套开发命令。
+
+优先使用：
+
+- `quick-setup.cmd`
+- `quick-start.cmd`
+- `quick-open.cmd`
+- `quick-stop.cmd`
+
+对应说明文档：
+
+- `09-QUICK_START_NON_DEVELOPER.md`
+
 ```bash
 # 1) 克隆仓库 & 准备 .env
 cp .env.example .env && vi .env
@@ -28,6 +41,8 @@ celery -A app.workers.celery_app beat -l INFO
 pnpm i && pnpm dev
 ```
 
+Windows 原生开发可使用 `backend/start.ps1`。该脚本默认关闭 Uvicorn reload，以避免 Windows 下 reload 监督进程在 Ctrl+C 时输出 `CancelledError` 噪音；需要 reload 时可先设置 `FLUXCAPTION_RELOAD=1`。
+
 ---
 
 ## 目录导航
@@ -40,6 +55,7 @@ pnpm i && pnpm dev
 - **部署与运维（DevOps）**：`06-DEPLOYMENT_DEVOPS.md`
 - **测试与质量（QA）**：`07-TESTING_QA.md`
 - **协作规范（Contributing）**：`08-CONTRIBUTING.md`
+- **非开发人员快速启动与使用**：`09-QUICK_START_NON_DEVELOPER.md`
 
 ---
 

@@ -60,7 +60,7 @@ def get_provider_for_model(model_name: str) -> str | None:
                 db.query(AIModelConfig)
                 .filter(
                     AIModelConfig.model_name == model_name,
-                    AIModelConfig.is_enabled == True,
+                    AIModelConfig.is_enabled,
                 )
                 .first()
             )
@@ -96,12 +96,16 @@ def _infer_provider_from_model_name(model_name: str) -> str | None:
     """
     model_lower = model_name.lower()
 
+    if model_lower == "translate":
+        return "deeplx"
+
     # Provider patterns: {provider_name: {'prefixes': [...], 'contains': [...]}}
     PROVIDER_PATTERNS = {
         'openai': {'prefixes': ['gpt-'], 'contains': ['gpt']},
         'claude': {'prefixes': ['claude-'], 'contains': ['claude']},
         'gemini': {'prefixes': ['gemini-'], 'contains': ['gemini']},
         'deepseek': {'prefixes': ['deepseek-'], 'contains': ['deepseek']},
+        'deeplx': {'prefixes': ['deeplx:'], 'contains': ['deeplx']},
         'zhipu': {'prefixes': ['glm-'], 'contains': ['chatglm']},
         'moonshot': {'prefixes': ['moonshot-', 'kimi-'], 'contains': ['moonshot']},
         'ollama': {'prefixes': [], 'contains': ['qwen', 'llama', 'mistral']},

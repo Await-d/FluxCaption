@@ -14,8 +14,16 @@ from app.services.ai_providers.base import (
     AIModelInfo,
     BaseAIProvider,
 )
+from app.services.ai_response_cleaner import ReasoningBlockFilter, extract_visible_text
 
 logger = get_logger(__name__)
+
+
+def _log_http_error(message: str, error: httpx.HTTPError) -> None:
+    if hasattr(error, "response") and error.response:
+        logger.error(f"{message} with status {error.response.status_code}")
+    else:
+        logger.error(f"{message}: {type(error).__name__}")
 
 
 class OpenAIProvider(BaseAIProvider):
@@ -97,7 +105,7 @@ class OpenAIProvider(BaseAIProvider):
                 return models
 
             except httpx.HTTPError as e:
-                logger.error(f"Failed to list OpenAI models: {e}")
+                _log_http_error("Failed to list OpenAI models", e)
                 raise
 
     async def check_model_exists(self, model_name: str) -> bool:
@@ -151,22 +159,21 @@ class OpenAIProvider(BaseAIProvider):
                 response.raise_for_status()
                 data = response.json()
 
-                choice = data["choices"][0]
+                choices = data.get("choices") or [{}]
+                choice = choices[0]
                 usage = data.get("usage", {})
 
                 return AIGenerateResponse(
-                    text=choice["message"]["content"],
+                    text=extract_visible_text(data),
                     model=data.get("model", model),
                     provider=self.provider_name,
-                    input_tokens=usage.get("prompt_tokens"),
-                    output_tokens=usage.get("completion_tokens"),
+                    input_tokens=usage.get("prompt_tokens") or usage.get("input_tokens"),
+                    output_tokens=usage.get("completion_tokens") or usage.get("output_tokens"),
                     finish_reason=choice.get("finish_reason"),
                 )
 
             except httpx.HTTPError as e:
-                logger.error(f"OpenAI generation failed: {e}")
-                if hasattr(e, "response") and e.response:
-                    logger.error(f"Response: {e.response.text}")
+                _log_http_error("OpenAI generation failed", e)
                 raise
 
     async def generate_stream(
@@ -196,6 +203,8 @@ class OpenAIProvider(BaseAIProvider):
         if max_tokens:
             payload["max_tokens"] = max_tokens
 
+        reasoning_filter = ReasoningBlockFilter()
+
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             try:
                 async with client.stream(
@@ -210,6 +219,9 @@ class OpenAIProvider(BaseAIProvider):
                         if not line.strip():
                             continue
 
+                        if line.startswith("event: "):
+                            continue
+
                         if line.startswith("data: "):
                             line = line[6:]  # Remove "data: " prefix
 
@@ -220,17 +232,19 @@ class OpenAIProvider(BaseAIProvider):
                             import json
 
                             data = json.loads(line)
-                            delta = data["choices"][0].get("delta", {})
-                            content = delta.get("content")
-
-                            if content:
-                                yield content
+                            visible_content = reasoning_filter.filter(extract_visible_text(data))
+                            if visible_content:
+                                yield visible_content
 
                         except (json.JSONDecodeError, KeyError, IndexError) as e:
                             logger.warning(f"Failed to parse OpenAI stream chunk: {e}")
 
+                    pending_content = reasoning_filter.flush()
+                    if pending_content:
+                        yield pending_content
+
             except httpx.HTTPError as e:
-                logger.error(f"OpenAI streaming generation failed: {e}")
+                _log_http_error("OpenAI streaming generation failed", e)
                 raise
 
     async def health_check(self) -> bool:
@@ -243,5 +257,5 @@ class OpenAIProvider(BaseAIProvider):
                 )
                 return response.status_code == 200
         except Exception as e:
-            logger.error(f"OpenAI health check failed: {e}")
+            logger.error(f"OpenAI health check failed: {type(e).__name__}")
             return False

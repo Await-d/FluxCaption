@@ -14,11 +14,11 @@ from sqlalchemy.orm import Session
 
 from app.api.routers.auth import get_current_user
 from app.core.db import get_db
+from app.core.settings_helper import get_default_mt_model, get_provider_for_model
 from app.models.translation_job import TranslationJob
 from app.models.user import User
 from app.schemas.jobs import JobResponse
 from app.services.local_media_scanner import LocalMediaScanner
-from app.core.settings_helper import get_default_mt_model
 from app.workers.tasks import asr_then_translate_task, translate_subtitle_task
 
 logger = logging.getLogger(__name__)
@@ -110,7 +110,7 @@ class CreateLocalJobRequest(BaseModel):
 
 
 @router.post("/scan", response_model=ScanDirectoryResponse)
-async def scan_directory(
+def scan_directory(
     request: ScanDirectoryRequest,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -169,7 +169,7 @@ async def scan_directory(
 
 
 @router.get("/stats", response_model=DirectoryStatsResponse)
-async def get_directory_stats(
+def get_directory_stats(
     current_user: Annotated[User, Depends(get_current_user)],
     directory: str = Query(..., description="目录路径"),
     recursive: bool = Query(True, description="是否递归统计"),
@@ -228,7 +228,7 @@ async def get_directory_stats(
 
 
 @router.post("/jobs", response_model=JobResponse)
-async def create_local_media_job(
+def create_local_media_job(
     request: CreateLocalJobRequest,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -256,13 +256,21 @@ async def create_local_media_job(
                         detail=f"Source language '{request.source_lang}' subtitle not found",
                     )
 
+                subtitle_path = scanner.find_best_subtitle_file(filepath, request.source_lang)
+                if not subtitle_path:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"No subtitle sidecar found for source language '{request.source_lang}'",
+                    )
+
                 last_job = TranslationJob(
                     item_id=str(filepath),
                     source_type="subtitle",
-                    source_path=str(filepath),
+                    source_path=subtitle_path,
                     source_lang=request.source_lang,
                     target_langs=json.dumps([target_lang]),
                     model=get_default_mt_model(),
+                    provider=get_provider_for_model(get_default_mt_model()),
                     status="pending",
                 )
                 db.add(last_job)
@@ -278,6 +286,7 @@ async def create_local_media_job(
                     source_lang="auto",
                     target_langs=json.dumps([target_lang]),
                     model=get_default_mt_model(),
+                    provider=get_provider_for_model(get_default_mt_model()),
                     status="pending",
                 )
                 db.add(last_job)
@@ -300,7 +309,7 @@ async def create_local_media_job(
 
 
 @router.post("/batch-jobs", response_model=list[JobResponse])
-async def create_batch_local_jobs(
+def create_batch_local_jobs(
     current_user: Annotated[User, Depends(get_current_user)],
     filepaths: list[str] = Query(..., description="媒体文件路径列表"),
     target_langs: list[str] = Query(..., description="目标语言列表"),
@@ -317,7 +326,7 @@ async def create_batch_local_jobs(
             request = CreateLocalJobRequest(
                 filepath=filepath_str, target_langs=target_langs, source_lang=source_lang
             )
-            job = await create_local_media_job(request, current_user, db)
+            job = create_local_media_job(request, current_user, db)
             jobs.append(job)
         except Exception as e:
             logger.error(f"Failed to create job for {filepath_str}: {str(e)}")

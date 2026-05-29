@@ -87,7 +87,7 @@ class SystemStatsResponse(BaseModel):
 
 
 @router.post("/batch/start-all-queued", response_model=BatchOperationResponse)
-async def batch_start_all_queued(
+def batch_start_all_queued(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> BatchOperationResponse:
@@ -119,9 +119,8 @@ async def batch_start_all_queued(
                     logger.warning(f"Unknown source type for job {job.id}: {job.source_type}")
                     continue
 
-                # Update job with task ID
+                # Update job with task ID only; worker marks job as running when execution starts
                 job.celery_task_id = task.id
-                job.status = "running"
                 started_count += 1
 
             except Exception as e:
@@ -143,7 +142,7 @@ async def batch_start_all_queued(
 
 
 @router.post("/batch/cancel-all-running", response_model=BatchOperationResponse)
-async def batch_cancel_all_running(
+def batch_cancel_all_running(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> BatchOperationResponse:
@@ -189,7 +188,7 @@ async def batch_cancel_all_running(
 
 
 @router.post("/batch/delete-completed", response_model=BatchOperationResponse)
-async def batch_delete_completed(
+def batch_delete_completed(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> BatchOperationResponse:
@@ -203,7 +202,7 @@ async def batch_delete_completed(
         # Delete jobs with final status
         deleted_count = (
             db.query(TranslationJob)
-            .filter(TranslationJob.status.in_(["completed", "failed", "cancelled"]))
+            .filter(TranslationJob.status.in_(["completed", "success", "failed", "cancelled"]))
             .delete(synchronize_session=False)
         )
 
@@ -226,7 +225,7 @@ async def batch_delete_completed(
 
 
 @router.post("/scan/all-libraries", response_model=ScanAllLibrariesResponse)
-async def scan_all_libraries(
+def scan_all_libraries(
     request: ScanAllLibrariesRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -277,7 +276,7 @@ async def scan_all_libraries(
 
 
 @router.get("/stats", response_model=SystemStatsResponse)
-async def get_system_stats(
+def get_system_stats(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> SystemStatsResponse:
@@ -300,7 +299,7 @@ async def get_system_stats(
             .filter(TranslationJob.status == "paused")
             .count(),
             "completed_jobs": db.query(TranslationJob)
-            .filter(TranslationJob.status == "completed")
+            .filter(TranslationJob.status.in_(["completed", "success"]))
             .count(),
             "failed_jobs": db.query(TranslationJob)
             .filter(TranslationJob.status == "failed")
@@ -318,7 +317,7 @@ async def get_system_stats(
 
 
 @router.get("/queue-stats", response_model=QueueStatsResponse)
-async def get_queue_stats(
+def get_queue_stats(
     current_user: User = Depends(get_current_user),
 ) -> QueueStatsResponse:
     """
@@ -376,7 +375,7 @@ async def get_queue_stats(
 
 
 @router.get("/worker-stats", response_model=WorkerStatsResponse)
-async def get_worker_stats(
+def get_worker_stats(
     current_user: User = Depends(get_current_user),
 ) -> WorkerStatsResponse:
     """

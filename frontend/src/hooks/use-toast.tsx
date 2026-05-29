@@ -1,6 +1,7 @@
 import * as ToastPrimitive from '@radix-ui/react-toast'
 import { X } from 'lucide-react'
 import { ReactNode, createContext, useCallback, useContext, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { cn } from '../lib/utils'
 
@@ -28,6 +29,7 @@ const createToastId = () =>
     : `toast-${Date.now()}-${Math.random().toString(16).slice(2)}`
 
 export function ToastProvider({ children }: { children: ReactNode }) {
+  const { t } = useTranslation()
   const [toasts, setToasts] = useState<ToastItem[]>([])
 
   const removeToast = useCallback((id: string) => {
@@ -41,7 +43,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const contextValue = useMemo(() => ({ toast: addToast }), [addToast])
 
   return (
-    <ToastPrimitive.Provider swipeDirection="right" duration={4500} label="通知">
+    <ToastPrimitive.Provider swipeDirection="right" duration={4500} label={t('common.notifications')}>
       <ToastContext.Provider value={contextValue}>
         {children}
         {toasts.map(toast => (
@@ -71,7 +73,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               <ToastPrimitive.Close asChild>
                 <button
                   type="button"
-                  aria-label="关闭通知"
+                  aria-label={t('common.closeNotification')}
                   className="rounded-md p-1 text-muted-foreground transition hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <X className="h-4 w-4" />

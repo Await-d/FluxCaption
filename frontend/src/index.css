@@ -1,51 +1,53 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Cormorant+Garamond:wght@500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --background: 38 33% 97%;
+    --foreground: 222 34% 14%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 222 34% 14%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
-    --radius: 0.5rem;
+    --popover-foreground: 222 34% 14%;
+    --primary: 28 90% 55%;
+    --primary-foreground: 35 60% 98%;
+    --secondary: 36 40% 93%;
+    --secondary-foreground: 222 30% 20%;
+    --muted: 34 25% 92%;
+    --muted-foreground: 220 12% 38%;
+    --accent: 31 55% 91%;
+    --accent-foreground: 222 30% 18%;
+    --destructive: 0 80% 58%;
+    --destructive-foreground: 30 20% 98%;
+    --border: 28 28% 84%;
+    --input: 28 28% 84%;
+    --ring: 28 90% 55%;
+    --radius: 1.25rem;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
+    --background: 220 28% 8%;
+    --foreground: 36 35% 95%;
+    --card: 222 24% 11%;
+    --card-foreground: 36 35% 95%;
+    --popover: 222 24% 11%;
+    --popover-foreground: 36 35% 95%;
+    --primary: 29 92% 60%;
+    --primary-foreground: 220 35% 10%;
+    --secondary: 220 19% 17%;
+    --secondary-foreground: 36 35% 95%;
+    --muted: 220 18% 15%;
+    --muted-foreground: 217 15% 70%;
+    --accent: 218 18% 16%;
+    --accent-foreground: 36 35% 95%;
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 36 35% 95%;
+    --border: 220 16% 20%;
+    --input: 220 16% 20%;
+    --ring: 29 92% 60%;
   }
 }
 
@@ -57,5 +59,45 @@
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
+    font-family: 'Manrope', sans-serif;
+    min-height: 100vh;
+    background-image:
+      radial-gradient(circle at top left, hsl(var(--primary) / 0.18), transparent 28%),
+      radial-gradient(circle at 85% 15%, hsl(191 90% 58% / 0.12), transparent 25%),
+      radial-gradient(circle at bottom right, hsl(350 80% 62% / 0.08), transparent 24%),
+      linear-gradient(180deg, hsl(var(--background)), hsl(var(--background)));
+    background-attachment: fixed;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(hsl(var(--foreground) / 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--foreground) / 0.03) 1px, transparent 1px);
+    background-size: 72px 72px;
+    mask-image: radial-gradient(circle at center, black 40%, transparent 100%);
+    opacity: 0.35;
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+}
+
+@layer components {
+  .panel-shell {
+    @apply border border-border/70 bg-card/80 backdrop-blur-xl shadow-[0_24px_80px_-36px_rgba(0,0,0,0.55)];
+  }
+
+  .section-title {
+    font-family: 'Cormorant Garamond', serif;
+    @apply text-3xl font-semibold tracking-[0.02em] md:text-4xl;
+  }
+
+  .eyebrow-label {
+    @apply inline-flex items-center rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-primary;
   }
 }

@@ -61,15 +61,26 @@ export function Login() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-muted p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-bold text-center">{t('app.title')}</CardTitle>
-          <CardDescription className="text-center">
-            {t('app.subtitle')}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden p-4">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,163,74,0.22),transparent_28%),radial-gradient(circle_at_85%_15%,rgba(59,130,246,0.18),transparent_24%),linear-gradient(180deg,rgba(7,12,21,0.28),transparent)] dark:block" />
+      <div className="relative grid w-full max-w-6xl gap-6 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+        <div className="hidden rounded-[36px] border border-border/70 bg-card/40 p-10 backdrop-blur-xl lg:block">
+          <div className="eyebrow-label">{t('login.heroEyebrow')}</div>
+          <h1 className="section-title mt-6 max-w-xl text-6xl leading-[0.92]">{t('login.heroTitle')}</h1>
+          <p className="mt-6 max-w-xl text-base leading-8 text-muted-foreground">
+            {t('login.heroDescription')}
+          </p>
+        </div>
+
+        <Card className="mx-auto w-full max-w-md rounded-[32px]">
+          <CardHeader className="space-y-2 text-center">
+            <div className="eyebrow-label mx-auto">{t('login.welcomeBack')}</div>
+            <CardTitle className="section-title text-4xl">{t('app.title')}</CardTitle>
+            <CardDescription className="text-center text-sm leading-6">
+              {t('app.subtitle')}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
               <Alert variant="destructive">
@@ -86,6 +97,7 @@ export function Login() {
                 placeholder={t('auth.usernamePlaceholder')}
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
+                autoComplete="username"
                 required
                 autoFocus
                 disabled={loginMutation.isPending}
@@ -100,6 +112,7 @@ export function Login() {
                 placeholder={t('auth.passwordPlaceholder')}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
                 required
                 disabled={loginMutation.isPending}
               />
@@ -113,13 +126,14 @@ export function Login() {
               {loginMutation.isPending ? t('auth.loggingIn') : t('auth.login')}
             </Button>
 
-            <div className="text-sm text-muted-foreground text-center mt-4">
+            <div className="mt-4 text-center text-sm text-muted-foreground">
               <p>{t('auth.defaultAdminHint')}</p>
               <p>{t('auth.passwordInLogsHint')}</p>
             </div>
           </form>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   )
 }

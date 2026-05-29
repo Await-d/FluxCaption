@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from 'react-router-dom'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, type ComponentType } from 'react'
 import {
   LayoutDashboard,
   Library,
@@ -33,12 +33,12 @@ import { useTranslation } from 'react-i18next'
 interface NavigationItem {
   nameKey: string
   href: string
-  icon: any
+  icon: ComponentType<{ className?: string }>
 }
 
 interface NavigationGroup {
   groupKey: string
-  icon: any
+  icon: ComponentType<{ className?: string }>
   items: NavigationItem[]
 }
 
@@ -209,26 +209,33 @@ export function Sidebar() {
   return (
     <>
       {/* Sidebar */}
-      <aside
-        className={cn(
-          'fixed left-0 top-0 z-40 h-screen border-r bg-card transition-all duration-300',
+        <aside
+          className={cn(
+          'fixed left-0 top-0 z-40 h-screen border-r border-border/70 bg-card/88 text-foreground shadow-[24px_0_60px_-42px_rgba(0,0,0,0.45)] backdrop-blur-2xl transition-all duration-300',
           sidebarOpen ? 'w-64' : 'w-20'
         )}
       >
         {/* Logo & Toggle */}
-        <div className="flex h-16 items-center justify-between border-b px-4">
+        <div className="flex h-20 items-center justify-between border-b border-border/60 px-4">
           {sidebarOpen ? (
-            <div className="flex items-center gap-2">
-              <img src="/logo.png" alt="FluxCaption" className="h-8 w-8 object-contain" />
-              <span className="text-lg font-semibold">{t('app.title')}</span>
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-border/70 bg-background/40 shadow-inner shadow-black/5">
+                <img src="/logo.png" alt="FluxCaption" className="h-7 w-7 object-contain" />
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-[0.24em] text-primary/90">{t('sidebar.tagline')}</div>
+                <span className="font-semibold text-foreground">{t('app.title')}</span>
+              </div>
             </div>
           ) : (
-            <img src="/logo.png" alt="FluxCaption" className="h-8 w-8 object-contain" />
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-border/70 bg-background/40">
+              <img src="/logo.png" alt="FluxCaption" className="h-7 w-7 object-contain" />
+            </div>
           )}
           <button
             onClick={toggleSidebar}
-            className="rounded-lg p-2 hover:bg-accent"
-            aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+            className="rounded-full border border-border/70 bg-background/40 p-2 text-foreground transition hover:bg-accent/70"
+            aria-label={sidebarOpen ? t('sidebar.collapse') : t('sidebar.expand')}
           >
             <ChevronLeft
               className={cn(
@@ -240,23 +247,23 @@ export function Sidebar() {
         </div>
 
         {/* Navigation */}
-        <nav className="overflow-y-auto h-[calc(100vh-4rem)] p-3 space-y-2">
+        <nav className="h-[calc(100vh-5rem)] space-y-3 overflow-y-auto px-3 py-4">
           {navigationGroups.map((group, index) => {
             const isExpanded = expandedGroups.has(group.groupKey)
 
             return (
               <div key={group.groupKey} className={cn(
-                "space-y-1",
-                !sidebarOpen && index > 0 && "pt-2 border-t border-border"
-              )}>
+                 "space-y-1.5",
+                 !sidebarOpen && index > 0 && "pt-3 border-t border-border/70"
+               )}>
                 {/* Group Header - only show when sidebar is open */}
                 {sidebarOpen && (
                   <button
                     onClick={() => toggleGroup(group.groupKey)}
-                    className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors rounded-lg hover:bg-accent/50"
+                    className="flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
                   >
                     <div className="flex items-center gap-2">
-                      <group.icon className="h-4 w-4" />
+                      <group.icon className="h-4 w-4 text-primary" />
                       <span>{t(group.groupKey)}</span>
                     </div>
                     {isExpanded ? (
@@ -269,17 +276,17 @@ export function Sidebar() {
 
                 {/* Group Items */}
                 {isExpanded && sidebarOpen && (
-                  <div className="space-y-1 pl-2">
+                  <div className="space-y-1.5 pl-1">
                     {group.items.map((item) => (
                       <NavLink
                         key={item.href}
                         to={item.href}
                         className={({ isActive }) =>
                           cn(
-                            'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                            'hover:bg-accent hover:text-accent-foreground',
+                            'flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-medium transition-all duration-200',
+                            'hover:bg-accent/70 hover:text-foreground',
                             isActive
-                              ? 'bg-primary text-primary-foreground'
+                              ? 'bg-primary text-primary-foreground shadow-[0_18px_40px_-24px_hsl(var(--primary)/0.85)]'
                               : 'text-muted-foreground'
                           )
                         }
@@ -300,10 +307,10 @@ export function Sidebar() {
                         to={item.href}
                         className={({ isActive }) =>
                           cn(
-                            'flex items-center justify-center rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                            'hover:bg-accent hover:text-accent-foreground',
+                            'flex items-center justify-center rounded-2xl px-3 py-3 text-sm font-medium transition-all duration-200',
+                            'hover:bg-accent/70 hover:text-foreground',
                             isActive
-                              ? 'bg-primary text-primary-foreground'
+                              ? 'bg-primary text-primary-foreground shadow-[0_18px_40px_-24px_hsl(var(--primary)/0.85)]'
                               : 'text-muted-foreground'
                           )
                         }

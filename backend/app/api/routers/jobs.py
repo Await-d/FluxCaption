@@ -5,7 +5,8 @@ Provides API for creating, querying, and monitoring translation jobs.
 """
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
@@ -14,20 +15,91 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.api.routers.auth import get_current_user, get_current_user_sse
 from app.core.db import get_db
 from app.core.events import generate_sse_response
 from app.core.logging import get_logger
-from app.core.settings_helper import get_default_mt_model
+from app.core.settings_helper import get_default_mt_model, get_provider_for_model
 from app.models.translation_job import TranslationJob
 from app.models.user import User
 from app.schemas.jobs import JobCreate, JobListResponse, JobResponse
-from app.workers.tasks import asr_then_translate_task, translate_subtitle_task
+from app.services.job_dispatcher import dispatch_translation_job
+from app.services.job_resume_service import resume_paused_job as resume_paused_job_service
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/jobs", tags=["Jobs"])
+
+
+def _create_translation_job_record(
+    db: Session,
+    request: JobCreate,
+    source_path: str | None,
+    model: str,
+    provider: str | None,
+) -> JobResponse:
+    job = TranslationJob(
+        item_id=request.item_id,
+        source_type=request.source_type,
+        source_path=source_path,
+        source_lang=request.source_lang,
+        target_langs=json.dumps(request.target_langs),
+        model=model,
+        provider=provider,
+        status="queued",
+        progress=0.0,
+        writeback_mode=request.writeback_mode,
+        priority=request.priority,
+    )
+
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    logger.info(f"Created translation job: {job.id}")
+
+    try:
+        task_id = dispatch_translation_job(job, priority=request.priority)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    job.celery_task_id = task_id
+    db.commit()
+
+    return JobResponse(
+        id=job.id,
+        item_id=job.item_id,
+        source_type=job.source_type,
+        source_path=job.source_path,
+        source_lang=job.source_lang,
+        target_langs=json.loads(job.target_langs),
+        model=job.model,
+        provider=job.provider,
+        status=job.status,
+        progress=job.progress,
+        current_phase=job.current_phase,
+        error=job.error,
+        created_at=job.created_at,
+        started_at=job.started_at,
+        finished_at=job.finished_at,
+        result_paths=json.loads(job.result_paths) if job.result_paths else None,
+        metrics=json.loads(job.metrics) if job.metrics else None,
+    )
+
+
+def _get_job_for_stream(db: Session, job_id: UUID) -> TranslationJob:
+    job = db.query(TranslationJob).filter(TranslationJob.id == job_id).first()
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Job '{job_id}' not found",
+        )
+    return job
 
 
 @router.post(
@@ -57,6 +129,7 @@ async def create_translation_job(
     try:
         # Determine model to use
         model = request.model or get_default_mt_model()
+        provider = request.provider or get_provider_for_model(model)
 
         # For Jellyfin type, fetch media path if not provided
         source_path = request.source_path
@@ -78,72 +151,13 @@ async def create_translation_job(
             except Exception as e:
                 logger.warning(f"Failed to get media path from Jellyfin: {e}")
 
-        # Create job record
-        job = TranslationJob(
-            item_id=request.item_id,
-            source_type=request.source_type,
-            source_path=source_path,
-            source_lang=request.source_lang,
-            target_langs=json.dumps(request.target_langs),
-            model=model,
-            provider=request.provider,  # Save provider selection
-            status="queued",
-            progress=0.0,
-            writeback_mode=request.writeback_mode,
-            priority=request.priority,
-        )
-
-        db.add(job)
-        db.commit()
-        db.refresh(job)
-
-        logger.info(f"Created translation job: {job.id}")
-
-        # Submit to Celery based on source type
-        if request.source_type == "subtitle":
-            # Direct subtitle translation
-            task = translate_subtitle_task.apply_async(
-                args=[str(job.id)],
-                queue="translate",
-                priority=request.priority,
-            )
-        elif request.source_type in ("audio", "media", "jellyfin"):
-            # ASR + translation pipeline (or subtitle translation if media already has subs)
-            # For jellyfin type, the task will query Jellyfin API to check subtitle availability
-            from app.workers.tasks import asr_then_translate_task
-
-            task = asr_then_translate_task.apply_async(
-                args=[str(job.id)],
-                queue="asr",
-                priority=request.priority,
-            )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid source_type: {request.source_type}",
-            )
-
-        # Update job with Celery task ID
-        job.celery_task_id = task.id
-        db.commit()
-
-        return JobResponse(
-            id=job.id,
-            item_id=job.item_id,
-            source_type=job.source_type,
-            source_path=job.source_path,
-            source_lang=job.source_lang,
-            target_langs=json.loads(job.target_langs),
-            model=job.model,
-            status=job.status,
-            progress=job.progress,
-            current_phase=job.current_phase,
-            error=job.error,
-            created_at=job.created_at,
-            started_at=job.started_at,
-            finished_at=job.finished_at,
-            result_paths=json.loads(job.result_paths) if job.result_paths else None,
-            metrics=json.loads(job.metrics) if job.metrics else None,
+        return await run_in_threadpool(
+            _create_translation_job_record,
+            db,
+            request,
+            source_path,
+            model,
+            provider,
         )
 
     except HTTPException:
@@ -161,7 +175,7 @@ async def create_translation_job(
     response_model=JobResponse,
     summary="Get job status",
 )
-async def get_job(
+def get_job(
     job_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -212,7 +226,7 @@ async def get_job(
     response_model=JobListResponse,
     summary="List jobs",
 )
-async def list_jobs(
+def list_jobs(
     current_user: Annotated[User, Depends(get_current_user)],
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
@@ -262,6 +276,7 @@ async def list_jobs(
             source_lang=job.source_lang,
             target_langs=json.loads(job.target_langs),
             model=job.model,
+            provider=job.provider,
             status=job.status,
             progress=job.progress,
             current_phase=job.current_phase,
@@ -306,13 +321,7 @@ async def stream_job_progress(
     Raises:
         HTTPException: If job not found
     """
-    # Verify job exists
-    job = db.query(TranslationJob).filter(TranslationJob.id == job_id).first()
-    if not job:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Job '{job_id}' not found",
-        )
+    job = await run_in_threadpool(_get_job_for_stream, db, job_id)
 
     # Prepare initial job state to handle race conditions
     # (in case events were published before frontend subscribes)
@@ -348,7 +357,7 @@ async def stream_job_progress(
     response_model=JobResponse,
     summary="Cancel job",
 )
-async def cancel_job(
+def cancel_job(
     job_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -404,7 +413,7 @@ async def cancel_job(
         # Update job status
         job.status = "cancelled"
         job.error = "Job cancelled by user request"
-        job.finished_at = datetime.now(timezone.utc)
+        job.finished_at = datetime.now(UTC)
         db.commit()
         db.refresh(job)
 
@@ -418,6 +427,7 @@ async def cancel_job(
             source_lang=job.source_lang,
             target_langs=json.loads(job.target_langs),
             model=job.model,
+            provider=job.provider,
             status=job.status,
             progress=job.progress,
             current_phase=job.current_phase,
@@ -444,7 +454,7 @@ async def cancel_job(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete job",
 )
-async def delete_job(
+def delete_job(
     job_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -504,7 +514,7 @@ async def delete_job(
     status_code=status.HTTP_201_CREATED,
     summary="Retry failed job",
 )
-async def retry_job(
+def retry_job(
     job_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -560,34 +570,20 @@ async def retry_job(
 
         logger.info(f"Created retry job {new_job.id} for original job {job_id}")
 
-        # Submit to Celery based on source type
-        if original_job.source_type == "subtitle":
-            task = translate_subtitle_task.apply_async(
-                args=[str(new_job.id)],
-                queue="translate",
-                priority=original_job.priority or 5,
-            )
-        elif original_job.source_type in ("audio", "media", "jellyfin"):
-            # Import ASR task when it's ready
-            from app.workers.tasks import asr_then_translate_task
-
-            task = asr_then_translate_task.apply_async(
-                args=[str(new_job.id)],
-                queue="asr",
-                priority=original_job.priority or 5,
-            )
-        else:
+        try:
+            task_id = dispatch_translation_job(new_job, priority=original_job.priority or 5)
+        except ValueError as exc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid source_type: {original_job.source_type}",
-            )
+                detail=str(exc),
+            ) from exc
 
         # Update job with Celery task ID
-        new_job.celery_task_id = task.id
+        new_job.celery_task_id = task_id
         db.commit()
         db.refresh(new_job)
 
-        logger.info(f"Submitted retry job {new_job.id} with task ID {task.id}")
+        logger.info(f"Submitted retry job {new_job.id} with task ID {task_id}")
 
         return JobResponse(
             id=new_job.id,
@@ -623,7 +619,7 @@ async def retry_job(
     response_model=JobResponse,
     summary="Start a queued job",
 )
-async def start_job(
+def start_job(
     job_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -659,33 +655,20 @@ async def start_job(
         )
 
     try:
-        # Submit to Celery based on source type
-        if job.source_type == "subtitle":
-            task = translate_subtitle_task.apply_async(
-                args=[str(job.id)],
-                queue="translate",
-                priority=job.priority or 5,
-            )
-        elif job.source_type in ("audio", "media", "jellyfin"):
-            from app.workers.tasks import asr_then_translate_task
-
-            task = asr_then_translate_task.apply_async(
-                args=[str(job.id)],
-                queue="asr",
-                priority=job.priority or 5,
-            )
-        else:
+        try:
+            task_id = dispatch_translation_job(job)
+        except ValueError as exc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid source_type: {job.source_type}",
-            )
+                detail=str(exc),
+            ) from exc
 
         # Update job with Celery task ID
-        job.celery_task_id = task.id
+        job.celery_task_id = task_id
         db.commit()
         db.refresh(job)
 
-        logger.info(f"Started job {job.id} with task ID {task.id}")
+        logger.info(f"Started job {job.id} with task ID {task_id}")
 
         return JobResponse(
             id=job.id,
@@ -724,7 +707,7 @@ class BatchStartRequest(BaseModel):
     "/batch/start",
     summary="Start multiple queued jobs",
 )
-async def batch_start_jobs(
+def batch_start_jobs(
     request: BatchStartRequest,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -754,32 +737,17 @@ async def batch_start_jobs(
                 failed.append({"job_id": str(job_id), "reason": f"Job is {job.status}"})
                 continue
 
-            # Submit to Celery
-            if job.source_type == "subtitle":
-                task = translate_subtitle_task.apply_async(
-                    args=[str(job.id)],
-                    queue="translate",
-                    priority=job.priority or 5,
-                )
-            elif job.source_type in ("audio", "media", "jellyfin"):
-                from app.workers.tasks import asr_then_translate_task
-
-                task = asr_then_translate_task.apply_async(
-                    args=[str(job.id)],
-                    queue="asr",
-                    priority=job.priority or 5,
-                )
-            else:
-                failed.append(
-                    {"job_id": str(job_id), "reason": f"Invalid source_type: {job.source_type}"}
-                )
+            try:
+                task_id = dispatch_translation_job(job)
+            except ValueError as exc:
+                failed.append({"job_id": str(job_id), "reason": str(exc)})
                 continue
 
-            job.celery_task_id = task.id
+            job.celery_task_id = task_id
             db.commit()
 
             started.append(str(job_id))
-            logger.info(f"Started job {job.id} with task ID {task.id}")
+            logger.info(f"Started job {job.id} with task ID {task_id}")
 
         except Exception as e:
             failed.append({"job_id": str(job_id), "reason": str(e)})
@@ -797,7 +765,7 @@ async def batch_start_jobs(
     "/{job_id}/download/{file_index}",
     summary="Download translated subtitle",
 )
-async def download_subtitle(
+def download_subtitle(
     job_id: str,
     file_index: int,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -818,7 +786,6 @@ async def download_subtitle(
         HTTPException: If job not found, not completed, or file doesn't exist
     """
     import os
-    from pathlib import Path
 
     from fastapi.responses import FileResponse
 
@@ -830,7 +797,7 @@ async def download_subtitle(
             raise HTTPException(status_code=404, detail="Job not found")
 
         # Check job status
-        if job.status != "success":
+        if job.status not in SUCCESS_JOB_STATUSES:
             raise HTTPException(
                 status_code=400, detail=f"Job is not completed successfully. Status: {job.status}"
             )
@@ -876,7 +843,7 @@ async def download_subtitle(
     "/{job_id}/preview/source",
     summary="Preview source subtitle",
 )
-async def preview_source_subtitle(
+def preview_source_subtitle(
     job_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
     limit: int = Query(default=100, ge=1, le=1000, description="Number of entries to return"),
@@ -944,11 +911,16 @@ async def preview_source_subtitle(
                 detail="This is an ASR task - no original subtitle file exists. ASR-generated subtitle will be available after completion.",
             )
 
-        logger.info(f"Previewing source subtitle for job {job_id}: {job.source_path}")
+        preview_path = job.source_path
+        if preview_path and Path(preview_path).suffix.lower() == ".sup" and job.metrics:
+            metrics = json.loads(job.metrics)
+            preview_path = metrics.get("preprocessed_source_path", preview_path)
+
+        logger.info(f"Previewing source subtitle for job {job_id}: {preview_path}")
 
         # Parse subtitle file
         parser = SubtitleParser()
-        result = parser.parse(job.source_path, limit=limit, offset=offset)
+        result = parser.parse(preview_path, limit=limit, offset=offset)
 
         return result
 
@@ -969,7 +941,7 @@ async def preview_source_subtitle(
     "/{job_id}/preview/result/{file_index}",
     summary="Preview translated subtitle",
 )
-async def preview_result_subtitle(
+def preview_result_subtitle(
     job_id: str,
     file_index: int,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -1003,7 +975,7 @@ async def preview_result_subtitle(
             raise HTTPException(status_code=404, detail="Job not found")
 
         # Check job status
-        if job.status != "success":
+        if job.status not in SUCCESS_JOB_STATUSES:
             raise HTTPException(
                 status_code=400, detail=f"Job is not completed successfully. Status: {job.status}"
             )
@@ -1047,7 +1019,7 @@ async def preview_result_subtitle(
     "/{job_id}/subtitle/{file_index}",
     summary="Update subtitle entries",
 )
-async def update_subtitle_entries(
+def update_subtitle_entries(
     job_id: str,
     file_index: int,
     entries: dict[int, str],
@@ -1069,8 +1041,6 @@ async def update_subtitle_entries(
     Raises:
         HTTPException: If update fails
     """
-    from pathlib import Path
-
     import pysubs2
 
     try:
@@ -1081,7 +1051,7 @@ async def update_subtitle_entries(
             raise HTTPException(status_code=404, detail="Job not found")
 
         # Check job status
-        if job.status != "success":
+        if job.status not in SUCCESS_JOB_STATUSES:
             raise HTTPException(
                 status_code=400, detail=f"Job is not completed successfully. Status: {job.status}"
             )
@@ -1144,9 +1114,11 @@ async def update_subtitle_entries(
     "/{job_id}/logs",
     summary="Get job execution logs",
 )
-async def get_job_logs(
+def get_job_logs(
     job_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
+    limit: int = Query(default=100, ge=1, le=500, description="Maximum number of logs to return"),
+    offset: int = Query(default=0, ge=0, description="Number of latest logs to skip"),
     db: Session = Depends(get_db),
 ) -> dict:
     """
@@ -1177,13 +1149,18 @@ async def get_job_logs(
                 detail=f"Job '{job_id}' not found",
             )
 
-        # Get all logs for this job, ordered by timestamp
+        total_logs = db.query(TaskLog).filter(TaskLog.job_id == str(job_id)).count()
+
+        # Get latest logs for this job, then restore chronological order for display
         logs = (
             db.query(TaskLog)
             .filter(TaskLog.job_id == str(job_id))
-            .order_by(TaskLog.timestamp.asc())
+            .order_by(TaskLog.timestamp.desc())
+            .offset(offset)
+            .limit(limit)
             .all()
         )
+        logs.reverse()
 
         # Convert to dict format
         log_entries = []
@@ -1210,12 +1187,18 @@ async def get_job_logs(
 
             log_entries.append(entry)
 
-        logger.info(f"Retrieved {len(log_entries)} log entries for job {job_id}")
+        logger.info(
+            f"Retrieved {len(log_entries)} log entries for job {job_id} "
+            f"(offset={offset}, limit={limit}, total={total_logs})"
+        )
 
         return {
             "job_id": str(job_id),
             "job_status": job.status,
-            "total_logs": len(log_entries),
+            "total_logs": total_logs,
+            "offset": offset,
+            "limit": limit,
+            "has_more": offset + len(log_entries) < total_logs,
             "logs": log_entries,
         }
 
@@ -1234,7 +1217,7 @@ async def get_job_logs(
     response_model=JobResponse,
     tags=["jobs"],
 )
-async def resume_paused_job(
+def resume_paused_job(
     job_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
@@ -1273,44 +1256,14 @@ async def resume_paused_job(
         )
 
     try:
-        # Reset job status to queued
-        job.status = "queued"
-        job.pause_reason = None
-        job.paused_at = None
-        job.resume_at = None
-        job.error = None
-        job.started_at = None
-
-        db.commit()
-        db.refresh(job)
-
-        logger.info(f"Resumed paused job {job_id}")
-
-        # Resubmit to Celery based on source type
-        if job.source_type == "subtitle":
-            task = translate_subtitle_task.apply_async(
-                args=[str(job.id)],
-                queue="translate",
-                priority=job.priority,
-            )
-        elif job.source_type == "audio":
-            task = asr_then_translate_task.apply_async(
-                args=[str(job.id)],
-                queue="asr",
-                priority=job.priority,
-            )
-        else:
-            raise ValueError(f"Unknown source type: {job.source_type}")
-
-        # Update job with Celery task ID
-        job.celery_task_id = task.id
-        db.commit()
-
-        logger.info(f"Resubmitted resumed job {job_id} as Celery task {task.id}")
+        try:
+            resume_paused_job_service(str(job_id), priority=job.priority)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
         return JobResponse(
             id=job.id,
-            status=job.status,
+            status="queued",
             progress=job.progress,
             source_type=job.source_type,
             source_lang=job.source_lang,

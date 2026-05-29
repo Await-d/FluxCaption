@@ -12,11 +12,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.api.routers.auth import get_current_user
 from app.core.config import settings
 from app.core.db import get_db
 from app.core.logging import get_logger
+from app.models.media_asset import MediaAsset
+from app.models.subtitle import Subtitle
 from app.models.user import User
 from app.schemas.jellyfin import (
     ItemDetailResponse,
@@ -40,6 +43,34 @@ from app.workers.tasks import scan_library_task
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/jellyfin", tags=["Jellyfin"])
+
+
+def _get_db_subtitle_langs(db: Session, item_ids: list[str]) -> dict[str, set[str]]:
+    """Load generated subtitle languages for all Jellyfin item IDs in one query."""
+    if not item_ids:
+        return {}
+
+    rows = (
+        db.query(MediaAsset.item_id, Subtitle.lang)
+        .join(Subtitle, Subtitle.asset_id == MediaAsset.id)
+        .filter(MediaAsset.item_id.in_(item_ids))
+        .all()
+    )
+
+    languages_by_item: dict[str, set[str]] = {}
+    for item_id, lang in rows:
+        languages_by_item.setdefault(item_id, set()).add(lang.lower())
+    return languages_by_item
+
+
+def _detect_missing_from_languages(
+    existing_langs: list[str], db_langs: set[str], required_langs: list[str]
+) -> list[str]:
+    existing_normalized = {lang.lower() for lang in existing_langs} | db_langs
+    return sorted(
+        (lang for lang in required_langs if lang.lower() not in existing_normalized),
+        key=str.lower,
+    )
 
 
 # =============================================================================
@@ -90,6 +121,9 @@ async def list_library_items(
     current_user: Annotated[User, Depends(get_current_user)],
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
+    search: str | None = Query(default=None, min_length=1, max_length=120),
+    item_type: str | None = Query(default=None, pattern="^(Movie|Series)$"),
+    year: int | None = Query(default=None, ge=1888, le=2100),
     has_subtitle: bool | None = Query(default=None, description="Filter by subtitle presence"),
     db: Session = Depends(get_db),
 ):
@@ -126,8 +160,23 @@ async def list_library_items(
             # For other types (boxsets, mixed, etc), include both
             include_item_types = ["Series", "Movie"]
 
+        if item_type and item_type in include_item_types:
+            include_item_types = [item_type]
+        elif item_type:
+            return ItemListResponse(items=[], total=0, limit=limit, offset=offset)
+
         # Build filters
-        filters = {"IncludeItemTypes": ",".join(include_item_types)}
+        filters = {
+            "IncludeItemTypes": ",".join(include_item_types),
+            "SortBy": "SortName",
+            "SortOrder": "Ascending",
+        }
+
+        if search:
+            filters["SearchTerm"] = search.strip()
+
+        if year is not None:
+            filters["Years"] = str(year)
 
         if has_subtitle is not None:
             filters["HasSubtitles"] = str(has_subtitle).lower()
@@ -154,13 +203,19 @@ async def list_library_items(
 
         items = response.get("Items", [])
         total = response.get("TotalRecordCount", 0)
+        item_ids = [str(item_data.get("Id")) for item_data in items if item_data.get("Id")]
+        db_subtitle_langs = await run_in_threadpool(
+            _get_db_subtitle_langs,
+            db,
+            item_ids,
+        )
 
         # Use LanguageDetector to analyze media items
         detector = LanguageDetector()
         # 从自动翻译规则推断需要检测的语言
         from app.services.detector import get_required_langs_from_rules
 
-        required_langs = get_required_langs_from_rules(db)
+        required_langs = await run_in_threadpool(get_required_langs_from_rules, db)
 
         # Process items with full media information
         processed_items = []
@@ -176,7 +231,9 @@ async def list_library_items(
             audio_langs = detector.extract_audio_languages(item)
             subtitle_langs = detector.extract_subtitle_languages(item)
             subtitle_streams = detector.extract_subtitle_streams(item)  # Get all subtitle streams
-            missing_langs = detector.detect_missing_languages(item, required_langs, db_session=db)
+            missing_langs = _detect_missing_from_languages(
+                subtitle_langs, db_subtitle_langs.get(item.id, set()), required_langs
+            )
 
             # Get duration and file size from first media source
             media_sources = item.media_sources
@@ -284,8 +341,14 @@ async def get_item_detail(
         # 从自动翻译规则推断需要检测的语言
         from app.services.detector import get_required_langs_from_rules
 
-        required_langs = get_required_langs_from_rules(db)
-        missing_subtitles = detector.detect_missing_languages(item, required_langs, db_session=db)
+        required_langs = await run_in_threadpool(get_required_langs_from_rules, db)
+        missing_subtitles = await run_in_threadpool(
+            detector.detect_missing_languages,
+            item,
+            required_langs,
+            "subtitle",
+            db,
+        )
 
         return ItemDetailResponse(
             item=item,
@@ -353,13 +416,19 @@ async def list_series_episodes(
 
         items = response.get("Items", [])
         total = response.get("TotalRecordCount", 0)
+        item_ids = [str(item_data.get("Id")) for item_data in items if item_data.get("Id")]
+        db_subtitle_langs = await run_in_threadpool(
+            _get_db_subtitle_langs,
+            db,
+            item_ids,
+        )
 
         # Use LanguageDetector to analyze episodes
         detector = LanguageDetector()
         # 从自动翻译规则推断需要检测的语言
         from app.services.detector import get_required_langs_from_rules
 
-        required_langs = get_required_langs_from_rules(db)
+        required_langs = await run_in_threadpool(get_required_langs_from_rules, db)
 
         # Process episodes
         processed_items = []
@@ -374,7 +443,9 @@ async def list_series_episodes(
             audio_langs = detector.extract_audio_languages(item)
             subtitle_langs = detector.extract_subtitle_languages(item)
             subtitle_streams = detector.extract_subtitle_streams(item)  # Get all subtitle streams
-            missing_langs = detector.detect_missing_languages(item, required_langs, db_session=db)
+            missing_langs = _detect_missing_from_languages(
+                subtitle_langs, db_subtitle_langs.get(item.id, set()), required_langs
+            )
 
             # Get duration and file size
             media_sources = item.media_sources
@@ -447,7 +518,7 @@ async def list_series_episodes(
 
 
 @router.post("/scan", response_model=ScanJobResponse)
-async def trigger_scan(
+def trigger_scan(
     request: ScanLibraryRequest,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),

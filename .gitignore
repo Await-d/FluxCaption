@@ -59,6 +59,7 @@ dmypy.json
 
 # Testing
 .pytest_cache/
+.playwright-mcp/
 .coverage
 htmlcov/
 .tox/
@@ -80,6 +81,7 @@ lerna-debug.log*
 
 # Build outputs
 dist/
+backend/frontend_dist/
 dist-ssr/
 *.local
 
@@ -130,6 +132,7 @@ cache/
 # Subtitle files (generated)
 *.srt
 *.ass
+*.sup
 *.vtt
 
 # Audio/Video files
@@ -178,6 +181,12 @@ Desktop.ini
 # =============================================================================
 # Ollama models cache (if stored locally)
 .ollama/
+
+# Local agent/tool state
+.sisyphus/
+
+# Local screenshots / QA artifacts
+i18n-cleanup-*.png
 
 # Celery
 celerybeat-schedule

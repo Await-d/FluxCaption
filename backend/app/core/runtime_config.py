@@ -161,7 +161,10 @@ def load_config_from_db(db: Session):
         "task_check_quota_limits_interval",
         "task_quota_check_cache_ttl",
         "translation_batch_size",
+        "translation_line_concurrency",
+        "ai_provider_max_concurrency",
         "translation_max_line_length",
+        "ai_models_auto_sync_interval_seconds",
     ]
 
     for key in keys_to_preload:
@@ -169,5 +172,34 @@ def load_config_from_db(db: Session):
             config.get_int(key, fallback=getattr(env_settings, key, 0))
         except Exception as e:
             logger.warning(f"Failed to preload config key {key}: {e}")
+
+    try:
+        config.get_str("ai_models_catalog_url", fallback=env_settings.ai_models_catalog_url)
+    except Exception as e:
+        logger.warning(f"Failed to preload config key ai_models_catalog_url: {e}")
+
+    try:
+        stmt = select(Setting).where(Setting.key == "ai_models_auto_sync_enabled")
+        setting = db.scalar(stmt)
+        if setting:
+            env_settings.ai_models_auto_sync_enabled = setting.value.lower() in ("true", "1", "yes")
+    except Exception as e:
+        logger.warning(f"Failed to preload config key ai_models_auto_sync_enabled: {e}")
+
+    try:
+        env_settings.ai_models_auto_sync_interval_seconds = config.get_int(
+            "ai_models_auto_sync_interval_seconds",
+            fallback=env_settings.ai_models_auto_sync_interval_seconds,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to apply config key ai_models_auto_sync_interval_seconds: {e}")
+
+    try:
+        env_settings.ai_models_catalog_url = config.get_str(
+            "ai_models_catalog_url",
+            fallback=env_settings.ai_models_catalog_url,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to apply config key ai_models_catalog_url: {e}")
 
     logger.info(f"Preloaded {len(keys_to_preload)} configuration keys from database")

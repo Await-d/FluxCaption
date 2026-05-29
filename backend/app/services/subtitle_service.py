@@ -5,10 +5,11 @@ Handles loading, saving, and translating subtitle files (.srt, .ass, .vtt).
 Preserves timing information and ASS formatting tags.
 """
 
+import asyncio
 import json
 import re
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 import pysubs2
 import sqlalchemy as sa
@@ -17,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.services.ai_response_cleaner import strip_reasoning_blocks
 from app.services.prompts import (
     SUBTITLE_TRANSLATION_SYSTEM_PROMPT,
     TRANSLATION_PROOFREADING_SYSTEM_PROMPT,
@@ -28,22 +30,65 @@ from app.services.unified_ai_client import UnifiedAIClient
 
 logger = get_logger(__name__)
 
+DIRECT_TRANSLATION_PROVIDERS = {"deeplx"}
+
+COMMON_RESPONSE_PREFIXES = [
+    "Translation:",
+    "Here's the translation:",
+    "The translation is:",
+    "Translated text:",
+    "译文：",
+    "翻译：",
+    "翻译结果：",
+]
+
 
 # =============================================================================
 # AI Response Parsing
 # =============================================================================
 
 
+def _iter_json_object_candidates(response: str):
+    start = None
+    depth = 0
+    in_string = False
+    escape = False
+
+    for index, char in enumerate(response):
+        if start is None:
+            if char == "{":
+                start = index
+                depth = 1
+                in_string = False
+                escape = False
+            continue
+
+        if in_string:
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == '"':
+                in_string = False
+            continue
+
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                yield response[start : index + 1]
+                start = None
+
+
 def extract_translation_from_response(response: str) -> str:
     """
-    Extract translation from AI response, supporting JSON format and plain text.
+    Extract translation from AI response.
 
-    This function implements multiple fallback strategies to handle various AI output formats:
-    1. Direct JSON parsing: {"translation": "text"}
-    2. Markdown code block removal + JSON parsing
-    3. Regex extraction of JSON object
-    4. Common prefix removal (Translation:, etc.)
-    5. Return original text as fallback
+    Prefers a JSON object with a `translation` field, while tolerating
+    platform reasoning noise and legacy plain-text fallbacks.
 
     Args:
         response: Raw response from AI model
@@ -54,64 +99,35 @@ def extract_translation_from_response(response: str) -> str:
     if not response:
         return ""
 
-    response = response.strip()
+    cleaned = strip_reasoning_blocks(response)
+    if not cleaned:
+        return ""
 
-    # Strategy 1: Try parsing entire response as JSON
     try:
-        data = json.loads(response)
+        data = json.loads(cleaned)
         if isinstance(data, dict) and "translation" in data:
             logger.debug("Extracted translation via direct JSON parsing")
             return data["translation"].strip()
     except (json.JSONDecodeError, ValueError):
         pass
 
-    # Strategy 2: Remove markdown code blocks and try parsing
-    # Handles cases like: ```json\n{"translation": "..."}\n```
-    cleaned = re.sub(r"^```(?:json)?\s*\n?|\n?```$", "", response, flags=re.MULTILINE | re.DOTALL)
-    cleaned = cleaned.strip()
-    try:
-        data = json.loads(cleaned)
-        if isinstance(data, dict) and "translation" in data:
-            logger.debug("Extracted translation via markdown-cleaned JSON parsing")
-            return data["translation"].strip()
-    except (json.JSONDecodeError, ValueError):
-        pass
-
-    # Strategy 3: Extract first JSON object with "translation" field using regex
-    # Handles cases where JSON is embedded in text
-    match = re.search(
-        r'\{[^{}]*"translation"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"\s*[^{}]*\}', response, re.DOTALL
-    )
-    if match:
+    for json_candidate in _iter_json_object_candidates(cleaned):
         try:
-            json_str = match.group(0)
-            data = json.loads(json_str)
+            data = json.loads(json_candidate)
             if isinstance(data, dict) and "translation" in data:
-                logger.debug("Extracted translation via regex JSON extraction")
+                logger.debug("Extracted translation via embedded JSON parsing")
                 return data["translation"].strip()
         except (json.JSONDecodeError, ValueError):
-            pass
+            continue
 
-    # Strategy 4: Remove common prefixes that LLMs might add
-    common_prefixes = [
-        "Translation:",
-        "Here's the translation:",
-        "The translation is:",
-        "Translated text:",
-        "译文：",
-        "翻译：",
-        "翻译结果：",
-    ]
-
-    for prefix in common_prefixes:
-        if response.lower().startswith(prefix.lower()):
-            result = response[len(prefix) :].strip()
+    for prefix in COMMON_RESPONSE_PREFIXES:
+        if cleaned.lower().startswith(prefix.lower()):
+            result = cleaned[len(prefix) :].strip()
             logger.debug(f"Extracted translation by removing prefix: {prefix}")
             return result
 
-    # Strategy 5: Return original response as fallback
     logger.debug("Using original response as translation (no extraction pattern matched)")
-    return response
+    return cleaned
 
 
 # =============================================================================
@@ -245,7 +261,7 @@ def apply_correction_rules(
     text: str,
     source_lang: str | None,
     target_lang: str | None,
-    db_session: Optional[Session] = None,
+    db_session: Session | None = None,
 ) -> str:
     """
     Apply correction rules to translated text.
@@ -406,7 +422,8 @@ class SubtitleService:
         preserve_formatting: bool = True,
         enable_proofreading: bool = True,
         progress_callback: Callable | None = None,
-        db_session: Optional[Session] = None,
+        line_callback: Callable | None = None,
+        db_session: Session | None = None,
         subtitle_id: str | None = None,
         asset_id: str | None = None,
         media_name: str | None = None,
@@ -425,6 +442,7 @@ class SubtitleService:
             preserve_formatting: Whether to preserve ASS formatting
             enable_proofreading: Whether to enable AI proofreading of translations (default: True)
             progress_callback: Optional callback(completed, total) for progress
+            line_callback: Optional callback(index, total, source_text, translated_text)
             db_session: Optional database session for caching and translation memory
             subtitle_id: Optional subtitle ID for translation memory linkage
             asset_id: Optional asset ID for translation memory linkage
@@ -437,12 +455,9 @@ class SubtitleService:
             Exception: If translation fails
         """
         try:
-            # Initialize unified AI client
-            ai_client = UnifiedAIClient(db_session)
-
             # Resolve model and provider
             if not model:
-                model = settings.default_mt_model
+                model = "translate" if provider in DIRECT_TRANSLATION_PROVIDERS else settings.default_mt_model
 
             logger.info(
                 f"Starting subtitle translation: {source_lang} → {target_lang}\n"
@@ -476,6 +491,7 @@ class SubtitleService:
             cache_hits = 0
             cache_misses = 0
             proofread_count = 0
+            line_concurrency = max(1, settings.translation_line_concurrency)
 
             # Initialize cache service if db session provided
             cache_service = TranslationCacheService(db_session) if db_session else None
@@ -494,7 +510,10 @@ class SubtitleService:
                 )
 
                 # Process each line in the batch
-                batch_translations = []
+                batch_translations = [""] * len(batch)
+                batch_line_data = []
+                uncached_lines = []
+
                 for line_idx, line in enumerate(batch):
                     current_line_num = i + line_idx
 
@@ -502,6 +521,15 @@ class SubtitleService:
                     event = subs[current_line_num]
                     start_time = event.start / 1000.0  # Convert ms to seconds
                     end_time = event.end / 1000.0
+
+                    line_data = {
+                        "line_idx": line_idx,
+                        "current_line_num": current_line_num,
+                        "line": line,
+                        "start_time": start_time,
+                        "end_time": end_time,
+                    }
+                    batch_line_data.append(line_data)
 
                     # Check cache first if available
                     cached_translation = None
@@ -515,7 +543,10 @@ class SubtitleService:
 
                     if cached_translation:
                         # Use cached translation
-                        batch_translations.append(cached_translation)
+                        batch_translations[line_idx] = cached_translation
+                        line_data["translated"] = cached_translation
+                        line_data["cache_hit"] = True
+                        line_data["proofread_improved"] = False
                         cache_hits += 1
                         logger.info(
                             f"[行 {current_line_num + 1}/{total_events}] [缓存命中] "
@@ -523,19 +554,45 @@ class SubtitleService:
                             f"译文: {cached_translation}"
                         )
                     else:
-                        # No cache, do AI translation
-                        prompt = build_translation_prompt(source_lang, target_lang, line)
-                        translated = await ai_client.generate(
-                            model=model,
-                            prompt=prompt,
-                            system=SUBTITLE_TRANSLATION_SYSTEM_PROMPT,
-                            temperature=0.3,
-                            provider=provider,
-                        )
-                        # Extract translation from AI response (supports JSON and plain text)
-                        translated = extract_translation_from_response(translated)
+                        uncached_lines.append(line_data)
 
-                        # Log detailed translation
+                if uncached_lines:
+                    semaphore = asyncio.Semaphore(line_concurrency)
+
+                    async def generate_with_client(**generate_kwargs) -> str:
+                        if db_session is None:
+                            return await UnifiedAIClient().generate(**generate_kwargs)
+
+                        with Session(bind=db_session.get_bind()) as worker_session:
+                            worker_client = UnifiedAIClient(worker_session)
+                            return await worker_client.generate(**generate_kwargs)
+
+                    async def translate_uncached_line(line_data: dict) -> dict:
+                        current_line_num = line_data["current_line_num"]
+                        line = line_data["line"]
+                        use_direct_translation = provider in DIRECT_TRANSLATION_PROVIDERS
+                        prompt = (
+                            line
+                            if use_direct_translation
+                            else build_translation_prompt(source_lang, target_lang, line)
+                        )
+
+                        async with semaphore:
+                            translated = await generate_with_client(
+                                model=model,
+                                prompt=prompt,
+                                system=None
+                                if use_direct_translation
+                                else SUBTITLE_TRANSLATION_SYSTEM_PROMPT,
+                                temperature=0.3,
+                                provider=provider,
+                                source_lang=source_lang,
+                                target_lang=target_lang,
+                            )
+
+                        if not use_direct_translation:
+                            translated = extract_translation_from_response(translated)
+
                         logger.info(
                             f"[行 {current_line_num + 1}/{total_events}] [AI翻译] "
                             f"{source_lang} → {target_lang}\n"
@@ -543,8 +600,8 @@ class SubtitleService:
                             f"译文: {translated}"
                         )
 
-                        # AI Proofreading: Review and improve the translation
-                        if enable_proofreading and translated and line:
+                        proofread_improved = False
+                        if enable_proofreading and not use_direct_translation and translated and line:
                             try:
                                 proofread_prompt = build_proofreading_prompt(
                                     source_lang=source_lang,
@@ -552,21 +609,19 @@ class SubtitleService:
                                     source_text=line,
                                     translated_text=translated,
                                 )
-                                proofread_result = await ai_client.generate(
-                                    model=model,
-                                    prompt=proofread_prompt,
-                                    system=TRANSLATION_PROOFREADING_SYSTEM_PROMPT,
-                                    temperature=0.2,  # Lower temperature for proofreading
-                                    provider=provider,
-                                )
-                                # Extract translation from proofreading response (supports JSON and plain text)
+                                async with semaphore:
+                                    proofread_result = await generate_with_client(
+                                        model=model,
+                                        prompt=proofread_prompt,
+                                        system=TRANSLATION_PROOFREADING_SYSTEM_PROMPT,
+                                        temperature=0.2,
+                                        provider=provider,
+                                    )
                                 proofread_result = extract_translation_from_response(
                                     proofread_result
                                 )
 
-                                # Only use proofread result if it's not empty
                                 if proofread_result:
-                                    # Log if proofreading made changes
                                     if proofread_result != translated:
                                         logger.info(
                                             f"[行 {current_line_num + 1}/{total_events}] [AI校对] 改进翻译\n"
@@ -574,7 +629,7 @@ class SubtitleService:
                                             f"初译: {translated}\n"
                                             f"校对: {proofread_result}"
                                         )
-                                        proofread_count += 1
+                                        proofread_improved = True
                                     else:
                                         logger.debug(
                                             f"[行 {current_line_num + 1}/{total_events}] [AI校对] 无需改进"
@@ -584,12 +639,36 @@ class SubtitleService:
                                 logger.warning(
                                     f"Proofreading failed for line {current_line_num + 1}: {e}"
                                 )
-                                # Keep original translation if proofreading fails
 
-                        batch_translations.append(translated)
+                        return {
+                            **line_data,
+                            "translated": translated,
+                            "cache_hit": False,
+                            "proofread_improved": proofread_improved,
+                        }
+
+                    translated_results = await asyncio.gather(
+                        *(translate_uncached_line(line_data) for line_data in uncached_lines)
+                    )
+
+                    for result in translated_results:
+                        batch_translations[result["line_idx"]] = result["translated"]
+                        result_lookup = batch_line_data[result["line_idx"]]
+                        result_lookup.update(result)
+
+                for line_data in batch_line_data:
+                    current_line_num = line_data["current_line_num"]
+                    line = line_data["line"]
+                    translated = batch_translations[line_data["line_idx"]]
+
+                    if not translated:
+                        continue
+
+                    if not line_data.get("cache_hit"):
                         cache_misses += 1
+                        if line_data.get("proofread_improved"):
+                            proofread_count += 1
 
-                        # Save to cache for future use
                         if cache_service and line.strip():
                             try:
                                 cache_service.save_translation(
@@ -611,15 +690,15 @@ class SubtitleService:
                                 subtitle_id=subtitle_id,
                                 asset_id=asset_id,
                                 source_text=line,
-                                target_text=batch_translations[-1],
+                                target_text=translated,
                                 source_lang=source_lang,
                                 target_lang=target_lang,
                                 context=media_name,
                                 line_number=current_line_num + 1,  # 1-indexed for display
-                                start_time=start_time,
-                                end_time=end_time,
+                                start_time=line_data["start_time"],
+                                end_time=line_data["end_time"],
                                 word_count_source=len(line.split()),
-                                word_count_target=len(batch_translations[-1].split()),
+                                word_count_target=len(translated.split()),
                                 translation_model=model,
                             )
                             db_session.add(tm_record)
@@ -631,13 +710,12 @@ class SubtitleService:
                     completed += 1
                     if progress_callback:
                         source_text = line[:50] + "..." if len(line) > 50 else line
-                        target_text = (
-                            batch_translations[-1][:50] + "..."
-                            if len(batch_translations[-1]) > 50
-                            else batch_translations[-1]
-                        )
+                        target_text = translated[:50] + "..." if len(translated) > 50 else translated
                         message = f"行 {current_line_num + 1}/{total_events}: {source_text} → {target_text}"
                         progress_callback(completed, total_events, message)
+
+                    if line_callback:
+                        line_callback(current_line_num + 1, total_events, line, translated)
 
                 translated_texts.extend(batch_translations)
 
@@ -736,6 +814,7 @@ class SubtitleService:
             ".ass": "ass",
             ".ssa": "ass",
             ".vtt": "vtt",
+            ".sup": "sup",
         }
         return format_map.get(suffix, "unknown")
 
@@ -753,6 +832,9 @@ class SubtitleService:
         format = SubtitleService.detect_format(file_path)
         if format == "unknown":
             return False
+
+        if format == "sup":
+            return Path(file_path).is_file() and Path(file_path).stat().st_size > 0
 
         try:
             subs = SubtitleService.load_subtitle(file_path)

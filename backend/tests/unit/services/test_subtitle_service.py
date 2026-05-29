@@ -1,10 +1,12 @@
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from app.services.subtitle_service import (
+    DIRECT_TRANSLATION_PROVIDERS,
+    apply_correction_rules,
     extract_translation_from_response,
     strip_ass_tags,
-    apply_correction_rules,
 )
 
 
@@ -12,6 +14,14 @@ from app.services.subtitle_service import (
 class TestExtractTranslationFromResponse:
     def test_direct_json(self):
         resp = '{"translation": "\u4f60\u597d\u4e16\u754c"}'
+        assert extract_translation_from_response(resp) == "\u4f60\u597d\u4e16\u754c"
+
+    def test_json_with_thinking_block(self):
+        resp = '<think>reasoning hidden</think>{"translation": "\u4f60\u597d\u4e16\u754c"}'
+        assert extract_translation_from_response(resp) == "\u4f60\u597d\u4e16\u754c"
+
+    def test_fenced_json_with_reasoning(self):
+        resp = '```json\n<thinking>step</thinking>{"translation": "\u4f60\u597d\u4e16\u754c"}\n```'
         assert extract_translation_from_response(resp) == "\u4f60\u597d\u4e16\u754c"
 
     def test_plain_text_fallback(self):
@@ -48,3 +58,9 @@ class TestApplyCorrectionRules:
     def test_empty_text(self):
         result = apply_correction_rules("", "en", "zh-CN", db_session=None)
         assert result == ""
+
+
+@pytest.mark.unit
+class TestDirectTranslationProviders:
+    def test_deeplx_uses_direct_translation_path(self):
+        assert "deeplx" in DIRECT_TRANSLATION_PROVIDERS

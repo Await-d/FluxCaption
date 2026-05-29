@@ -14,8 +14,16 @@ from app.services.ai_providers.base import (
     AIModelInfo,
     BaseAIProvider,
 )
+from app.services.ai_response_cleaner import ReasoningBlockFilter, extract_visible_text
 
 logger = get_logger(__name__)
+
+
+def _log_http_error(message: str, error: httpx.HTTPError) -> None:
+    if hasattr(error, "response") and error.response:
+        logger.error(f"{message} with status {error.response.status_code}")
+    else:
+        logger.error(f"{message}: {type(error).__name__}")
 
 
 class ClaudeProvider(BaseAIProvider):
@@ -150,16 +158,10 @@ class ClaudeProvider(BaseAIProvider):
                 response.raise_for_status()
                 data = response.json()
 
-                # Claude returns content as a list
-                content_text = ""
-                for content_block in data.get("content", []):
-                    if content_block.get("type") == "text":
-                        content_text += content_block.get("text", "")
-
                 usage = data.get("usage", {})
 
                 return AIGenerateResponse(
-                    text=content_text,
+                    text=extract_visible_text(data.get("content", [])),
                     model=data.get("model", model),
                     provider=self.provider_name,
                     input_tokens=usage.get("input_tokens"),
@@ -168,9 +170,7 @@ class ClaudeProvider(BaseAIProvider):
                 )
 
             except httpx.HTTPError as e:
-                logger.error(f"Claude generation failed: {e}")
-                if hasattr(e, "response") and e.response:
-                    logger.error(f"Response: {e.response.text}")
+                _log_http_error("Claude generation failed", e)
                 raise
 
     async def generate_stream(
@@ -194,6 +194,8 @@ class ClaudeProvider(BaseAIProvider):
         if system:
             payload["system"] = system
 
+        reasoning_filter = ReasoningBlockFilter()
+
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             try:
                 async with client.stream(
@@ -208,6 +210,9 @@ class ClaudeProvider(BaseAIProvider):
                         if not line.strip():
                             continue
 
+                        if line.startswith("event: "):
+                            continue
+
                         if line.startswith("data: "):
                             line = line[6:]  # Remove "data: " prefix
 
@@ -219,21 +224,19 @@ class ClaudeProvider(BaseAIProvider):
 
                             data = json.loads(line)
 
-                            event_type = data.get("type")
-
-                            # Handle different event types
-                            if event_type == "content_block_delta":
-                                delta = data.get("delta", {})
-                                if delta.get("type") == "text_delta":
-                                    text = delta.get("text", "")
-                                    if text:
-                                        yield text
+                            visible_text = reasoning_filter.filter(extract_visible_text(data))
+                            if visible_text:
+                                yield visible_text
 
                         except (json.JSONDecodeError, KeyError) as e:
                             logger.warning(f"Failed to parse Claude stream chunk: {e}")
 
+                    pending_text = reasoning_filter.flush()
+                    if pending_text:
+                        yield pending_text
+
             except httpx.HTTPError as e:
-                logger.error(f"Claude streaming generation failed: {e}")
+                _log_http_error("Claude streaming generation failed", e)
                 raise
 
     async def health_check(self) -> bool:
@@ -243,5 +246,5 @@ class ClaudeProvider(BaseAIProvider):
             models = await self.list_models()
             return len(models) > 0
         except Exception as e:
-            logger.error(f"Claude health check failed: {e}")
+            logger.error(f"Claude health check failed: {type(e).__name__}")
             return False

@@ -3,6 +3,8 @@ import type {
   HealthResponse,
   JellyfinLibrary,
   JellyfinMediaItem,
+  JellyfinItemListResponse,
+  JellyfinLibraryItemsParams,
   ScanLibraryRequest,
   ScanLibraryResponse,
   TranslationJob,
@@ -25,6 +27,7 @@ import type {
   DirectoryStatsResponse,
   CreateLocalJobRequest,
   ModelListResponse,
+  QueuedTaskResponse,
 } from '../types/api'
 
 /**
@@ -84,6 +87,31 @@ class APIClient {
     return null
   }
 
+  async get<T>(url: string, config?: Parameters<AxiosInstance['get']>[1]): Promise<T> {
+    const { data } = await this.client.get<T>(url, config)
+    return data
+  }
+
+  async post<T>(url: string, body?: unknown, config?: Parameters<AxiosInstance['post']>[2]): Promise<T> {
+    const { data } = await this.client.post<T>(url, body, config)
+    return data
+  }
+
+  async patch<T>(url: string, body?: unknown, config?: Parameters<AxiosInstance['patch']>[2]): Promise<T> {
+    const { data } = await this.client.patch<T>(url, body, config)
+    return data
+  }
+
+  async put<T>(url: string, body?: unknown, config?: Parameters<AxiosInstance['put']>[2]): Promise<T> {
+    const { data } = await this.client.put<T>(url, body, config)
+    return data
+  }
+
+  async delete<T = void>(url: string, config?: Parameters<AxiosInstance['delete']>[1]): Promise<T> {
+    const { data } = await this.client.delete<T>(url, config)
+    return data
+  }
+
   // =============================================================================
   // Health & System
   // =============================================================================
@@ -124,10 +152,19 @@ class APIClient {
     }))
   }
 
-  async getJellyfinLibraryItems(libraryId: string): Promise<JellyfinMediaItem[]> {
-    const { data } = await this.client.get<{ items: JellyfinMediaItem[]; total: number; limit: number; offset: number }>(
-      `/jellyfin/libraries/${libraryId}/items`
+  async getJellyfinLibraryItems(
+    libraryId: string,
+    params?: JellyfinLibraryItemsParams
+  ): Promise<JellyfinItemListResponse> {
+    const { data } = await this.client.get<JellyfinItemListResponse>(
+      `/jellyfin/libraries/${libraryId}/items`,
+      { params }
     )
+    return data
+  }
+
+  async getJellyfinLibraryItemArray(libraryId: string): Promise<JellyfinMediaItem[]> {
+    const data = await this.getJellyfinLibraryItems(libraryId)
     return data.items
   }
 
@@ -318,8 +355,8 @@ class APIClient {
     return data
   }
 
-  async pullOllamaModel(request: PullModelRequest): Promise<CreateJobResponse> {
-    const { data } = await this.client.post<CreateJobResponse>('/models/pull', request)
+  async pullOllamaModel(request: PullModelRequest): Promise<QueuedTaskResponse> {
+    const { data } = await this.client.post<QueuedTaskResponse>('/models/pull', request)
     return data
   }
 
@@ -328,12 +365,10 @@ class APIClient {
   }
 
   async testOllamaModel(modelName: string): Promise<{
-    success: boolean
+    status: 'queued'
+    task_id: string
     model: string
-    test_prompt: string
-    response: string
-    response_time_seconds: number
-    status: string
+    message: string
   }> {
     const { data } = await this.client.post(`/models/${modelName}/test`)
     return data
@@ -364,12 +399,8 @@ class APIClient {
     return data
   }
 
-  async syncModels(): Promise<{
-    success: boolean
-    message: string
-    total_models: number
-  }> {
-    const { data } = await this.client.post('/models/sync')
+  async syncModels(): Promise<QueuedTaskResponse> {
+    const { data } = await this.client.post<QueuedTaskResponse>('/models/sync')
     return data
   }
 

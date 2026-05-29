@@ -5,11 +5,12 @@ Provides basic health check and detailed readiness check.
 """
 
 import time
-from datetime import timezone
+from datetime import UTC
 
 from fastapi import APIRouter, status
 from fastapi.responses import JSONResponse
 from redis import asyncio as aioredis
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
 from app.core.db import check_db_health
@@ -58,7 +59,7 @@ async def health_check() -> HealthResponse:
     from datetime import datetime
 
     # Check database
-    db_status = "ok" if check_db_health() else "down"
+    db_status = "ok" if await run_in_threadpool(check_db_health) else "down"
 
     # Check Ollama
     ollama_status = "ok" if await ollama_client.health_check() else "down"
@@ -88,7 +89,7 @@ async def health_check() -> HealthResponse:
 
     return HealthResponse(
         status=overall_status,
-        timestamp=datetime.now(timezone.utc).isoformat(),
+        timestamp=datetime.now(UTC).isoformat(),
         services=services,
         version="0.1.0",
     )
@@ -117,7 +118,7 @@ async def readiness_check():
 
     # Check database
     start_time = time.time()
-    db_healthy = check_db_health()
+    db_healthy = await run_in_threadpool(check_db_health)
     db_latency = (time.time() - start_time) * 1000
 
     components.append(

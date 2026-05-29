@@ -8,9 +8,20 @@
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Cloud, Check, AlertCircle, Loader2, DollarSign, ChevronDown } from 'lucide-react';
+import { AlertCircle, Loader2, DollarSign } from 'lucide-react';
 import { aiProviderApi, AIProviderConfig } from '../api/aiProviders';
 import * as aiModelsApi from '../api/aiModels';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from './ui/Select';
+import { Badge } from './ui/Badge';
+
+const AUTO_PROVIDER_VALUE = '__fluxcaption_auto_provider__';
+const DEFAULT_MODEL_VALUE = '__fluxcaption_default_model__';
 
 interface AIProviderSelectorProps {
   value?: {
@@ -60,14 +71,14 @@ export function AIProviderSelector({
   }, [value]);
 
   const handleProviderChange = (providerName: string) => {
-    const newProvider = providerName === selectedProvider ? undefined : providerName;
+    const newProvider = providerName === AUTO_PROVIDER_VALUE ? undefined : providerName;
     setSelectedProvider(newProvider);
     setSelectedModel(undefined); // Reset model when provider changes
     onChange({ provider: newProvider, model: undefined });
   };
 
-  const handleModelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newModel = e.target.value || undefined;
+  const handleModelChange = (modelName: string) => {
+    const newModel = modelName === DEFAULT_MODEL_VALUE ? undefined : modelName;
     setSelectedModel(newModel);
     onChange({ provider: selectedProvider, model: newModel });
   };
@@ -77,7 +88,7 @@ export function AIProviderSelector({
       <div className="space-y-4 opacity-50 pointer-events-none">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
-          <span>Loading AI providers...</span>
+          <span>{t('aiProviderSelector.loading')}</span>
         </div>
       </div>
     );
@@ -87,11 +98,11 @@ export function AIProviderSelector({
     return (
       <div className="rounded-md border border-yellow-500/50 bg-yellow-500/10 p-4">
         <div className="flex items-start gap-3">
-          <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-500 flex-shrink-0 mt-0.5" />
+          <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-primary" />
           <div className="flex-1">
-            <p className="text-sm font-medium text-foreground">No AI Providers Enabled</p>
+            <p className="text-sm font-medium text-foreground">{t('aiProviderSelector.emptyTitle')}</p>
             <p className="text-xs text-muted-foreground mt-1">
-              Please enable at least one AI provider in Settings → AI Providers
+              {t('aiProviderSelector.emptyDescription')}
             </p>
           </div>
         </div>
@@ -103,118 +114,85 @@ export function AIProviderSelector({
   const selectedModelData = availableModels.find(m => m.model_name === selectedModel);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5 rounded-[28px] border border-border/70 bg-background/30 p-5 backdrop-blur-sm">
       {/* Provider Selection */}
       <div>
         <p className="text-sm font-medium mb-2 block">
-          {t('translate.selectProvider', 'Select AI Provider')}
+          {t('translate.selectProvider')}
           <span className="text-muted-foreground ml-2 font-normal">
-            (Optional - Auto-selects if not specified)
+            {t('aiProviderSelector.providerOptionalHint')}
           </span>
         </p>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-          {providers.map((provider: AIProviderConfig) => {
-            const isSelected = selectedProvider === provider.provider_name;
-            const isHealthy = provider.is_healthy;
-
-            return (
-              <button
+        <Select
+          value={selectedProvider || AUTO_PROVIDER_VALUE}
+          onValueChange={handleProviderChange}
+          disabled={disabled}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder={t('translate.selectProvider')} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={AUTO_PROVIDER_VALUE}>
+              {t('translate.autoProvider')}
+            </SelectItem>
+            {providers.map((provider: AIProviderConfig) => (
+              <SelectItem
                 key={provider.id}
-                type="button"
-                disabled={disabled || !isHealthy}
-                onClick={() => handleProviderChange(provider.provider_name)}
-                className={`
-                  relative p-3 rounded-lg border-2 transition-all text-left
-                  ${
-                    isSelected
-                      ? 'border-primary bg-primary/10'
-                      : 'border-border hover:border-primary/50'
-                  }
-                  ${!isHealthy ? 'opacity-50 cursor-not-allowed' : ''}
-                  ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
-                `}
+                value={provider.provider_name}
+                disabled={!provider.is_healthy}
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Cloud className={`h-4 w-4 flex-shrink-0 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`} />
-                      <span className="text-sm font-medium truncate">
-                        {provider.display_name}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-xs">
-                      <div
-                        className={`h-2 w-2 rounded-full ${
-                          isHealthy ? 'bg-green-500' : 'bg-destructive'
-                        }`}
-                      />
-                      <span className="text-muted-foreground">
-                        {isHealthy ? 'Healthy' : 'Unhealthy'}
-                      </span>
-                    </div>
-                  </div>
-                  {isSelected && (
-                    <Check className="h-5 w-5 text-primary flex-shrink-0" />
-                  )}
-                </div>
-                {provider.priority > 5 && (
-                  <div className="absolute top-1 right-1">
-                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-primary/20 text-primary">
-                      HIGH
-                    </span>
-                  </div>
-                )}
-              </button>
-            );
-          })}
-        </div>
+                {provider.display_name} - {provider.is_healthy ? t('aiProviderSelector.healthy') : t('aiProviderSelector.unhealthy')}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Model Selection (Dropdown) */}
       {selectedProvider && (
         <div>
           <label htmlFor="model-select" className="text-sm font-medium mb-2 block">
-            {t('translate.model', 'Translation Model')}
+            {t('translate.model')}
             <span className="text-muted-foreground ml-2 font-normal">
-              (Optional - Uses default if not specified)
+              {t('aiProviderSelector.modelOptionalHint')}
             </span>
           </label>
 
           {isLoadingModels ? (
-            <div className="flex items-center gap-2 px-3 py-2 border rounded-md">
+            <div className="flex items-center gap-2 rounded-[18px] border border-border/70 px-3 py-3">
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">{t('common.loading', 'Loading...')}</span>
+              <span className="text-sm text-muted-foreground">{t('common.loading')}</span>
             </div>
           ) : availableModels.length > 0 ? (
             <>
-              <div className="relative">
-                <select
-                  id="model-select"
-                  value={selectedModel || ''}
-                  onChange={handleModelChange}
-                  disabled={disabled}
-                  className="w-full px-3 py-2 pr-10 border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50 appearance-none"
-                >
-                  <option value="">
-                    {t('translate.useDefault', 'Use default model')}
-                  </option>
+              <Select
+                value={selectedModel || DEFAULT_MODEL_VALUE}
+                onValueChange={handleModelChange}
+                disabled={disabled}
+              >
+                <SelectTrigger id="model-select">
+                  <SelectValue placeholder={t('translate.useDefault')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={DEFAULT_MODEL_VALUE}>
+                    {t('translate.useDefault')}
+                  </SelectItem>
                   {availableModels.map(model => (
-                    <option key={model.id} value={model.model_name}>
+                    <SelectItem key={model.id} value={model.model_name}>
                       {model.display_name}
                       {model.is_default && ` (${t('jobs.default')})`}
                       {model.input_price !== null && model.output_price !== null &&
                         ` - $${model.input_price}/$${model.output_price}`
                       }
-                      {model.input_price === 0 && model.output_price === 0 && ` - ${t('common.free', 'Free')}`}
-                    </option>
+                      {model.input_price === 0 && model.output_price === 0 && ` - ${t('common.free')}`}
+                    </SelectItem>
                   ))}
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-              </div>
+                </SelectContent>
+              </Select>
 
               {/* Selected Model Details */}
               {selectedModelData && (
-                <div className="mt-2 p-3 rounded-md bg-muted/50 space-y-2">
+                <div className="mt-3 space-y-3 rounded-[22px] border border-border/70 bg-muted/35 p-4">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1">
                       <p className="text-sm font-medium">{selectedModelData.display_name}</p>
@@ -225,9 +203,9 @@ export function AIProviderSelector({
                       )}
                     </div>
                     {selectedModelData.is_default && (
-                      <span className="px-2 py-0.5 text-xs rounded bg-primary/20 text-primary">
+                      <Badge variant="secondary" className="tracking-[0.12em]">
                         {t('jobs.default')}
-                      </span>
+                      </Badge>
                     )}
                   </div>
 
@@ -236,12 +214,12 @@ export function AIProviderSelector({
                     <div className="flex gap-4 text-xs text-muted-foreground">
                       {selectedModelData.context_window && (
                         <div>
-                          Context: {selectedModelData.context_window.toLocaleString()} tokens
+                          {t('aiProviderSelector.contextWindow', { count: selectedModelData.context_window })}
                         </div>
                       )}
                       {selectedModelData.max_output_tokens && (
                         <div>
-                          Max Output: {selectedModelData.max_output_tokens.toLocaleString()} tokens
+                          {t('aiProviderSelector.maxOutput', { count: selectedModelData.max_output_tokens })}
                         </div>
                       )}
                     </div>
@@ -253,14 +231,14 @@ export function AIProviderSelector({
                       <DollarSign className="h-4 w-4 mt-0.5 text-muted-foreground flex-shrink-0" />
                       <div className="text-xs space-y-0.5">
                         {selectedModelData.input_price !== null && (
-                          <div>Input: ${selectedModelData.input_price}/1M tokens</div>
+                          <div>{t('aiProviderSelector.inputPrice', { value: selectedModelData.input_price })}</div>
                         )}
                         {selectedModelData.output_price !== null && (
-                          <div>Output: ${selectedModelData.output_price}/1M tokens</div>
+                          <div>{t('aiProviderSelector.outputPrice', { value: selectedModelData.output_price })}</div>
                         )}
                         {selectedModelData.input_price === 0 && selectedModelData.output_price === 0 && (
-                          <div className="text-green-500 dark:text-green-400 font-medium">
-                            {t('common.free', 'Free')} ({t('providers.local', 'Local Model')})
+                          <div className="font-medium text-foreground">
+                            {t('common.free')} ({t('providers.local')})
                           </div>
                         )}
                         {selectedModelData.pricing_notes && (
@@ -279,12 +257,13 @@ export function AIProviderSelector({
                       return tags.length > 0 && (
                         <div className="flex flex-wrap gap-1 pt-2 border-t border-border/50">
                           {tags.map((tag: string) => (
-                            <span
-                              key={tag}
-                              className="px-2 py-0.5 text-xs rounded bg-primary/10 text-primary"
-                            >
-                              {tag}
-                            </span>
+                             <Badge
+                               key={tag}
+                               variant="outline"
+                               className="tracking-[0.12em]"
+                             >
+                               {tag}
+                             </Badge>
                           ))}
                         </div>
                       );
@@ -296,7 +275,7 @@ export function AIProviderSelector({
               )}
             </>
           ) : (
-            <div className="px-3 py-2 border border-yellow-500/50 bg-yellow-500/10 rounded-md text-sm">
+            <div className="rounded-[18px] border border-primary/30 bg-primary/10 px-3 py-3 text-sm">
               <p className="text-foreground">{t('aiModels.noModels')} ({selectedProvider})</p>
               <p className="text-xs text-muted-foreground mt-1">
                 {t('aiModels.clickToCreate')}
@@ -308,24 +287,22 @@ export function AIProviderSelector({
 
       {/* Selection Summary */}
       {(selectedProvider || selectedModel) && (
-        <div className="rounded-md bg-muted/50 p-3 text-sm">
-          <p className="font-medium mb-1">Selection Summary:</p>
+        <div className="rounded-[18px] bg-muted/50 p-3 text-sm">
+          <p className="font-medium mb-1">{t('aiProviderSelector.summaryTitle')}</p>
           <ul className="space-y-1 text-muted-foreground">
             {selectedProvider && (
               <li>
-                • Provider: <span className="text-foreground font-medium">{selectedProvider}</span>
+                {t('aiProviderSelector.summaryProvider', { provider: selectedProvider })}
               </li>
             )}
             {selectedModel && (
               <li>
-                • Model: <span className="text-foreground font-medium">
-                  {selectedModelData?.display_name || selectedModel}
-                </span>
+                {t('aiProviderSelector.summaryModel', { model: selectedModelData?.display_name || selectedModel })}
               </li>
             )}
             {!selectedProvider && !selectedModel && (
-              <li className="text-primary">
-                • Using auto-selection (best available provider and model)
+              <li className="text-foreground">
+                {t('aiProviderSelector.summaryAuto')}
               </li>
             )}
           </ul>

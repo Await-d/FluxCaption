@@ -14,6 +14,7 @@ import {
   BarChart3,
   Plus,
   Loader2,
+  Send,
 } from 'lucide-react'
 import { aiProviderApi, AIProviderConfig } from '../api/aiProviders'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
@@ -23,12 +24,14 @@ import QuotaDialog from '../components/QuotaDialog'
 import ProviderConfigDialog from '../components/ProviderConfigDialog'
 import UsageStatsDialog from '../components/UsageStatsDialog'
 import AddProviderDialog from '../components/AddProviderDialog'
+import { PageHero } from '../components/ui/PageHero'
 
 const AIProvidersPage: React.FC = () => {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null)
   const [editingProvider, setEditingProvider] = useState<AIProviderConfig | null>(null)
+  const [openTestOnOpen, setOpenTestOnOpen] = useState(false)
   const [showUsageStats, setShowUsageStats] = useState<string | null>(null)
   const [showAddProvider, setShowAddProvider] = useState(false)
 
@@ -36,6 +39,22 @@ const AIProvidersPage: React.FC = () => {
   const { data: providers, isLoading } = useQuery({
     queryKey: ['ai-providers'],
     queryFn: () => aiProviderApi.listProviders(false),
+  })
+
+  const visibleProviders = (providers ?? []).filter((provider) => {
+    if (provider.provider_name === 'ollama') {
+      return true
+    }
+
+    if (provider.provider_name === 'custom_openai') {
+      return Boolean(provider.base_url?.trim())
+    }
+
+    if (provider.provider_name === 'deeplx') {
+      return provider.is_enabled || provider.has_api_key || provider.base_url?.trim() !== 'http://localhost:1188'
+    }
+
+    return Boolean(provider.has_api_key)
   })
 
   // Health check mutation
@@ -103,6 +122,8 @@ const AIProvidersPage: React.FC = () => {
         return '🤖'
       case 'deepseek':
         return '🔍'
+      case 'deeplx':
+        return '🌐'
       case 'claude':
         return '🎭'
       case 'gemini':
@@ -150,6 +171,16 @@ const AIProvidersPage: React.FC = () => {
     }
   }
 
+  const handleOpenConfigure = (provider: AIProviderConfig) => {
+    setOpenTestOnOpen(false)
+    setEditingProvider(provider)
+  }
+
+  const handleOpenTest = (provider: AIProviderConfig) => {
+    setOpenTestOnOpen(true)
+    setEditingProvider(provider)
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-24">
@@ -159,40 +190,40 @@ const AIProvidersPage: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 className="text-xl font-semibold flex items-center gap-2">
-            <Settings className="h-5 w-5" />
-            {t('ai_providers.title', 'AI Providers')}
-          </h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            {t('ai_providers.description', 'Manage AI provider configurations and quotas')}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={() => setShowAddProvider(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            {t('ai_providers.add_provider', 'Add Provider')}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => queryClient.invalidateQueries({ queryKey: ['ai-providers'] })}
-          >
-            <RefreshCw className="mr-2 h-4 w-4" />
-            {t('common.refresh', 'Refresh')}
-          </Button>
-        </div>
-      </div>
+    <div className="space-y-6 lg:space-y-8">
+      <PageHero
+        eyebrow={t('pageHero.aiProviders.eyebrow')}
+        title={t('ai_providers.title', 'AI Providers')}
+        description={t('ai_providers.description', 'Manage AI provider configurations and quotas')}
+        actions={
+          <>
+            <Button onClick={() => setShowAddProvider(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              {t('ai_providers.add_provider', 'Add Provider')}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => queryClient.invalidateQueries({ queryKey: ['ai-providers'] })}
+            >
+              <RefreshCw className="mr-2 h-4 w-4" />
+              {t('common.refresh', 'Refresh')}
+            </Button>
+          </>
+        }
+        metrics={[
+          { label: t('pageHero.aiProviders.metrics.providers.label'), value: String(visibleProviders.length), detail: t('pageHero.aiProviders.metrics.providers.detail') },
+          { label: t('pageHero.aiProviders.metrics.healthy.label'), value: String(visibleProviders.filter((provider) => provider.is_healthy).length), detail: t('pageHero.aiProviders.metrics.healthy.detail') },
+          { label: t('pageHero.aiProviders.metrics.enabled.label'), value: String(visibleProviders.filter((provider) => provider.is_enabled).length), detail: t('pageHero.aiProviders.metrics.enabled.detail') },
+        ]}
+      />
 
       {/* Provider Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {providers?.map((provider) => (
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {visibleProviders.map((provider) => (
           <Card
             key={provider.id}
             className={cn(
-              'transition-colors',
+              'rounded-[30px] transition-all duration-200 hover:-translate-y-1',
               provider.is_enabled ? 'border-primary/40' : 'border-border',
             )}
           >
@@ -221,6 +252,11 @@ const AIProvidersPage: React.FC = () => {
                   {provider.description}
                 </p>
               )}
+
+              <div className="flex items-center justify-between rounded-[18px] border border-border/70 bg-background/35 px-3 py-3 text-xs text-muted-foreground">
+                <span>{t('ai_providers.api_key', 'API Key')}</span>
+                <span>{provider.has_api_key ? t('common.configured', 'Configured') : t('common.not_set', 'Not set')}</span>
+              </div>
 
               {/* Status toggle */}
               <div className="flex items-center justify-between">
@@ -266,7 +302,7 @@ const AIProvidersPage: React.FC = () => {
               )}
 
               {/* Actions */}
-              <div className="grid grid-cols-2 gap-2 pt-2 border-t">
+              <div className="grid grid-cols-2 gap-2 border-t border-border/70 pt-2">
                 <Button
                   variant="outline"
                   size="sm"
@@ -287,7 +323,15 @@ const AIProvidersPage: React.FC = () => {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setEditingProvider(provider)}
+                  onClick={() => handleOpenTest(provider)}
+                >
+                  <Send className="mr-2 h-4 w-4" />
+                  {t('ai_providers.test_provider', 'Test Provider')}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleOpenConfigure(provider)}
                 >
                   <Edit className="mr-2 h-4 w-4" />
                   {t('ai_providers.configure', 'Configure')}
@@ -319,8 +363,8 @@ const AIProvidersPage: React.FC = () => {
       </div>
 
       {/* Empty State */}
-      {providers?.length === 0 && (
-        <Card>
+      {visibleProviders.length === 0 && (
+        <Card className="rounded-[30px]">
           <CardContent className="py-12 text-center">
             <Settings className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
             <h3 className="text-base font-medium mb-1">
@@ -343,7 +387,11 @@ const AIProvidersPage: React.FC = () => {
       {editingProvider && (
         <ProviderConfigDialog
           provider={editingProvider}
-          onClose={() => setEditingProvider(null)}
+          openTestOnOpen={openTestOnOpen}
+          onClose={() => {
+            setEditingProvider(null)
+            setOpenTestOnOpen(false)
+          }}
           onSave={(config) => updateConfigMutation.mutate(config)}
           isSaving={updateConfigMutation.isPending}
         />
