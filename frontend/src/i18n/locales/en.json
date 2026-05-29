@@ -178,7 +178,10 @@
     "pullingStatus": "Pulling",
     "default": "Default",
     "syncSuccess": "Sync successful! Total {{count}} models",
-    "syncFailed": "Sync failed: {{error}}"
+    "syncFailed": "Sync failed: {{error}}",
+    "deleteFailed": "Delete failed: {{error}}",
+    "pullFailed": "Pull failed: {{error}}",
+    "pullSuccess": "Pull successful"
   },
   "translate": {
     "title": "Upload Subtitle File",
@@ -442,13 +445,16 @@
     "finished": "Finished",
     "previousPage": "Previous",
     "nextPage": "Next",
-    "refresh": "Refresh"
+    "refresh": "Refresh",
+    "free": "Free",
+    "saving": "Saving..."
   },
   "languages": {
     "zh-CN": "简体中文",
     "en": "English",
     "ja": "日本語",
-    "ko": "한국어"
+    "ko": "한국어",
+    "zh-TW": "Traditional Chinese"
   },
   "cache": {
     "totalEntries": "Total Cache Entries",
@@ -803,7 +809,16 @@
     "pageRange": "showing {{from}}-{{to}} of {{total}} items",
     "previousPage": "Previous",
     "nextPage": "Next",
-    "missingLang": "(missing)"
+    "missingLang": "(missing)",
+    "embedded": "Embedded",
+    "ext": "EXT",
+    "fullInfo": "complete information",
+    "pages": "pages",
+    "score": "Score",
+    "subtitlesComplete": "Subtitles Complete",
+    "total": "Total",
+    "translateAll": "Translate All",
+    "viewDetailsFor": "View"
   },
   "jobs": {
     "title": "Translation Jobs",
@@ -851,7 +866,15 @@
     "selected": "Selected {{count}}",
     "batchCancel": "Batch Cancel",
     "batchStart": "Batch Start",
-    "batchDelete": "Batch Delete"
+    "batchDelete": "Batch Delete",
+    "clearSelection": "Clear Selection",
+    "firstPage": "First",
+    "lastPage": "Last",
+    "noMoreJobs": "No more jobs",
+    "pagination": "Page {{current}} / {{total_pages}}, {{total}} jobs total",
+    "selectedCount": "Selected {{count}}",
+    "start": "Start",
+    "success": "Success"
   },
   "corrections": {
     "title": "Correction Rules",
@@ -925,7 +948,9 @@
     "descriptionPlaceholder": "Rule description",
     "isRegex": "Use regex pattern",
     "isCaseSensitive": "Case sensitive matching",
-    "isActive": "Enable this rule"
+    "isActive": "Enable this rule",
+    "empty": "No correction rules yet",
+    "confirmDelete": "Are you sure you want to delete this rule?"
   },
   "translationMemory": {
     "title": "Translation Memory",
@@ -935,6 +960,12 @@
     "wordCountFormat": "{{source}} words → {{target}} words",
     "proofreadImprovedDesc": "AI has reviewed the translation and provided improvement suggestions",
     "totalPairs": "Total Pairs",
+    "entries": "entries",
+    "languagePairs": "Language Pairs",
+    "supportedCombinations": "Supported Combinations",
+    "translationModels": "Translation Models",
+    "modelsUsed": "Models Used",
+    "loading": "Loading...",
     "sourceLanguages": "Source Languages",
     "targetLanguages": "Target Languages",
     "avgLength": "Avg Length",
@@ -944,7 +975,9 @@
     "sourceLangFilter": "Source Language",
     "targetLangFilter": "Target Language",
     "allSourceLang": "All Source Languages",
+    "allSourceLanguages": "All Source Languages",
     "allTargetLang": "All Target Languages",
+    "allTargetLanguages": "All Target Languages",
     "showing": "Showing",
     "total": "Total",
     "items": "items",
@@ -999,7 +1032,34 @@
     "proofreadSuccess": "Proofread completed",
     "proofreadFailed": "Proofread failed",
     "previousPage": "Previous",
-    "nextPage": "Next"
+    "nextPage": "Next",
+    "aiProofreadError": "AI proofread error",
+    "aiProofreadFailed": "AI proofread failed",
+    "aiProofreadInProgress": "AI proofreading...",
+    "aiProofreadResult": "AI Proofread Result",
+    "batchDeleteError": "Batch delete error",
+    "batchReplaceError": "Batch replace error",
+    "changed": "Changed",
+    "confirmDeleteMessage": "Are you sure you want to delete this translation record?",
+    "currentTranslation": "Current Translation",
+    "deleted": "Deleted",
+    "deletedCount": "Deleted {{count}} record(s)",
+    "deleteError": "Delete error",
+    "editDescription": "Edit the translation of this record",
+    "editTranslation": "Edit Translation",
+    "empty": "No translation records yet",
+    "findTextPlaceholder": "Enter text to find",
+    "languagePairDistribution": "Language Pair Distribution",
+    "proofreadTranslation": "Proofread Translation",
+    "replace": "Replace",
+    "replaceWith": "Replace With",
+    "replaceWithPlaceholder": "Enter replacement text",
+    "selectedCount": "{{count}} selected",
+    "sourceLanguage": "Source Language",
+    "targetLanguage": "Target Language",
+    "updated": "Updated",
+    "updatedCount": "Updated {{updated}} / {{total}} record(s)",
+    "updateError": "Update error"
   },
   "systemConfig": {
     "title": "System Configuration",
@@ -1048,7 +1108,7 @@
   },
   "ai_providers": {
     "title": "AI Providers",
-    "description": "Manage AI provider configurations and quotas",
+    "description": "Description",
     "status": "Status",
     "default_model": "Default Model",
     "last_checked": "Last checked",
@@ -1084,7 +1144,6 @@
     "provider_name": "Provider Name",
     "provider_name_required": "Provider name and display name are required",
     "display_name": "Display Name",
-    "description": "Description",
     "adding": "Adding...",
     "base_url_placeholder": "https://api.example.com/v1",
     "provider_name_placeholder": "openai, claude, custom_provider",
@@ -1142,5 +1201,8 @@
     "reset_daily": "Reset Daily",
     "reset_monthly": "Reset Monthly",
     "confirm_reset": "Reset {period} quota counters?"
+  },
+  "providers": {
+    "local": "Local Model"
   }
 }
